@@ -59,16 +59,6 @@ class Algebraic(Base):
         """
         return Mul(other, self)
 
-    def __matmul__(self, other):
-        """Contract two tensors.
-        """
-        return Dot(self, other)
-
-    def __rmatmul__(self, other):
-        """Contract two tensors.
-        """
-        return Dot(other, self)
-
     def copy(self, *args):
         """Copy the object.
         """
@@ -82,10 +72,17 @@ class Algebraic(Base):
         args = [arg.map_indices(mapping) for arg in self.args]
         return self.copy(*args)
 
-    def hashable(self):
+    def hashable(self, coefficient=True):
         """Return a hashable representation of the object.
         """
-        return tuple(arg.hashable() if isinstance(arg, Base) else arg for arg in self.args)
+        return (
+            self.__class__.__name__,
+            self.coefficient if coefficient else None,
+            tuple(
+                arg.hashable() if isinstance(arg, Base) else arg
+                for arg in self.without_coefficient().args
+            ),
+        )
 
     def canonicalise(self):
         """Canonicalise the object.
@@ -105,9 +102,9 @@ class Add(Algebraic):
         """
 
         # Check the external indices match
-        indices = args[0].external_indices
+        indices = set(args[0].external_indices)
         for arg in args:
-            if arg.external_indices != indices:
+            if set(arg.external_indices) != indices:
                 raise ValueError(
                     f"Incompatible external indices for {cls.__class__.__name__}: "
                     f"{arg.external_indices} != {indices}"
@@ -117,7 +114,7 @@ class Add(Algebraic):
         factors = defaultdict(list)
         for arg in args:
             factors[arg.without_coefficient()].append(arg.coefficient)
-        args = [sum(f) @ arg for arg, f in factors.items() if abs(sum(f)) > config.ZERO]
+        args = [sum(f) * arg for arg, f in factors.items() if abs(sum(f)) > config.ZERO]
 
         return args
 
@@ -148,7 +145,7 @@ class Add(Algebraic):
         """Canonicalise the object.
         """
         args = [arg.canonicalise() if isinstance(arg, Base) else arg for arg in self.args]
-        args = sorted(args, key=lambda arg: arg.hashable())
+        args = sorted(args)
         expression = self.copy(*args)
         return expression
 
@@ -205,66 +202,7 @@ class Add(Algebraic):
             return Add(other, self)
 
 
-class Mul(Add):
-    """Multiplication of tensors.
-
-    Not to be confused with contraction, this class handles the indexing
-    of tensor symbols that are multiplied together.
-    """
-
-    @classmethod
-    def _filter_args(cls, args):
-        """Filter the arguments.
-        """
-
-        # Check the external indices match
-        indices = args[0].external_indices
-        for arg in args:
-            if arg.external_indices != indices:
-                raise ValueError(
-                    f"Incompatible external indices for {cls.__class__.__name__}: "
-                    f"{arg.external_indices} != {indices}"
-                )
-
-        # Collect factors
-        factor = 1
-        non_factors = []
-        for arg in args:
-            if isinstance(arg, Number):
-                factor *= arg
-            else:
-                non_factors.append(arg)
-        if abs(factor) <= config.ZERO:
-            return [0]
-        elif abs(factor - 1) <= config.ZERO:
-            args = non_factors
-        else:
-            args = [factor] + non_factors
-
-        return args
-
-    def expand(self):
-        """Expand the parentheses.
-        """
-        mul_args = [arg.expand() if isinstance(arg, Base) else arg for arg in self.args]
-        add_args = [arg.args if isinstance(arg, Add) else [arg] for arg in mul_args]
-        args = [Mul(*arg) for arg in itertools.product(*add_args)]
-        return Add(*args) if len(args) > 1 else args[0]
-
-    def __repr__(self):
-        """Return the representation of the object.
-        """
-        atoms = []
-        for arg in self.args:
-            if isinstance(arg, Algebraic):
-                atoms.append(f"({repr(arg)})")
-            else:
-                atoms.append(repr(arg))
-        string = " * ".join(atoms)
-        return string
-
-
-class Dot(Algebraic):
+class Mul(Algebraic):
     """Contraction of tensors or scalars.
     """
 
@@ -272,6 +210,21 @@ class Dot(Algebraic):
     def _filter_args(cls, args):
         """Filter the arguments.
         """
+
+        # Check we have proper Einstein notation
+        counts = defaultdict(int)
+        for arg in args:
+            if isinstance(arg, Number):
+                continue
+            for index in arg.dummy_indices:
+                counts[index] += 1
+            for index in arg.external_indices:
+                counts[index] += 1
+        if any(count > 2 for count in counts.values()):
+            raise ValueError(
+                f"{cls.__class__.__name__} only supports Einstein notation, "
+                "i.e. each index must appear at most twice."
+            )
 
         # Collect factors
         factor = 1
@@ -352,9 +305,9 @@ class Dot(Algebraic):
             if len(args) == 0:
                 args.append(arg)
             elif isinstance(arg, Add):
-                args = tuple(a @ b for a, b in list(itertools.product(args, arg.args)))
+                args = tuple(a * b for a, b in list(itertools.product(args, arg.args)))
             else:
-                args = tuple(a @ arg for a in args)
+                args = tuple(a * arg for a in args)
 
         return Add(*args)
 
@@ -370,22 +323,22 @@ class Dot(Algebraic):
         string = " * ".join(atoms)
         return string
 
-    def __matmul__(self, other):
+    def __mul__(self, other):
         """Contract two tensors.
         """
         if not isinstance(other, Algebraic):
-            return Dot(*self.args, other)
-        elif isinstance(other, Dot):
-            return Dot(*self.args, *other.args)
+            return Mul(*self.args, other)
+        elif isinstance(other, Mul):
+            return Mul(*self.args, *other.args)
         else:
-            return Dot(self, other)
+            return Mul(self, other)
 
-    def __rmatmul__(self, other):
+    def __rmul__(self, other):
         """Contract two tensors.
         """
         if not isinstance(other, Algebraic):
-            return Dot(other, *self.args)
-        elif isinstance(other, Dot):
-            return Dot(*other.args, *self.args)
+            return Mul(other, *self.args)
+        elif isinstance(other, Mul):
+            return Mul(*other.args, *self.args)
         else:
-            return Dot(other, self)
+            return Mul(other, self)

@@ -4,7 +4,7 @@
 from numbers import Number
 
 from aemon.base import Base
-from aemon.algebra import Add, Mul, Dot
+from aemon.algebra import Add, Mul
 
 
 def defer_to_algebra(method):
@@ -18,6 +18,22 @@ def defer_to_algebra(method):
             return NotImplemented
         return method(self, other)
     return wrapper
+
+
+class Symbol:
+    """Constructor for tensors.
+    """
+
+    def __init__(self, name, symmetry=None):
+        """Initialise the object.
+        """
+        self.name = name
+        self.symmetry = symmetry
+
+    def __getitem__(self, indices):
+        """Return a tensor.
+        """
+        return Tensor(*indices, name=self.name, symmetry=self.symmetry)
 
 
 class Tensor(Base):
@@ -88,10 +104,13 @@ class Tensor(Base):
         """Return a hashable representation of the object.
         """
         return (
-            self.name,
-            self.external_indices,
-            self.dummy_indices,
-            self.symmetry.hashable() if self.symmetry else None,
+            self.__class__.__name__,
+            (
+                (self.name,),
+                self.external_indices,
+                self.dummy_indices,
+                self.symmetry.hashable() if self.symmetry else None,
+            ),
         )
 
     def canonicalise(self):
@@ -105,6 +124,12 @@ class Tensor(Base):
         """Expand the object.
         """
         return self
+
+    @property
+    def args(self):
+        """Return the arguments of the object.
+        """
+        return (self,)
 
     @defer_to_algebra
     def __add__(self, other):
@@ -129,15 +154,3 @@ class Tensor(Base):
         """Multiply two tensors.
         """
         return Mul(other, self)
-
-    @defer_to_algebra
-    def __matmul__(self, other):
-        """Contract two tensors.
-        """
-        return Dot(self, other)
-
-    @defer_to_algebra
-    def __rmatmul__(self, other):
-        """Contract two tensors.
-        """
-        return Dot(other, self)
