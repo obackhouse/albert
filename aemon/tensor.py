@@ -1,8 +1,23 @@
 """Base class for tensors.
 """
 
+from numbers import Number
+
 from aemon.base import Base
 from aemon.algebra import Add, Mul, Dot
+
+
+def defer_to_algebra(method):
+    """
+    Decorator for overloaded operators, to return `NotImplemented` if
+    the other operand is not a tensor or scalar. This allows the
+    overloaded operation to be deferred to the algebraic classes.
+    """
+    def wrapper(self, other):
+        if not isinstance(other, (Number, Tensor)):
+            return NotImplemented
+        return method(self, other)
+    return wrapper
 
 
 class Tensor(Base):
@@ -40,6 +55,17 @@ class Tensor(Base):
         """Return the dummy indices of the object.
         """
         return tuple()
+
+    @property
+    def coefficient(self):
+        """Return the coefficient of the object.
+        """
+        return 1
+
+    def without_coefficient(self):
+        """Return the object without the coefficient.
+        """
+        return self
 
     def copy(self, *indices, name=None, symmetry=None):
         """Copy the object.
@@ -80,31 +106,37 @@ class Tensor(Base):
         """
         return self
 
+    @defer_to_algebra
     def __add__(self, other):
         """Add two tensors.
         """
         return Add(self, other)
 
+    @defer_to_algebra
     def __radd__(self, other):
         """Add two tensors.
         """
         return Add(other, self)
 
+    @defer_to_algebra
     def __mul__(self, other):
         """Multiply two tensors.
         """
         return Mul(self, other)
 
+    @defer_to_algebra
     def __rmul__(self, other):
         """Multiply two tensors.
         """
         return Mul(other, self)
 
+    @defer_to_algebra
     def __matmul__(self, other):
         """Contract two tensors.
         """
         return Dot(self, other)
 
+    @defer_to_algebra
     def __rmatmul__(self, other):
         """Contract two tensors.
         """
