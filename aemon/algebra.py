@@ -23,7 +23,7 @@ class Algebraic(Base):
 
         if len(args) == 0:
             # If there are no arguments, return zero
-            return 0
+            return cls.default_value()
         elif len(args) == 1:
             # If there is one argument, return it instead
             return args[0]
@@ -117,6 +117,12 @@ class Add(Algebraic):
         args = [sum(f) * arg for arg, f in factors.items() if abs(sum(f)) > config.ZERO]
 
         return args
+
+    @staticmethod
+    def default_value():
+        """Return the value of the object when it has no arguments.
+        """
+        return 0
 
     @property
     def external_indices(self):
@@ -242,6 +248,12 @@ class Mul(Algebraic):
             args = [factor] + non_factors
 
         return args
+
+    @staticmethod
+    def default_value():
+        """Return the value of the object when it has no arguments.
+        """
+        return 1
 
     @cached_property
     def external_indices(self):
