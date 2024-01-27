@@ -52,3 +52,39 @@ def count_flops(expr, sizes=None, mul=1, add=1):
             flops += count_flops(arg, sizes=sizes, mul=mul, add=add)
 
     return flops
+
+
+def memory_cost(expr, sizes=None):
+    """
+    Simply count the amount of memory required to store an expression.
+
+    Parameters
+    ----------
+    expr : Algebraic
+        The expression to count memory usage in.
+    sizes : dict, optional
+        A dictionary mapping indices to their sizes. If not provided,
+        all indices are assumed to have size `10`. Default value is
+        `None`.
+
+    Returns
+    -------
+    memory : int
+        The amount of memory required to execute the expression.
+    """
+
+    # Get the index sizes
+    if sizes is None:
+        sizes = defaultdict(lambda: 10)
+
+    # Count the memory usage in the expression
+    memory = 1
+    for index in expr.external_indices:
+        memory *= sizes[index]
+
+    # Count the memory usage recursively
+    for arg in expr.args:
+        if isinstance(arg, Algebraic):
+            memory = max(memory, memory_cost(arg, sizes=sizes))
+
+    return memory
