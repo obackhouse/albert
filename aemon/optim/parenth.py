@@ -11,23 +11,13 @@ from aemon.algebra import Algebraic, Add, Mul
 from aemon.optim.cost import count_flops, memory_cost
 
 
-def parenthesisations(n, cost=None, term_cost=None):
+def parenthesisations(n):
     """Iterate over all possible parenthesisations of `n` objects.
 
     Parameters
     ----------
     n : int
         The number of objects to parenthesise.
-    cost : callable, optional
-        A function that takes a parenthesisation and returns a cost.
-        Since this function yields all possible parenthesisations, this
-        argument is ignored, and is only included for compatibility.
-        Default value is `None`.
-    term_cost : callable, optional
-        A function that takes a pair of indices and returns the cost of
-        contracting them. Since this function yields all possible
-        parenthesisations, this argument is ignored, and is only
-        included for compatibility. Default value is `None`.
 
     Yields
     ------
@@ -59,7 +49,7 @@ def parenthesisations(n, cost=None, term_cost=None):
     yield from _iterate(path, remain)
 
 
-def parenthesisations_greedy(n, cost, term_cost=None):
+def parenthesisations_greedy(n, cost):
     """
     Iterate over possible parenthesisations of `n` objects with a
     greedy algorithm.
@@ -70,11 +60,6 @@ def parenthesisations_greedy(n, cost, term_cost=None):
         The number of objects to parenthesise.
     cost : callable
         A function that takes a parenthesisation and returns a cost.
-    term_cost : callable, optional
-        A function that takes a pair of indices and returns the cost of
-        contracting them. Since this function does not consider any
-        branches, this argument is ignored, and is only included for
-        compatibility. Default value is `None`.
 
     Yields
     ------
@@ -314,16 +299,19 @@ def get_candidates(
         method = "greedy" if len(expr.args) > 4 else "brute"
     if method == "brute":
         func = parenthesisations
+        cost_args = ()
     elif method == "greedy":
         func = parenthesisations_greedy
+        cost_args = (cost,)
     elif method == "branch":
         func = parenthesisations_branch
+        cost_args = (cost, term_cost)
     else:
         raise ValueError(f"Unknown method '{method}'")
 
     # Find all possible parenthesising candidates
     candidates = []
-    for path in func(len(expr.args), cost=cost, term_cost=term_cost):
+    for path in func(len(expr.args), *cost_args):
         candidates.append(parenthesise(expr, path))
 
     # Sort the candidates by their cost
