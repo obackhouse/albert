@@ -94,10 +94,10 @@ def parenthesisations_greedy(n, cost):
     yield path
 
 
-def parenthesisations_branch(n, cost, term_cost, depth=3):
+def parenthesisations_branch(n, cost, depth=4):
     """
-    Iterate over parenthesisations of `n` objects with a branch and
-    bound algorithm.
+    Iterate over parenthesisations of `n` objects with a branching
+    algorithm.
 
     Parameters
     ----------
@@ -120,60 +120,49 @@ def parenthesisations_branch(n, cost, term_cost, depth=3):
         in the pair.
     """
 
-    @functools.lru_cache(maxsize=None)
-    def pair_cost(i, j):
-        return term_cost(i, j)
-
-    # Record the best costs
-    best_path = None
     best_cost = (float("inf"), float("inf"))
-    best_pair_cost = defaultdict(lambda: (float("inf"), float("inf")))
 
-    def _iterate(path, remain, cost):
+    def _iterate(path, remain):
+        nonlocal best_cost
+
         # If there is only one index left, we're done
         if len(remain) == 1:
+            new_cost = cost(path)
+            if new_cost < best_cost:
+                best_cost = new_cost
             yield path
             return
 
-        def _assess(i, j):
-            # Get the cost of this term
-            cost_ij = pair_cost(i, j)
-
-            # If the cost is greater than the best cost found so far,
-            # we can stop searching this branch
-            new_cost = (cost[0] + cost_ij[0], cost[1] + cost_ij[1])
-            if new_cost > best_cost:
-                return
-
-            # Compare to the best path found so far for this pair
-            if new_cost < best_pair_cost[(i, j)]:
-                best_pair_cost[(i, j)] = new_cost
-
-            return new_cost, (i, j)
-
-        # Check remaining paths
+        # Iterate over all possible pairs of the remaining indices
         candidates = []
         for i, j in itertools.combinations(remain, 2):
-            candidate = _assess(i, j)
-            if candidate:
-                heapq.heappush(candidates, candidate)
+            new_path = path + ((i, j),)
+            new_cost = cost(new_path, partial=True)
 
-        # Recurse into the best candidates
+            # If the partial cost is already worse than the best cost,
+            # we can skip this pair
+            if new_cost > best_cost:
+                continue
+
+            heapq.heappush(candidates, (new_cost, (i, j)))
+
+        # Iterate over the best `depth` candidates and recurse
         for b in range(depth):
             if not candidates:
                 break
-            cost, (i, j) = heapq.heappop(candidates)
-            new_path = path + ((i, j),)
-            new_remain = remain - {j}
-            yield from _iterate(new_path, new_remain, cost)
+            _, (i, j) = heapq.heappop(candidates)
+            yield from _iterate(
+                path + ((i, j),),
+                remain - {j},
+            )
 
     # Trigger the recursive iteration
     remain = set(range(n))
     path = tuple()
-    yield from _iterate(path, remain, cost=(0, 0))
+    yield from _iterate(path, remain)
 
 
-def parenthesise(expr, path):
+def parenthesise(expr, path, partial=False):
     """
     Parenthesise an algebraic expression.
 
@@ -192,7 +181,11 @@ def parenthesise(expr, path):
     parenthesised : Mul
         The parenthesised expression.
     """
-    args = list(expr.args)
+    if not partial:
+        args = new_args = list(expr.args)
+    else:
+        args = list(expr.args)
+        new_args = [None] * len(args)
     for i, j in path:
         args[i] = Mul(args[i], args[j])
         args[j] = None
@@ -291,8 +284,8 @@ def get_candidates(
         expr_cost = lambda expr: (memory_fn(expr, sizes=sizes), cost_fn(expr, sizes=sizes))
     else:
         expr_cost = lambda expr: (cost_fn(expr, sizes=sizes), memory_fn(expr, sizes=sizes))
-    cost = lambda path: expr_cost(parenthesise(expr, path))
-    term_cost = lambda i, j: expr_cost(Mul(expr.args[i], expr.args[j]))
+    cost = lambda path, partial=False: expr_cost(parenthesise(expr, path, partial=partial))
+    #term_cost = lambda i, j: expr_cost(Mul(expr.args[i], expr.args[j]))
 
     # Get the parenthesising function
     if method is None:
@@ -305,19 +298,18 @@ def get_candidates(
         cost_args = (cost,)
     elif method == "branch":
         func = parenthesisations_branch
-        cost_args = (cost, term_cost)
+        cost_args = (cost,)
     else:
         raise ValueError(f"Unknown method '{method}'")
 
-    # Find all possible parenthesising candidates
+    # Find parenthesising candidates
     candidates = []
     for path in func(len(expr.args), *cost_args):
         candidates.append(parenthesise(expr, path))
 
     # Sort the candidates by their cost
     costs = [expr_cost(candidate) for candidate in candidates]
-    costs_dict = {candidate: cost for candidate, cost in zip(candidates, costs)}
-    candidates = sorted(candidates, key=costs_dict.get)
+    candidates, costs = zip(*sorted(zip(candidates, costs), key=lambda x: x[1]))
 
     # Yield the candidates
     if return_costs:

@@ -2,6 +2,7 @@
 """
 
 from collections import defaultdict
+from numbers import Number
 
 from aemon.algebra import Algebraic, Add, Mul
 
@@ -77,12 +78,24 @@ def memory_cost(expr, sizes=None):
     if sizes is None:
         sizes = defaultdict(lambda: 10)
 
-    # Count the memory usage in the expression
-    memory = 1
+    # Count the memory usage in the result
+    memory_out = 1
     for index in expr.external_indices:
-        memory *= sizes[index]
+        memory_out *= sizes[index]
 
-    # Count the memory usage recursively
+    # Count the memory usage in the arguments
+    memory_in = 0
+    for arg in expr.args:
+        if not isinstance(arg, Number):
+            memory_in_arg = 1
+            for index in arg.external_indices:
+                memory_in_arg *= sizes[index]
+            memory_in += memory_in_arg
+        else:
+            memory_in += 1
+
+    # Find the maximum memory usage recursively
+    memory = memory_in + memory_out
     for arg in expr.args:
         if isinstance(arg, Algebraic):
             memory = max(memory, memory_cost(arg, sizes=sizes))
