@@ -2,24 +2,21 @@
 """
 
 from einfun.symmetry import Permutation, Symmetry
-from einfun.tensor import Symbol, Tensor
+from einfun.tensor import Symbol
 
 
 def _make_symmetry(*perms):
-    """Make a symmetry from a list of permutations.
-    """
+    """Make a symmetry from a list of permutations."""
     return Symmetry(*[Permutation(perm, 1) for perm in perms])
 
 
 class Hamiltonian1e(Symbol):
-    """Constructor for one-electron Hamiltonian-like symbols.
-    """
+    """Constructor for one-electron Hamiltonian-like symbols."""
 
     DESIRED_RANK = 2
 
     def __init__(self, name):
-        """Initialise the object.
-        """
+        """Initialise the object."""
         self.name = name
         self.symmetry = _make_symmetry(
             (0, 1),
@@ -31,14 +28,12 @@ Fock = Hamiltonian1e("f")
 
 
 class Hamiltonian2e(Symbol):
-    """Constructor for two-electron Hamiltonian-like symbols.
-    """
+    """Constructor for two-electron Hamiltonian-like symbols."""
 
     DESIRED_RANK = 4
 
     def __init__(self, name):
-        """Initialise the object.
-        """
+        """Initialise the object."""
         self.name = name
         # FIXME this is for real orbitals only
         self.symmetry = _make_symmetry(
@@ -57,12 +52,10 @@ ERI = Hamiltonian2e("v")
 
 
 class FermionicAmplitude(Symbol):
-    """Constructor for amplitude symbols.
-    """
+    """Constructor for amplitude symbols."""
 
     def __init__(self, name, num_covariant, num_contravariant):
-        """Initialise the object.
-        """
+        """Initialise the object."""
         self.name = name
         self.DESIRED_RANK = num_covariant + num_contravariant
         # FIXME how to generalise?

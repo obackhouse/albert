@@ -4,9 +4,8 @@
 import itertools
 from collections import defaultdict
 
-from einfun.tensor import Tensor
 from einfun.optim.cost import count_flops, memory_cost
-from einfun.optim.parenth import get_candidates
+from einfun.tensor import Tensor
 
 
 def _find_groups(*muls, n):

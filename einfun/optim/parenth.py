@@ -3,12 +3,10 @@
 
 import heapq
 import itertools
-import functools
-from collections import defaultdict
 
-from einfun.tensor import Tensor
-from einfun.algebra import Algebraic, Add, Mul
+from einfun.algebra import Add, Algebraic, Mul
 from einfun.optim.cost import count_flops, memory_cost
+from einfun.tensor import Tensor
 
 
 def parenthesisations(n):
@@ -187,9 +185,9 @@ def parenthesise(expr, path, partial=False):
         args = list(expr.args)
         new_args = [None] * len(args)
     for i, j in path:
-        args[i] = Mul(args[i], args[j])
-        args[j] = None
-    args = [arg for arg in args if arg is not None]
+        new_args[i] = Mul(args[i], args[j])
+        new_args[j] = None
+    args = [arg for arg in new_args if arg is not None]
     return Mul(*args)
 
 
@@ -211,14 +209,13 @@ def check_input(expr):
 
     if isinstance(expr, Algebraic) and any(isinstance(arg, Add) for arg in expr.args):
         raise TypeError(
-            f"Algebraic expression must not contain any `Add`s for parenthesising. Use "
+            "Algebraic expression must not contain any `Add`s for parenthesising. Use "
             "intermediate tensors in place of sums to avoid this."
         )
 
 
 def _check_input(func):
-    """Decorate a function to check its input.
-    """
+    """Decorate a function to check its input."""
 
     def wrapper(expr, *args, **kwargs):
         check_input(expr)

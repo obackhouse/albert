@@ -4,8 +4,8 @@
 import re
 from numbers import Number
 
-from einfun.algebra import Mul, Add
-from einfun.qc.ghf import Fock, ERI, T1, T2, T3
+from einfun.algebra import Add, Mul
+from einfun.qc.ghf import ERI, T1, T2, T3, Fock
 
 
 def import_from_pdaggerq(terms):
@@ -49,8 +49,7 @@ def import_from_pdaggerq(terms):
 
 
 class PermutationOperator:
-    """Permutation operator.
-    """
+    """Permutation operator."""
 
     def __init__(self, i, j):
         self.indices = (i, j)

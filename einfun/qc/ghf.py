@@ -2,8 +2,8 @@
 """
 
 from einfun.symmetry import Permutation, Symmetry
-from einfun.tensor import Symbol, Tensor
-from einfun.qc.rhf import Fock
+from einfun.tensor import Symbol
+from einfun.qc.rhf import Fock  # noqa: F401
 
 
 def antisymmetric_permutations(n):
@@ -42,14 +42,12 @@ def antisymmetric_permutations(n):
 
 
 class Hamiltonian2e(Symbol):
-    """Constructor for two-electron Hamiltonian-like symbols.
-    """
+    """Constructor for two-electron Hamiltonian-like symbols."""
 
     DESIRED_RANK = 4
 
     def __init__(self, name):
-        """Initialise the object.
-        """
+        """Initialise the object."""
         self.name = name
         # FIXME this is for real orbitals only
         self.symmetry = Symmetry(
@@ -68,12 +66,10 @@ ERI = Hamiltonian2e("v")
 
 
 class FermionicAmplitude(Symbol):
-    """Constructor for amplitude symbols.
-    """
+    """Constructor for amplitude symbols."""
 
     def __init__(self, name, num_covariant, num_contravariant):
-        """Initialise the object.
-        """
+        """Initialise the object."""
         self.name = name
         self.DEISRED_RANK = num_covariant + num_contravariant
         perms = []

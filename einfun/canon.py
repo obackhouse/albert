@@ -1,7 +1,7 @@
 """Canonicalisation of terms and expressions.
 """
 
-from einfun.algebra import Add, Mul
+from einfun.algebra import Add
 
 
 def canonicalise_indices(expr, *index_groups):

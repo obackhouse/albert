@@ -4,7 +4,7 @@
 from collections import defaultdict
 from numbers import Number
 
-from einfun.algebra import Algebraic, Add, Mul
+from einfun.algebra import Add, Algebraic, Mul
 
 
 def count_flops(expr, sizes=None, mul=1, add=1):
