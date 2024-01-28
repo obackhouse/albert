@@ -6,9 +6,9 @@ import itertools
 import functools
 from collections import defaultdict
 
-from aemon.tensor import Tensor
-from aemon.algebra import Algebraic, Add, Mul
-from aemon.optim.cost import count_flops, memory_cost
+from einfun.tensor import Tensor
+from einfun.algebra import Algebraic, Add, Mul
+from einfun.optim.cost import count_flops, memory_cost
 
 
 def parenthesisations(n):

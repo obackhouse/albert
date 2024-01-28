@@ -3,8 +3,8 @@
 
 from numbers import Number
 
-from aemon.base import Base
-from aemon.algebra import Add, Mul
+from einfun.base import Base
+from einfun.algebra import Add, Mul
 
 
 def defer_to_algebra(method):

@@ -1,7 +1,7 @@
 """Permutation symmetry.
 """
 
-from aemon.base import Base
+from einfun.base import Base
 
 
 class Permutation(Base):

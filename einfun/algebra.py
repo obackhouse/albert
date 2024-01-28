@@ -6,8 +6,8 @@ from functools import cached_property
 from collections import defaultdict
 from numbers import Number
 
-from aemon import config
-from aemon.base import Base
+from einfun import config
+from einfun.base import Base
 
 
 class Algebraic(Base):

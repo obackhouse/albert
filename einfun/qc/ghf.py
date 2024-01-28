@@ -1,9 +1,9 @@
 """Expressions for generalised Hartree--Fock bases.
 """
 
-from aemon.symmetry import Permutation, Symmetry
-from aemon.tensor import Symbol, Tensor
-from aemon.qc.rhf import Fock
+from einfun.symmetry import Permutation, Symmetry
+from einfun.tensor import Symbol, Tensor
+from einfun.qc.rhf import Fock
 
 
 def antisymmetric_permutations(n):

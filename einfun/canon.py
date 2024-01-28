@@ -1,7 +1,7 @@
 """Canonicalisation of terms and expressions.
 """
 
-from aemon.algebra import Add, Mul
+from einfun.algebra import Add, Mul
 
 
 def canonicalise_indices(expr, *index_groups):

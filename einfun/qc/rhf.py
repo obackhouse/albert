@@ -1,8 +1,8 @@
 """Expressions for restricted Hartree--Fock bases.
 """
 
-from aemon.symmetry import Permutation, Symmetry
-from aemon.tensor import Symbol, Tensor
+from einfun.symmetry import Permutation, Symmetry
+from einfun.tensor import Symbol, Tensor
 
 
 def _make_symmetry(*perms):

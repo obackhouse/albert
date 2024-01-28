@@ -4,8 +4,8 @@
 import re
 from numbers import Number
 
-from aemon.algebra import Mul, Add
-from aemon.qc.ghf import Fock, ERI, T1, T2, T3
+from einfun.algebra import Mul, Add
+from einfun.qc.ghf import Fock, ERI, T1, T2, T3
 
 
 def import_from_pdaggerq(terms):
