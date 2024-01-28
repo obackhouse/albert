@@ -393,6 +393,30 @@ class Mul(Algebraic):
 
         return Add(*args)
 
+    def as_graph(self):
+        """
+        Generate a `networkx` graph representation of the contractions
+        between tensors in the expression.
+
+        Returns
+        -------
+        graph : networkx.MultiGraph
+            The graph representation of the expression.
+        """
+
+        # Expand any nested Mul objects
+        args = self.args
+        i = 0
+        while i < len(args):
+            if isinstance(args[i], Mul):
+                args = args[:i] + args[i].args + args[i + 1 :]
+            else:
+                i += 1
+
+        # Create the graph
+        graph = nx.MultiGraph(hashable=lambda x: hash(x.hashable()))
+
+
     def __repr__(self):
         """Return the representation of the object."""
         atoms = []
