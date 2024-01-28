@@ -276,7 +276,10 @@ def get_candidates(
     # If the expression is just a tensor, or only has one permutation,
     # there are no parenthesising candidates
     if isinstance(expr, Tensor) or len(expr.args) <= 2:
-        yield expr
+        if return_costs:
+            yield expr, (cost_fn(expr, sizes=sizes), memory_fn(expr, sizes=sizes))
+        else:
+            yield expr
         return
 
     # Get the cost function

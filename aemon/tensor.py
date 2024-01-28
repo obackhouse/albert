@@ -24,6 +24,8 @@ class Symbol:
     """Constructor for tensors.
     """
 
+    DESIRED_RANK = None
+
     def __init__(self, name, symmetry=None):
         """Initialise the object.
         """
@@ -33,6 +35,16 @@ class Symbol:
     def __getitem__(self, indices):
         """Return a tensor.
         """
+        if isinstance(indices, str) and len(indices) == self.DESIRED_RANK:
+            indices = tuple(indices)
+        elif not isinstance(indices, tuple):
+            indices = (indices,)
+        if self.DESIRED_RANK is not None:
+            if len(indices) != self.DESIRED_RANK:
+                raise ValueError(
+                    f"{self.__class__.__name__} expected {self.DESIRED_RANK} indices, "
+                    f"got {len(indices)}."
+                )
         return Tensor(*indices, name=self.name, symmetry=self.symmetry)
 
 
@@ -51,7 +63,7 @@ class Tensor(Base):
         """Return the representation of the object.
         """
         name = self.name if self.name else self.__class__.__name__
-        indices = ", ".join([repr(x) for x in self.indices])
+        indices = ",".join([str(x) for x in self.indices])
         return f"{name}[{indices}]"
 
     @property
