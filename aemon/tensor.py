@@ -116,6 +116,8 @@ class Tensor(Base):
         """Return a hashable representation of the object.
         """
         return (
+            1,
+            self.rank,
             self.__class__.__name__,
             (
                 (self.name,),

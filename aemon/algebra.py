@@ -69,13 +69,19 @@ class Algebraic(Base):
     def map_indices(self, mapping):
         """Map the indices of the object.
         """
-        args = [arg.map_indices(mapping) for arg in self.args]
+        args = []
+        for arg in self.args:
+            if not isinstance(arg, Number):
+                arg = arg.map_indices(mapping)
+            args.append(arg)
         return self.copy(*args)
 
     def hashable(self, coefficient=True):
         """Return a hashable representation of the object.
         """
         return (
+            len(self.args),
+            len(self.external_indices),
             self.__class__.__name__,
             self.coefficient if coefficient else None,
             tuple(
