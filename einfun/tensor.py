@@ -47,6 +47,21 @@ class Symbol:
                 )
         return Tensor(*indices, name=self.name, symmetry=self.symmetry)
 
+    def hashable(self):
+        """Return a hashable representation of the object.
+        """
+        return (self.name, self.symmetry.hashable() if self.symmetry else None)
+
+    def __hash__(self):
+        """Return a hash of the object.
+        """
+        return hash(self.hashable())
+
+    def __repr__(self):
+        """Return the representation of the object.
+        """
+        return self.name
+
 
 class Tensor(Base):
     """Base class for tensors.
@@ -138,6 +153,11 @@ class Tensor(Base):
         """Expand the object.
         """
         return self
+
+    def as_symbol(self):
+        """Return a symbol for the object.
+        """
+        return Symbol(self.name, symmetry=self.symmetry)
 
     @property
     def args(self):

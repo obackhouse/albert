@@ -6,6 +6,8 @@ from functools import cached_property
 from collections import defaultdict
 from numbers import Number
 
+import networkx as nx
+
 from einfun import config
 from einfun.base import Base
 
@@ -96,6 +98,92 @@ class Algebraic(Base):
         args = [arg.canonicalise() if isinstance(arg, Base) else arg for arg in self.args]
         expression = self.copy(*args)
         return expression
+
+    def nested_view(self):
+        """
+        Return a view of the expression, with the parentheses expanded,
+        as a nested list. The first layer is the addition, the second
+        layer is the multiplication, and the third layer are the tensors
+        and scalars.
+
+        Returns
+        -------
+        nested : list of list of (Tensor or Number)
+            The nested view of the expression.
+        """
+
+        # Expand the parentheses
+        expr = self.expand()
+
+        # Dissolve the addition layer
+        if isinstance(expr, Add):
+            nested = [[arg] for arg in expr.args]
+        else:
+            nested = [[expr]]
+
+        # Dissolve the multiplication layer
+        for i, arg in enumerate(nested):
+            if isinstance(arg[0], Mul):
+                nested[i] = arg[0].args
+
+        return nested
+
+    def as_graph(self):
+        """
+        Generates a `networkx` graph representation of the contractions
+        between tensors in the expression.
+
+        Returns
+        -------
+        graph : networkx.MultiGraph
+            The graph representation of the expression.
+
+        Notes
+        -----
+        The nodes of the graph are the symbol form of the tensors, and
+        the edges are a tuple of the indices that are contracted
+        between them. This format does not conserve the complete
+        information of the expression.
+        """
+
+        # FIXME doesn't seem to work with the Symbol as a node?
+
+        # Expand the parentheses and get the nested view
+        nested = self.nested_view()
+
+        # Create the graph
+        graph = nx.MultiGraph(hashable=lambda x: hash(x.hashable()))
+
+        # Add the nodes
+        for i, args in enumerate(nested):
+            for j, arg in enumerate(args):
+                if not isinstance(arg, Number):
+                    symbol = arg.as_symbol()
+                    graph.add_node(symbol.hashable(), object=symbol)
+
+        # Add the edges
+        for i, args in enumerate(nested):
+            tensor_indices = [j for j, arg in enumerate(args) if not isinstance(arg, Number)]
+            for j, k in itertools.combinations(tensor_indices, 2):
+                # Get the dummy index positions
+                dummy_indices = Mul(args[j], args[k]).dummy_indices
+                dummy_indices_j = tuple(args[j].indices.index(index) for index in dummy_indices)
+                dummy_indices_k = tuple(args[k].indices.index(index) for index in dummy_indices)
+
+                # Get the symbols
+                symbol_j = args[j].as_symbol()
+                symbol_k = args[k].as_symbol()
+
+                graph.add_edge(
+                    symbol_j.hashable(),
+                    symbol_k.hashable(),
+                    object={
+                        symbol_j: dummy_indices_j,
+                        symbol_k: dummy_indices_k,
+                    },
+                )
+
+        return graph
 
 
 class Add(Algebraic):

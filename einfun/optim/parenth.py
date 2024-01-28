@@ -236,6 +236,7 @@ def get_candidates(
     sizes=None,
     prefer_memory=False,
     return_costs=False,
+    depth=4,
 ):
     """
     Find all possible parenthesising candidates for an algebraic
@@ -266,6 +267,9 @@ def get_candidates(
     return_costs : bool, optional
         Whether to return the costs of the parenthesising candidates
         along with the candidates themselves. Default value is `False`.
+    depth : int, optional
+        The maximum depth to search when using the `"branch"` method.
+        Default value is `4`.
 
     Yields
     ------
@@ -288,7 +292,6 @@ def get_candidates(
     else:
         expr_cost = lambda expr: (cost_fn(expr, sizes=sizes), memory_fn(expr, sizes=sizes))
     cost = lambda path, partial=False: expr_cost(parenthesise(expr, path, partial=partial))
-    #term_cost = lambda i, j: expr_cost(Mul(expr.args[i], expr.args[j]))
 
     # Get the parenthesising function
     if method is None:
@@ -301,7 +304,7 @@ def get_candidates(
         cost_args = (cost,)
     elif method == "branch":
         func = parenthesisations_branch
-        cost_args = (cost,)
+        cost_args = (cost, depth)
     else:
         raise ValueError(f"Unknown method '{method}'")
 
