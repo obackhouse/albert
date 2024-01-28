@@ -1,9 +1,9 @@
 """Expressions for generalised Hartree--Fock bases.
 """
 
+from einfun.qc.rhf import Fock  # noqa: F401
 from einfun.symmetry import Permutation, Symmetry
 from einfun.tensor import Symbol
-from einfun.qc.rhf import Fock  # noqa: F401
 
 
 def antisymmetric_permutations(n):

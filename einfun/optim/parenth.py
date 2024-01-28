@@ -135,10 +135,10 @@ def parenthesisations_branch(n, cost, depth=4):
         candidates = []
         for i, j in itertools.combinations(remain, 2):
             new_path = path + ((i, j),)
-            new_cost = cost(new_path, partial=True)
+            new_cost = cost(new_path)
 
-            # If the partial cost is already worse than the best cost,
-            # we can skip this pair
+            # If the cost is already worse than the best cost, skip
+            # FIXME I don't know why this works.
             if new_cost > best_cost:
                 continue
 
@@ -179,16 +179,40 @@ def parenthesise(expr, path, partial=False):
     parenthesised : Mul
         The parenthesised expression.
     """
-    if not partial:
-        args = new_args = list(expr.args)
-    else:
-        args = list(expr.args)
-        new_args = [None] * len(args)
+    args = list(expr.args)
     for i, j in path:
-        new_args[i] = Mul(args[i], args[j])
-        new_args[j] = None
-    args = [arg for arg in new_args if arg is not None]
+        args[i] = Mul(args[i], args[j])
+        args[j] = None
+    args = [arg for arg in args if arg is not None]
     return Mul(*args)
+
+
+def get_cost_function(expr, *cost_fns):
+    """
+    Build the cost function, using a list of cost functions in order of
+    priority.
+
+    Parameters
+    ----------
+    expr : Mul or Tensor
+        The expression to parenthesise.
+    cost_fns : list of callable
+        The cost functions to use.
+
+    Returns
+    -------
+    cost : callable
+        The cost function.
+    """
+
+    def cost(path, partial=False):
+        expr_paren = parenthesise(expr, path, partial=partial)
+        if partial:
+            return tuple(sum(cost_fn(arg) for arg in expr_paren.args) for cost_fn in cost_fns)
+        else:
+            return tuple(cost_fn(expr_paren) for cost_fn in cost_fns)
+
+    return cost
 
 
 def check_input(expr):
@@ -285,10 +309,9 @@ def get_candidates(
 
     # Get the cost function
     if prefer_memory:
-        expr_cost = lambda expr: (memory_fn(expr, sizes=sizes), cost_fn(expr, sizes=sizes))
+        cost = get_cost_function(expr, memory_fn, cost_fn)
     else:
-        expr_cost = lambda expr: (cost_fn(expr, sizes=sizes), memory_fn(expr, sizes=sizes))
-    cost = lambda path, partial=False: expr_cost(parenthesise(expr, path, partial=partial))
+        cost = get_cost_function(expr, cost_fn, memory_fn)
 
     # Get the parenthesising function
     if method is None:
@@ -307,11 +330,12 @@ def get_candidates(
 
     # Find parenthesising candidates
     candidates = []
+    costs = []
     for path in func(len(expr.args), *cost_args):
         candidates.append(parenthesise(expr, path))
+        costs.append(cost(path))
 
     # Sort the candidates by their cost
-    costs = [expr_cost(candidate) for candidate in candidates]
     candidates, costs = zip(*sorted(zip(candidates, costs), key=lambda x: x[1]))
 
     # Yield the candidates
