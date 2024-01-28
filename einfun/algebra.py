@@ -51,6 +51,16 @@ class Algebraic(Base):
         """
         return Add(other, self)
 
+    def __sub__(self, other):
+        """Subtract two tensors.
+        """
+        return Add(self, -1 * other)
+
+    def __rsub__(self, other):
+        """Subtract two tensors.
+        """
+        return Add(other, -1 * self)
+
     def __mul__(self, other):
         """Multiply two tensors.
         """

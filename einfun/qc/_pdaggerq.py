@@ -25,12 +25,35 @@ def import_from_pdaggerq(terms):
 
     contractions = []
     for term in terms:
+        # Convert symbols
         symbols = [_convert_symbol(symbol) for symbol in term]
-        contractions.append(Mul(*symbols))
 
+        # Remove the permutation operators
+        perm_operators = [symbol for symbol in symbols if isinstance(symbol, PermutationOperator)]
+        symbols = [symbol for symbol in symbols if not isinstance(symbol, PermutationOperator)]
+        part = Mul(*symbols)
+        for perm_operator in perm_operators:
+            index_map = {
+                perm_operator.indices[0]: perm_operator.indices[1],
+                perm_operator.indices[1]: perm_operator.indices[0],
+            }
+            part = part - part.map_indices(index_map)
+
+        # Add to the list of contractions
+        contractions.append(part)
+
+    # Add all contractions together
     expr = Add(*contractions)
 
     return expr
+
+
+class PermutationOperator:
+    """Permutation operator.
+    """
+
+    def __init__(self, i, j):
+        self.indices = (i, j)
 
 
 def _is_number(symbol):
@@ -102,3 +125,11 @@ def _convert_symbol(symbol):
         symbols = tuple(symbol[3:-1].split(","))
         symbols = (symbols[3], symbols[4], symbols[5], symbols[0], symbols[1], symbols[2])
         return T3[symbols]
+
+    elif re.match(r"P\([a-z],[a-z]\)", symbol):
+        # P(i,j)
+        symbols = tuple(symbol[2:-1].split(","))
+        return PermutationOperator(*symbols)
+
+    else:
+        raise ValueError(f"Unknown symbol {symbol}")

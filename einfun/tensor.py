@@ -178,6 +178,18 @@ class Tensor(Base):
         return Add(other, self)
 
     @defer_to_algebra
+    def __sub__(self, other):
+        """Subtract two tensors.
+        """
+        return Add(self, -1 * other)
+
+    @defer_to_algebra
+    def __rsub__(self, other):
+        """Subtract two tensors.
+        """
+        return Add(other, -1 * self)
+
+    @defer_to_algebra
     def __mul__(self, other):
         """Multiply two tensors.
         """
