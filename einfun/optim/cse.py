@@ -8,42 +8,6 @@ from einfun.optim.cost import count_flops, memory_cost
 from einfun.tensor import Tensor
 
 
-def _find_groups(*muls, n):
-    """
-    Find a list of n-fold groups of tensors involved in products, for a
-    series of expressions.
-
-    Scales as O(k m^n), where k is the number of expressions, m is the
-    number of tensors in each expression, and n is the number of tensors
-    in each group.
-
-    Parameters
-    ----------
-    *muls : list of Mul
-        A list of multiplications.
-    n : int
-        The number of tensors in each group. For example, if `n=2`, the
-        function returns all pairs of tensors involved in products.
-
-    Returns
-    -------
-    pairs : dict of tuple: set
-        A dictionary mapping each n-fold group of tensors to a set of
-        indices expressions in which they appear as a product.
-    """
-
-    # Initialise the dictionary
-    groups = defaultdict(set)
-
-    # Loop over the expressions
-    for i, mul in enumerate(muls):
-        tensor_indices = [i for i, arg in enumerate(mul.args) if isinstance(arg, Tensor)]
-        for group in itertools.combinations(tensor_indices, n):
-            groups[group].add(i)
-
-    return groups
-
-
 def cse(
     *exprs,
     method=None,
