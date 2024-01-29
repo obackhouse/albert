@@ -10,7 +10,7 @@ import networkx as nx
 
 from einfun import config
 from einfun.base import Base
-from einfun.misc import BinaryTree
+from einfun.bintree import BinaryTree
 
 
 class Algebraic(Base):
