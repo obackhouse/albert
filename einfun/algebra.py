@@ -125,63 +125,6 @@ class Algebraic(Base):
 
         return nested
 
-    def as_graph(self):
-        """
-        Generate a `networkx` graph representation of the contractions
-        between tensors in the expression.
-
-        Returns
-        -------
-        graph : networkx.MultiGraph
-            The graph representation of the expression.
-
-        Notes
-        -----
-        The nodes of the graph are the symbol form of the tensors, and
-        the edges are a tuple of the indices that are contracted
-        between them. This format does not conserve the complete
-        information of the expression.
-        """
-
-        # FIXME doesn't seem to work with the Symbol as a node?
-
-        # Expand the parentheses and get the nested view
-        nested = self.nested_view()
-
-        # Create the graph
-        graph = nx.MultiGraph(hashable=lambda x: hash(x.hashable()))
-
-        # Add the nodes
-        for i, args in enumerate(nested):
-            for j, arg in enumerate(args):
-                if not isinstance(arg, Number):
-                    symbol = arg.as_symbol()
-                    graph.add_node(symbol.hashable(), object=symbol)
-
-        # Add the edges
-        for i, args in enumerate(nested):
-            tensor_indices = [j for j, arg in enumerate(args) if not isinstance(arg, Number)]
-            for j, k in itertools.combinations(tensor_indices, 2):
-                # Get the dummy index positions
-                dummy_indices = Mul(args[j], args[k]).dummy_indices
-                dummy_indices_j = tuple(args[j].indices.index(index) for index in dummy_indices)
-                dummy_indices_k = tuple(args[k].indices.index(index) for index in dummy_indices)
-
-                # Get the symbols
-                symbol_j = args[j].as_symbol()
-                symbol_k = args[k].as_symbol()
-
-                graph.add_edge(
-                    symbol_j.hashable(),
-                    symbol_k.hashable(),
-                    object={
-                        symbol_j: dummy_indices_j,
-                        symbol_k: dummy_indices_k,
-                    },
-                )
-
-        return graph
-
 
 class Add(Algebraic):
     """Addition of tensors."""
@@ -412,10 +355,41 @@ class Mul(Algebraic):
                 args = args[:i] + args[i].args + args[i + 1 :]
             else:
                 i += 1
+        expanded = self.copy(*args)
 
         # Create the graph
         graph = nx.MultiGraph(hashable=lambda x: hash(x.hashable()))
 
+        # Add the nodes
+        for i, arg in enumerate(expanded.args):
+            if not isinstance(arg, Number):
+                graph.add_node(arg.hashable(), data=arg)
+
+        # Add the edges
+        for index in expanded.dummy_indices:
+            # Find the tensors with the index -- FIXME improve
+            tensors = []
+            for i, arg in enumerate(expanded.args):
+                if not isinstance(arg, Number) and index in arg.external_indices:
+                    tensors.append(i)
+            assert len(tensors) == 2
+
+            # Find the position of the index in each tensor
+            positions = []
+            for i in tensors:
+                positions.append(expanded.args[i].external_indices.index(index))
+
+            # Add the edges
+            graph.add_edge(
+                expanded.args[tensors[0]].hashable(),
+                expanded.args[tensors[1]].hashable(),
+                data={
+                    expanded.args[tensors[0]].hashable(): positions[0],
+                    expanded.args[tensors[1]].hashable(): positions[1],
+                },
+            )
+
+        return graph
 
     def __repr__(self):
         """Return the representation of the object."""

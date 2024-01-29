@@ -4,20 +4,26 @@
 import networkx as nx
 
 
-def plot_graph(graph):
+def plot_graph(graph, ax=None, show=True):
     """Plot the graph representing the contractions in an expression.
 
     Parameters
     ----------
     graph : networkx.MultiGraph
         The graph to plot.
+    ax : matplotlib.axes.Axes, optional
+        The axes to plot on. If not provided, a new figure is created.
+        Default value is `None`.
+    show : bool, optional
+        Whether to show the figure. Default value is `True`.
     """
 
     # Import matplotlib here to avoid dependency
     import matplotlib.pyplot as plt
 
     # Initialise the figure
-    fig, ax = plt.subplots()
+    if ax is None:
+        fig, ax = plt.subplots()
 
     # Get the layout
     pos = nx.kamada_kawai_layout(graph)
@@ -34,8 +40,7 @@ def plot_graph(graph):
     )
 
     # Draw the edges
-    for edge in graph.edges:
-        print(graph.nodes[edge[0]], graph.nodes[edge[1]], graph.edges[edge])
+    for n, edge in enumerate(graph.edges):
         i, j = divmod(edge[2], 2)
         ax.annotate(
             "",
@@ -46,17 +51,37 @@ def plot_graph(graph):
             zorder=-1,
             arrowprops=dict(
                 arrowstyle="-",
-                color="0.5",
+                color=f"C{n}",
                 shrinkA=5,
                 shrinkB=5,
                 patchA=None,
                 patchB=None,
-                connectionstyle=f"arc3,rad={0.05 * (i + 1) * (-1)**j}",
+                connectionstyle=f"arc3,rad={0.15 * (i + 1) * (-1)**j}",
             ),
+        )
+        label = f"[{graph.nodes[edge[0]]['data'].name}, {graph.edges[edge]['data'][edge[0]]}]"
+        label += r"$ \rightarrow $"
+        label += f"[{graph.nodes[edge[1]]['data'].name}, {graph.edges[edge]['data'][edge[1]]}]"
+        ax.plot(
+            [pos[edge[0]][0], pos[edge[0]][0]],
+            [pos[edge[0]][1], pos[edge[0]][1]],
+            color=f"C{n}",
+            label=label,
+            zorder=-1,
         )
 
     # Draw the labels
-    nx.draw_networkx_labels(graph, pos, ax=ax, labels={node: node[0] for node in graph.nodes})
+    nx.draw_networkx_labels(
+        graph,
+        pos,
+        ax=ax,
+        labels={node: graph._node[node]["data"].name for node in graph.nodes},
+    )
 
     # Show the figure
-    plt.show()
+    if show:
+        plt.axis("off")
+        plt.legend()
+        plt.show()
+
+    return ax
