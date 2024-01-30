@@ -163,11 +163,11 @@ class Algebraic(Base):
             tree = Tree()
 
         # Get the operator
-        node = (self.__class__, hash(self), seed)
+        node = (self, seed)
 
         # Get the children
         seeds = [random.randint(0, 2**32) for _ in self.args]
-        children = [(arg.__class__, hash(arg), seed) for arg, seed in zip(self.args, seeds)]
+        children = [(arg, seed) for arg, seed in zip(self.args, seeds)]
 
         # Add the operator node
         tree.add(

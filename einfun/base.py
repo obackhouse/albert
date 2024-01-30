@@ -11,10 +11,14 @@ class Base:
 
     def __eq__(self, other):
         """Compare two objects."""
+        if not isinstance(other, Base):
+            return False
         return self.hashable() == other.hashable()
 
     def __ne__(self, other):
         """Compare two objects."""
+        if not isinstance(other, Base):
+            return True
         return self.hashable() != other.hashable()
 
     def __lt__(self, other):

@@ -5,7 +5,7 @@ from collections import deque
 
 
 def _root_if_none(func):
-    """Decorator to return the root if no node is given."""
+    """Decorate function to return the root if no node is given."""
 
     def wrapper(self, node=None, *args, **kwargs):
         if node is None:
@@ -96,9 +96,9 @@ class Tree:
     @_root_if_none
     def dfs(self, node=None, return_depth=False):
         """Depth-first search of the tree."""
-        stack = [(node, depth)]
+        stack = [(node, 0)]
         while stack:
-            node = stack.pop()
+            node, depth = stack.pop()
             if return_depth:
                 yield node, depth
             else:
@@ -145,8 +145,7 @@ class Tree:
         return self.nodes == other.nodes
 
     def __in__(self, node_or_tree):
-        """Check if a node is in the tree, or if a tree is a subtree.
-        """
+        """Check if a node is in the tree, or if a tree is a subtree."""
         if isinstance(node_or_tree, Tree):
             node_or_tree = node_or_tree.root
         return node_or_tree in self.nodes
