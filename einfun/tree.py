@@ -135,10 +135,18 @@ class Tree:
             lines[level].append(node)
             for i in range(len(lines)):
                 if i != level:
-                    lines[i].append(" " * (len(repr(node))))
+                    lines[i].append(" " * (len(repr(node)) + 1))
 
         # Find the sizes of each cell
-        sizes = [len(repr(node) if isinstance(node, Node) else node) for node in lines[-1]]
+        def node_repr(node):
+            """Node representation with a space to the left."""
+            if node.name is not None:
+                return " " + node.name
+            elif isinstance(node.data, str):
+                return " " + node.data
+            else:
+                return " " + repr(node.data)
+        sizes = [len(node_repr(node) if isinstance(node, Node) else node) for node in lines[-1]]
         sizes_l = [size // 2 for size in sizes]
         sizes_r = [size - size // 2 - 1 for size in sizes]
 
@@ -195,12 +203,7 @@ class Tree:
         for i, line in enumerate(combined):
             for j, node in enumerate(line):
                 if isinstance(node, Node):
-                    if node.name is not None:
-                        combined[i][j] = node.name
-                    elif isinstance(node.data, str):
-                        combined[i][j] = node.data
-                    else:
-                        combined[i][j] = repr(node)
+                    combined[i][j] = node_repr(node)
 
         # Join the lines
         out = ""
