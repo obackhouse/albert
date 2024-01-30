@@ -385,16 +385,16 @@ class Mul(Algebraic):
             return self.args[0].expand()
 
         # Recursively expand the parentheses
-        args = []
+        args = None
         for arg in self.args:
             if isinstance(arg, Base):
                 arg = arg.expand()
-            if len(args) == 0:
-                args.append(arg)
+            if args is None:
+                args = arg.args
             elif isinstance(arg, Add):
-                args = tuple(a * b for a, b in list(itertools.product(args, arg.args)))
+                args = [a * b for a, b in list(itertools.product(args, arg.args))]
             else:
-                args = tuple(a * arg for a in args)
+                args = [a * arg for a in args]
 
         return Add(*args)
 

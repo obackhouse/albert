@@ -146,6 +146,7 @@ class Tree:
                 return " " + node.data
             else:
                 return " " + repr(node.data)
+
         sizes = [len(node_repr(node) if isinstance(node, Node) else node) for node in lines[-1]]
         sizes_l = [size // 2 for size in sizes]
         sizes_r = [size - size // 2 - 1 for size in sizes]
