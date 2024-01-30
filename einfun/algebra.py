@@ -10,7 +10,7 @@ import networkx as nx
 
 from einfun import config
 from einfun.base import Base
-from einfun.bintree import BinaryTree
+from einfun.tree import Tree
 
 
 class Algebraic(Base):
@@ -126,75 +126,62 @@ class Algebraic(Base):
 
         return nested
 
-    def as_binary_tree(self, tree=None):
+    def as_tree(self, tree=None, parent=None):
         """
-        Return a binary tree representation of the expression. The tree
-        has a structure such as
+        Return a tree representation of the expression. The tree has a
+        structure such as
 
             +
            / \
           w   *
              / \
-            +   z
-           / \
-          x   y
+            +   v
+           /|\
+          x y z
 
-        for the expression `w + z * (x + y)`.
+        for the expression `w + v * (x + y + z)`.
 
         Parameters
         ----------
-        tree : BinaryTree, optional
-            The binary tree to add the expression to. If not provided,
-            a new tree is created.
+        tree : Tree, optional
+            The tree to add the expression to. If not provided, a new
+            tree is created.
+        parent : Algebraic, optional
+            Parent of `self`. Only used internally for recursive
+            construction of trees. Required to discern identical tensors
+            and factors in the tree. Default value is `None`.
 
         Returns
         -------
-        tree : BinaryTree
-            The binary tree representation of the expression.
+        tree : Tree
+            The tree representation of the expression.
         """
 
         # Initialise the tree
         if tree is None:
-            tree = BinaryTree()
+            tree = Tree()
 
-        # If the expression isn't parenthesised, parenthesise it without
-        # any optimisation heuristics
-        expr = self
-        if len(expr.args) > 2:
-            new_expr = self.copy(*expr.args[-2:])
-            for arg in reversed(expr.args[:-2]):
-                new_expr = self.copy(arg, new_expr)
-            expr = new_expr
-        assert len(expr.args) == 2
+        # Get the operator
+        node = (self.__class__, hash(self), hash(parent))
 
-        # Get the operators
-        node = (expr.__class__, hash(expr))
-        left = (expr.args[0].__class__, hash(expr.args[0]))
-        right = (expr.args[1].__class__, hash(expr.args[1]))
+        # Get the children
+        children = [(arg.__class__, hash(arg), hash(self)) for arg in self.args]
 
         # Add the operator node
         tree.add(
             node,
-            name="+" if isinstance(expr, Add) else "*",
-            left=left,
-            right=right,
+            name=self.__class__.__name__,
+            children=children,
         )
 
-        # Add the left child
-        if isinstance(expr.args[0], Algebraic):
-            expr.args[0].as_binary_tree(tree=tree)
-        elif isinstance(expr.args[0], Number):
-            tree.add(left, name=repr(expr.args[0]))
-        else:
-            tree.add(left, name=expr.args[0].name)
-
-        # Add the right child
-        if isinstance(expr.args[1], Algebraic):
-            expr.args[1].as_binary_tree(tree=tree)
-        elif isinstance(expr.args[1], Number):
-            tree.add(right, name=repr(expr.args[1]))
-        else:
-            tree.add(right, name=expr.args[1].name)
+        # Add the children
+        for arg, child in zip(self.args, children):
+            if isinstance(arg, Algebraic):
+                arg.as_tree(tree=tree, parent=self)
+            elif isinstance(arg, Number):
+                tree.add(child, name=repr(arg))
+            else:
+                tree.add(child, name=arg.name)
 
         return tree
 

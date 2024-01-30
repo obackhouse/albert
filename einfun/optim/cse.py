@@ -1,11 +1,7 @@
 """Common subexpression elimination.
 """
 
-import itertools
-from collections import defaultdict
-
 from einfun.optim.cost import count_flops, memory_cost
-from einfun.tensor import Tensor
 
 
 def cse(
