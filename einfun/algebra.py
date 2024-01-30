@@ -390,7 +390,10 @@ class Mul(Algebraic):
             if isinstance(arg, Base):
                 arg = arg.expand()
             if args is None:
-                args = arg.args
+                if isinstance(arg, Algebraic):
+                    args = arg.args
+                else:
+                    args = [arg]
             elif isinstance(arg, Add):
                 args = [a * b for a, b in list(itertools.product(args, arg.args))]
             else:
