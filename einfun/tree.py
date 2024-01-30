@@ -73,6 +73,16 @@ class Tree:
             if data in self.nodes[node].children:
                 self.nodes[node].children.remove(data)
 
+    def replace(self, node, new_node):
+        """Replace a node in the tree."""
+
+        # Update the node
+        self.nodes[node.data] = new_node
+
+        # Update the children
+        for child in new_node.children:
+            child.parent = new_node
+
     @_root_if_none
     def height(self, node=None):
         """Calculate the height of a node."""

@@ -187,6 +187,35 @@ class Algebraic(Base):
 
         return tree
 
+    def replace(self, expr_old, expr_new):
+        """
+        Replace a subexpression.
+
+        Parameters
+        ----------
+        expr_old : Algebraic
+            The subexpression to replace.
+        expr_new : Algebraic
+            The new subexpression.
+        """
+
+        # Check the subexpression is exactly the expression
+        if expr_old == self:
+            return expr_new
+
+        # Replace the subexpression
+        args = []
+        for arg in self.args:
+            if arg == expr_old:
+                args.append(expr_new)
+            elif isinstance(arg, Algebraic):
+                arg.replace(expr_old, expr_new)
+                args.append(arg)
+            else:
+                args.append(arg)
+
+        return self.copy(*args)
+
 
 class Add(Algebraic):
     """Addition of tensors."""
