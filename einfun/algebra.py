@@ -2,6 +2,7 @@
 """
 
 import itertools
+import random
 from collections import defaultdict
 from functools import cached_property
 from numbers import Number
@@ -126,7 +127,7 @@ class Algebraic(Base):
 
         return nested
 
-    def as_tree(self, tree=None, parent=None):
+    def as_tree(self, tree=None, seed=0):
         """
         Return a tree representation of the expression. The tree has a
         structure such as
@@ -146,10 +147,10 @@ class Algebraic(Base):
         tree : Tree, optional
             The tree to add the expression to. If not provided, a new
             tree is created.
-        parent : Algebraic, optional
-            Parent of `self`. Only used internally for recursive
-            construction of trees. Required to discern identical tensors
-            and factors in the tree. Default value is `None`.
+        seed : int, optional
+            Seed to use for discerning identical tensors and factors in
+            the tree. Mainly used in the internal recursive call.
+            Default value is 0.
 
         Returns
         -------
@@ -162,10 +163,11 @@ class Algebraic(Base):
             tree = Tree()
 
         # Get the operator
-        node = (self.__class__, hash(self), hash(parent))
+        node = (self.__class__, hash(self), seed)
 
         # Get the children
-        children = [(arg.__class__, hash(arg), hash(self)) for arg in self.args]
+        seeds = [random.randint(0, 2**32) for _ in self.args]
+        children = [(arg.__class__, hash(arg), seed) for arg, seed in zip(self.args, seeds)]
 
         # Add the operator node
         tree.add(
@@ -175,9 +177,9 @@ class Algebraic(Base):
         )
 
         # Add the children
-        for arg, child in zip(self.args, children):
+        for arg, child, seed in zip(self.args, children, seeds):
             if isinstance(arg, Algebraic):
-                arg.as_tree(tree=tree, parent=self)
+                arg.as_tree(tree=tree, seed=seed)
             elif isinstance(arg, Number):
                 tree.add(child, name=repr(arg))
             else:
