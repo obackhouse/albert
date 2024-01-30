@@ -4,6 +4,17 @@
 from collections import deque
 
 
+def _root_if_none(func):
+    """Decorator to return the root if no node is given."""
+
+    def wrapper(self, node=None, *args, **kwargs):
+        if node is None:
+            node = self.root
+        return func(self, node, *args, **kwargs)
+
+    return wrapper
+
+
 class Node:
     """Node in a tree."""
 
@@ -62,43 +73,55 @@ class Tree:
             if data in self.nodes[node].children:
                 self.nodes[node].children.remove(data)
 
-    def height(self, node):
+    @_root_if_none
+    def height(self, node=None):
         """Calculate the height of a node."""
         if node.parent is None:
             return 0
         return 1 + self.height(node.parent)
 
-    def bfs(self, node):
+    @_root_if_none
+    def bfs(self, node=None, return_depth=False):
         """Breadth-first search of the tree."""
-        queue = deque([node])
+        queue = deque([(node, 0)])
         while queue:
-            node = queue.popleft()
-            yield node
+            node, depth = queue.popleft()
+            if return_depth:
+                yield node, depth
+            else:
+                yield node
             for child in node.children:
-                queue.append(child)
+                queue.append((child, depth + 1))
 
-    def dfs(self, node):
+    @_root_if_none
+    def dfs(self, node=None, return_depth=False):
         """Depth-first search of the tree."""
-        stack = [node]
+        stack = [(node, depth)]
         while stack:
             node = stack.pop()
-            yield node
+            if return_depth:
+                yield node, depth
+            else:
+                yield node
             for child in node.children:
-                stack.append(child)
+                stack.append((child, depth + 1))
 
-    def preorder(self, node):
+    @_root_if_none
+    def preorder(self, node=None):
         """Preorder traversal of the tree."""
         yield node
         for child in node.children:
             yield from self.preorder(child)
 
-    def postorder(self, node):
+    @_root_if_none
+    def postorder(self, node=None):
         """Postorder traversal of the tree."""
         for child in node.children:
             yield from self.postorder(child)
         yield node
 
-    def inorder(self, node):
+    @_root_if_none
+    def inorder(self, node=None):
         """Inorder traversal of the tree."""
         for child in node.children[: (len(node.children) + 1) // 2]:
             yield from self.inorder(child)
@@ -120,6 +143,13 @@ class Tree:
     def __eq__(self, other):
         """Check if two trees are equal."""
         return self.nodes == other.nodes
+
+    def __in__(self, node_or_tree):
+        """Check if a node is in the tree, or if a tree is a subtree.
+        """
+        if isinstance(node_or_tree, Tree):
+            node_or_tree = node_or_tree.root
+        return node_or_tree in self.nodes
 
     def __repr__(self):
         """Return a string representation of the tree."""
