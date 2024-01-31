@@ -261,6 +261,11 @@ class Add(Algebraic):
         """Return the coefficient of the object."""
         return 1
 
+    @property
+    def disjoint(self):
+        """Return whether the arguments are disjoint."""
+        return False
+
     def without_coefficient(self):
         """Return the object without the coefficient."""
         return self
@@ -394,6 +399,11 @@ class Mul(Algebraic):
             if isinstance(arg, Number):
                 return arg
         return 1
+
+    @property
+    def disjoint(self):
+        """Return whether the arguments are disjoint."""
+        return len(self.dummy_indices) == 0
 
     def without_coefficient(self):
         """Return the object without the coefficient."""

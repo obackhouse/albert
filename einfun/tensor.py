@@ -94,6 +94,11 @@ class Tensor(Base):
         """Return the coefficient of the object."""
         return 1
 
+    @property
+    def disjoint(self):
+        """Return whether the object is disjoint."""
+        return False
+
     def without_coefficient(self):
         """Return the object without the coefficient."""
         return self
