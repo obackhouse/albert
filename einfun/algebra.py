@@ -224,19 +224,26 @@ class Add(Algebraic):
     def _filter_args(cls, args):
         """Filter the arguments."""
 
+        # Remove zero terms
+        args = [arg for arg in args if not isinstance(arg, Number) or abs(arg) > config.ZERO]
+
         # Check the external indices match
-        indices = set(args[0].external_indices)
+        indices = set(args[0].external_indices) if len(args) else set()
         for arg in args:
-            if set(arg.external_indices) != indices:
-                raise ValueError(
-                    f"Incompatible external indices for {cls.__class__.__name__}: "
-                    f"{arg.external_indices} != {indices}"
-                )
+            if not isinstance(arg, Number):
+                if set(arg.external_indices) != indices:
+                    raise ValueError(
+                        f"Incompatible external indices for {cls.__class__.__name__}: "
+                        f"{arg.external_indices} != {indices}"
+                    )
 
         # Collect equivalent terms
         factors = defaultdict(list)
         for arg in args:
-            factors[arg.without_coefficient()].append(arg.coefficient)
+            if not isinstance(arg, Number):
+                factors[arg.without_coefficient()].append(arg.coefficient)
+            else:
+                factors[arg].append(1)
         args = [sum(f) * arg for arg, f in factors.items() if abs(sum(f)) > config.ZERO]
 
         return args

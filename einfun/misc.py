@@ -4,6 +4,35 @@
 import networkx as nx
 
 
+class TwoWayDict(dict):
+    """A dictionary that can be accessed by key or value.
+
+    Parameters
+    ----------
+    *args : tuple
+        The key-value pairs to initialise the dictionary with.
+    """
+
+    def __init__(self, *args, **kwargs):
+        """Initialise the object."""
+        super().__init__(*args, **kwargs)
+        self.update({v: k for k, v in self.items()})
+
+    def __setitem__(self, key, value):
+        """Set a value and its key."""
+        super().__setitem__(key, value)
+        super().__setitem__(value, key)
+
+    def __delitem__(self, key):
+        """Delete a value and its key."""
+        super().__delitem__(self[key])
+        super().__delitem__(key)
+
+    def __len__(self):
+        """Return the length of the dictionary."""
+        return super().__len__() // 2
+
+
 def plot_graph(graph, ax=None, show=True):
     """Plot the graph representing the contractions in an expression.
 
