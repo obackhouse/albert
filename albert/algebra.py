@@ -9,9 +9,9 @@ from numbers import Number
 
 import networkx as nx
 
-from einfun import config
-from einfun.base import Base
-from einfun.tree import Tree
+from albert import config
+from albert.base import Base
+from albert.tree import Tree
 
 
 class Algebraic(Base):

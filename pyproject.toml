@@ -1,5 +1,5 @@
 [project]
-name = "einfun"
+name = "albert"
 version = "0.0.1"
 description = "Toolbox for manipulating, optimising, and generating code for Einstein summations"
 keys = [
@@ -51,7 +51,7 @@ target-version = [
     "py38",
     "py39",
 ]
-include = "einfun"
+include = "albert"
 exclude = """
 /(
     | __pycache__
@@ -64,7 +64,7 @@ atomic = true
 profile = "black"
 line_length = 100
 src_paths = [
-    "einfun",
+    "albert",
 ]
 skip_glob = [
     "*/__pycache__/*",
@@ -91,7 +91,7 @@ per-file-ignores = [
 docstring-convention = "numpy"
 ignore-decorators = "has_docstring"
 count = true
-include = "einfun"
+include = "albert"
 exclude = """
 /(
     | __pycache__
@@ -102,7 +102,7 @@ exclude = """
 [tool.coverage.run]
 branch = true
 source = [
-    "einfun",
+    "albert",
 ]
 omit = []
 

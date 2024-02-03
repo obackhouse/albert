@@ -4,8 +4,8 @@
 import re
 from numbers import Number
 
-from einfun.algebra import Add, Mul
-from einfun.qc.ghf import ERI, T1, T2, T3, Fock
+from albert.algebra import Add, Mul
+from albert.qc.ghf import ERI, T1, T2, T3, Fock
 
 
 def import_from_pdaggerq(terms):

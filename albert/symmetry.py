@@ -1,7 +1,7 @@
 """Permutation symmetry.
 """
 
-from einfun.base import Base
+from albert.base import Base
 
 
 class Permutation(Base):

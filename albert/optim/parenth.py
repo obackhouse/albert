@@ -4,9 +4,9 @@
 import heapq
 import itertools
 
-from einfun.algebra import Add, Algebraic, Mul
-from einfun.optim.cost import count_flops, memory_cost
-from einfun.tensor import Tensor
+from albert.algebra import Add, Algebraic, Mul
+from albert.optim.cost import count_flops, memory_cost
+from albert.tensor import Tensor
 
 
 def parenthesisations(n):

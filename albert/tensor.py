@@ -3,8 +3,8 @@
 
 from numbers import Number
 
-from einfun.algebra import Add, Mul
-from einfun.base import Base
+from albert.algebra import Add, Mul
+from albert.base import Base
 
 
 def defer_to_algebra(method):

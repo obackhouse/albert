@@ -5,9 +5,9 @@ import itertools
 from collections import defaultdict
 from numbers import Number
 
-from einfun.algebra import Add, Algebraic, Mul
-from einfun.optim.cost import count_flops, memory_cost
-from einfun.tensor import Symbol
+from albert.algebra import Add, Algebraic, Mul
+from albert.optim.cost import count_flops, memory_cost
+from albert.tensor import Symbol
 
 
 def factorisation_candidates(expr, best=False):
