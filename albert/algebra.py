@@ -436,7 +436,7 @@ class Mul(Algebraic):
             if isinstance(arg, Base):
                 arg = arg.expand()
             if args is None:
-                if isinstance(arg, Algebraic):
+                if isinstance(arg, Add):
                     args = arg.args
                 else:
                     args = [arg]
