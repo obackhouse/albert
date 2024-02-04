@@ -143,7 +143,9 @@ def intermediate_candidates(expr, best=False):
                 if not isinstance(arg, Number):
                     # Get the position of the dummy indices in this
                     # argument. Make a record for these for later
-                    new_arg = arg.map_indices({idx: i for i, idx in enumerate(arg.indices)})
+                    new_arg = arg.map_indices(
+                        {idx: i for i, idx in enumerate(arg.external_indices)}
+                    )
                     indexed_to_reindexed[arg] = new_arg
                     reindexed_to_indexed[new_arg].append(arg)
                     arg = new_arg
@@ -159,7 +161,10 @@ def intermediate_candidates(expr, best=False):
         for child in node.children:
             if not isinstance(child.data[0], Mul):
                 continue
-            args = [arg for arg in child.data[0].args if indexed_to_reindexed[arg] in patterns]
+            args = [
+                arg for arg in child.data[0].args
+                if not isinstance(arg, Number) and indexed_to_reindexed[arg] in patterns
+            ]
 
             # Loop over the combinations of the args
             for size in range(2, len(args) + 1):
@@ -197,7 +202,7 @@ def intermediate_candidates(expr, best=False):
                 contraction_counts.items(),
                 key=lambda x: (len(x[0]), x[1]),
             )
-            items = [(reargs, dummy_positions), count]
+            items = [((reargs, dummy_positions), count)]
         else:
             items = sorted(
                 contraction_counts.items(),
@@ -211,6 +216,8 @@ def intermediate_candidates(expr, best=False):
 
         # For each pattern, construct the replacement and intermediates
         for (reargs, dummy_positions), count in items:
+            print(reargs)
+            print(dummy_positions)
             # Initialise intermediate list
             intermediates = []
 
@@ -284,13 +291,112 @@ def intermediate_candidates(expr, best=False):
             yield expr, intermediates
 
 
+def _cse_brute(*exprs, cost_fn, sizes):
+    """Brute force approach to common subexpression elimination.
+    """
+
+    # Best cost and expression
+    best_cost = (float("inf"), float("inf"))
+    best_exprs = exprs
+    best_intermediates = None
+
+    def _iterate(*exprs, intermediates=None):
+        # Loop over the expressions
+        for i, expr_i in enumerate(exprs):
+            # Find the factorisation candidates
+            for candidate_expr, intermediates_i in intermediate_candidates(expr_i):
+                # Get a list of the candidate expressions
+                candidate_exprs = [None] * len(exprs)
+                candidate_exprs[i] = candidate_expr
+
+                # Replace the intermediates in the other expressions
+                for j, expr_j in enumerate(exprs):
+                    if i == j:
+                        continue
+                    for intermediate, intermediate_expr in intermediates_i:
+                        expr_j = expr_j.replace(intermediate_expr, intermediate)
+                    candidate_exprs[j] = expr_j
+
+                # Check the cost
+                cost = cost_fn(*candidate_exprs, sizes=sizes)
+                if cost < best_cost:
+                    best_cost = cost
+                    best_exprs = candidate_exprs
+                    best_intermediates = intermediates + intermediates_i
+
+                # Recurse
+                _iterate(*candidate_exprs, intermediates=intermediates + intermediates_i)
+
+    # Iterate
+    _iterate(*exprs, intermediates=[])
+
+    return best_exprs, best_intermediates
+
+
+def get_cost_function(cost_fn, memory_fn, sizes=None, memory_limit=None, prefer_memory=False):
+    """Get the cost function.
+
+    Parameters
+    ----------
+    cost_fn : callable
+        The time cost function.
+    memory_fn : callable
+        The memory cost function.
+    sizes : dict, optional
+        A dictionary mapping indices to their sizes. If not provided,
+        all indices are assumed to have size `10`. Default value is
+        `None`.
+    memory_limit : int, optional
+        The maximum memory usage allowed, in units of the native
+        floating point size of the tensors. If not provided, the memory
+        usage is not limited. Default value is `None`.
+    prefer_memory : bool, optional
+        Whether to prefer parenthesising candidates with lower memory
+        overhead as priority over lower FLOP cost. Default value is
+        `False`.
+
+    Returns
+    -------
+    cost : callable
+        The cost function.
+    """
+
+    # Get the order of the cost functions and the limits
+    if prefer_memory:
+        cost_fns = [memory_fn, cost_fn]
+        limits = [memory_limit, None]
+    else:
+        cost_fns = [cost_fn, memory_fn]
+        limits = [None, memory_limit]
+
+    # Get default sizes if not provided
+    if sizes is None:
+        sizes = defaultdict(lambda: 10)
+
+    def _cost(*exprs):
+        # Get the costs
+        costs = []
+        for cost_fn, limit in zip(cost_fns, limits):
+            costs.append(cost_fn(*exprs, sizes=sizes))
+
+            # Check the limit
+            if limit is not None:
+                if costs[-1] > limit:
+                    return float("inf")
+
+        return tuple(costs)
+
+    return _cost
+
+
 def cse(
     *exprs,
-    method=None,
+    method="brute",
     cost_fn=count_flops,
     memory_fn=memory_cost,
     sizes=None,
     memory_limit=None,
+    prefer_memory=False,
 ):
     """
     Perform common subexpression elimination on a series of
@@ -320,11 +426,35 @@ def cse(
         The maximum memory usage allowed, in units of the native
         floating point size of the tensors. If not provided, the memory
         usage is not limited. Default value is `None`.
+    prefer_memory : bool, optional
+        Whether to prefer parenthesising candidates with lower memory
+        overhead as priority over lower FLOP cost. Default value is
+        `False`.
 
     Returns
     -------
-    exprs : list of tuple of (Tensor, Algebraic)
+    exprs : tuple of Algebraic
         The optimized expressions.
+    intermediates : list of tuple of (Tensor, Algebraic)
+        The intermediate tensors and their expressions.
     """
 
-    pass
+    # Get the cost function
+    cost = get_cost_function(
+        cost_fn,
+        memory_fn,
+        sizes=sizes,
+        memory_limit=memory_limit,
+        prefer_memory=prefer_memory,
+    )
+
+    # Get the method
+    if method == "brute":
+        _cse = _cse_brute
+    else:
+        raise ValueError(f"Unknown method '{method}'.")
+
+    # Perform the CSE
+    exprs, intermediates = _cse(*exprs, cost_fn=cost, sizes=sizes)
+
+    return exprs, intermediates
