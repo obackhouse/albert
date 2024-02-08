@@ -313,7 +313,7 @@ class Add(Algebraic):
         """Return a `sympy` representation of the object."""
 
         if not HAS_SYMPY:
-            raise ValueError(f"{self.__class__.__name__}.{__name__} requires sympy.")
+            raise ValueError(f"`{self.__class__.__name__}.as_sympy` requires sympy.")
 
         # Convert the arguments to `sympy` objects
         args = [arg.as_sympy() if isinstance(arg, Base) else arg for arg in self.args]
@@ -524,7 +524,7 @@ class Mul(Algebraic):
         """Return a `sympy` representation of the object."""
 
         if not HAS_SYMPY:
-            raise ValueError(f"{self.__class__.__name__}.{__name__} requires sympy.")
+            raise ValueError(f"`{self.__class__.__name__}.as_sympy` requires sympy.")
 
         # Convert the arguments to `sympy` objects
         args = [arg.as_sympy() if isinstance(arg, Base) else arg for arg in self.args]

@@ -60,7 +60,7 @@ class Symbol:
         """Return a sympy representation of the object."""
 
         if not HAS_SYMPY:
-            raise ValueError(f"{self.__class__.__name__}.{__name__} requires sympy.")
+            raise ValueError(f"`{self.__class__.__name__}.as_sympy` requires sympy.")
 
         return sympy.IndexedBase(self.name)
 
@@ -164,9 +164,9 @@ class Tensor(Base):
         """Return a sympy representation of the object."""
 
         if not HAS_SYMPY:
-            raise ValueError(f"{self.__class__.__name__}.{__name__} requires sympy.")
+            raise ValueError(f"`{self.__class__.__name__}.as_sympy` requires sympy.")
 
-        indices = tuple(sympy.Symbol(str(index), cls=sympy.Idx) for index in self.indices)
+        indices = tuple(sympy.Idx(str(index)) for index in self.indices)
         symbol = self.as_symbol().as_sympy()
 
         return symbol[indices]
