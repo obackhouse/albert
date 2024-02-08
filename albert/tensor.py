@@ -6,6 +6,12 @@ from numbers import Number
 from albert.algebra import Add, Mul
 from albert.base import Base
 
+try:
+    import sympy
+    HAS_SYMPY = True
+except ImportError:
+    HAS_SYMPY = False
+
 
 def defer_to_algebra(method):
     """
@@ -49,6 +55,14 @@ class Symbol:
     def hashable(self):
         """Return a hashable representation of the object."""
         return (self.name, self.symmetry.hashable() if self.symmetry else None)
+
+    def as_sympy(self):
+        """Return a sympy representation of the object."""
+
+        if not HAS_SYMPY:
+            raise ValueError(f"{self.__class__.__name__}.{__name__} requires sympy.")
+
+        return sympy.IndexedBase(self.name)
 
     def __hash__(self):
         """Return a hash of the object."""
@@ -145,6 +159,17 @@ class Tensor(Base):
     def as_symbol(self):
         """Return a symbol for the object."""
         return Symbol(self.name, symmetry=self.symmetry)
+
+    def as_sympy(self):
+        """Return a sympy representation of the object."""
+
+        if not HAS_SYMPY:
+            raise ValueError(f"{self.__class__.__name__}.{__name__} requires sympy.")
+
+        indices = tuple(sympy.Symbol(str(index), cls=sympy.Idx) for index in self.indices)
+        symbol = self.as_symbol().as_sympy()
+
+        return symbol[indices]
 
     @property
     def args(self):

@@ -13,6 +13,12 @@ from albert import config
 from albert.base import Base
 from albert.tree import Tree
 
+try:
+    import sympy
+    HAS_SYMPY = True
+except ImportError:
+    HAS_SYMPY = False
+
 
 class Algebraic(Base):
     """Algebraic base class."""
@@ -303,6 +309,18 @@ class Add(Algebraic):
 
         return self.copy(*args)
 
+    def as_sympy(self):
+        """Return a `sympy` representation of the object."""
+
+        if not HAS_SYMPY:
+            raise ValueError(f"{self.__class__.__name__}.{__name__} requires sympy.")
+
+        # Convert the arguments to `sympy` objects
+        args = [arg.as_sympy() if isinstance(arg, Base) else arg for arg in self.args]
+
+        # Return the sum
+        return sympy.Add(*args)
+
     def __repr__(self):
         """Return the representation of the object."""
         atoms = []
@@ -501,6 +519,18 @@ class Mul(Algebraic):
             )
 
         return graph
+
+    def as_sympy(self):
+        """Return a `sympy` representation of the object."""
+
+        if not HAS_SYMPY:
+            raise ValueError(f"{self.__class__.__name__}.{__name__} requires sympy.")
+
+        # Convert the arguments to `sympy` objects
+        args = [arg.as_sympy() if isinstance(arg, Base) else arg for arg in self.args]
+
+        # Return the product
+        return sympy.Mul(*args)
 
     def __repr__(self):
         """Return the representation of the object."""
