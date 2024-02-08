@@ -90,7 +90,7 @@ def factorisation_candidates(expr, best=False):
             yield expr
 
 
-def intermediate_candidates(expr, best=False):
+def intermediate_candidates(expr, index_groups, best=False):
     """
     Search the expression for candidates for intermediate tensors.
 
@@ -108,6 +108,9 @@ def intermediate_candidates(expr, best=False):
     ----------
     expr : Algebraic
         The expression.
+    index_groups : iterable of iterable
+        The groups of indices. Indices in the same group are assumed
+        to correspond to the same sector.
     best : bool, optional
         If `True`, only the best candidate is returned for each
         applicable pattern identified in the tree. If `False`, all
@@ -124,7 +127,11 @@ def intermediate_candidates(expr, best=False):
     # Get the tree
     tree = expr.as_tree()
 
+    # Get a dictionary mapping indices to their groups
+    index_to_group = {idx: i for i, group in enumerate(index_groups) for idx in group}
+
     # Breadth-first search for Mul(Add(...), ...) patterns
+    print(tree)
     for node in tree.bfs():
         if not isinstance(node.data[0], Add):
             continue
@@ -132,7 +139,6 @@ def intermediate_candidates(expr, best=False):
         # Count the patterns
         patterns = defaultdict(set)
         indexed_to_reindexed = {}
-        reindexed_to_indexed = defaultdict(list)
         for i, child in enumerate(node.children):
             if not isinstance(child.data[0], Mul):
                 continue
@@ -144,12 +150,17 @@ def intermediate_candidates(expr, best=False):
                     # Get the position of the dummy indices in this
                     # argument. Make a record for these for later
                     new_arg = arg.map_indices(
-                        {idx: i for i, idx in enumerate(arg.external_indices)}
+                        {
+                            idx: (i, index_to_group[idx])
+                            for i, idx in enumerate(arg.external_indices)
+                        }
                     )
                     indexed_to_reindexed[arg] = new_arg
-                    reindexed_to_indexed[new_arg].append(arg)
                     arg = new_arg
                 patterns[arg].add(i)
+        print("Patterns")
+        print(patterns)
+        print()
 
         # Skip if no patterns
         if not patterns:
@@ -157,7 +168,7 @@ def intermediate_candidates(expr, best=False):
 
         # For indices spanned by the patterns, find the contracted
         # indices in all possible combinations of the children
-        contraction_counts = defaultdict(int)
+        contraction_counts = defaultdict(list)
         for child in node.children:
             if not isinstance(child.data[0], Mul):
                 continue
@@ -189,7 +200,9 @@ def intermediate_candidates(expr, best=False):
                     # to know when contractions are equivalent within
                     # transposition
                     key_args = tuple(indexed_to_reindexed[arg] for arg in arg_subset)
-                    contraction_counts[key_args, dummy_positions] += 1
+                    contraction_counts[key_args, dummy_positions].append(arg_subset)
+        print("Contraction counts")
+        print(contraction_counts)
 
         # Skip if no patterns
         if not contraction_counts:
@@ -200,38 +213,40 @@ def intermediate_candidates(expr, best=False):
         if not best:
             (reargs, dummy_positions), count = max(
                 contraction_counts.items(),
-                key=lambda x: (len(x[0]), x[1]),
+                key=lambda x: (len(x[0]), len(x[1])),
             )
             items = [((reargs, dummy_positions), count)]
         else:
             items = sorted(
                 contraction_counts.items(),
-                key=lambda x: (len(x[0]), x[1]),
+                key=lambda x: (len(x[0]), len(x[1])),
                 reverse=True,
             )
 
         # If the best pattern is not repeated, skip
-        if items[0][1] < 2:
+        if len(items[0][1]) < 2:
             continue
 
         # For each pattern, construct the replacement and intermediates
-        for (reargs, dummy_positions), count in items:
+        for (reargs, dummy_positions), arg_subsets in items:
+            print()
             print(reargs)
             print(dummy_positions)
+            print(arg_subsets)
             # Initialise intermediate list
             intermediates = []
 
             # Get the indices and args
             indices = set.union(*(patterns[arg] for arg in reargs))
-            args = tuple(reindexed_to_indexed[arg] for arg in reargs)
+            #args = tuple(reindexed_to_indexed[arg] for arg in reargs)  # FIXME
 
             # Get the intermediate
             external_indices = [
                 [
-                    [idx for i, idx in enumerate(arg[j].indices) if i not in dummies]
-                    for arg, dummies in zip(args, dummy_positions)
+                    [idx for i, idx in enumerate(arg.indices) if i not in dummies]
+                    for arg, dummies in zip(arg_subset, dummy_positions)
                 ]
-                for j in range(len(indices))
+                for arg_subset in arg_subsets
             ]
             external_indices = [tuple(sum(indices, [])) for indices in external_indices]
             # TODO determine symmetry
@@ -291,7 +306,7 @@ def intermediate_candidates(expr, best=False):
             yield expr, intermediates
 
 
-def _cse_brute(*exprs, cost_fn, sizes):
+def _cse_brute(*exprs, index_groups, cost_fn, sizes):
     """Brute force approach to common subexpression elimination.
     """
 
@@ -304,7 +319,7 @@ def _cse_brute(*exprs, cost_fn, sizes):
         # Loop over the expressions
         for i, expr_i in enumerate(exprs):
             # Find the factorisation candidates
-            for candidate_expr, intermediates_i in intermediate_candidates(expr_i):
+            for candidate_expr, intermediates_i in intermediate_candidates(expr_i, index_groups):
                 # Get a list of the candidate expressions
                 candidate_exprs = [None] * len(exprs)
                 candidate_exprs[i] = candidate_expr
@@ -391,6 +406,7 @@ def get_cost_function(cost_fn, memory_fn, sizes=None, memory_limit=None, prefer_
 
 def cse(
     *exprs,
+    index_groups=None,
     method="brute",
     cost_fn=count_flops,
     memory_fn=memory_cost,
@@ -408,6 +424,9 @@ def cse(
         A series of expressions to be optimized. For each element, the
         first element of the tuple is the output tensor, and the second
         element is the algebraic expression.
+    index_groups : iterable of iterable
+        The groups of indices. Indices in the same group are assumed
+        to correspond to the same sector.
     method : str, optional
         The method to use for finding parenthesising candidates. The
         available methods are {`"brute"`, `"greedy"`, `"branch"`}.
@@ -439,6 +458,10 @@ def cse(
         The intermediate tensors and their expressions.
     """
 
+    # Check the inputs
+    if index_groups is None:
+        raise ValueError("Index groups must be provided.")
+
     # Get the cost function
     cost = get_cost_function(
         cost_fn,
@@ -455,6 +478,6 @@ def cse(
         raise ValueError(f"Unknown method '{method}'.")
 
     # Perform the CSE
-    exprs, intermediates = _cse(*exprs, cost_fn=cost, sizes=sizes)
+    exprs, intermediates = _cse(*exprs, index_groups=index_groups, cost_fn=cost, sizes=sizes)
 
     return exprs, intermediates
