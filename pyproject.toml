@@ -44,6 +44,11 @@ dev = [
     "pytest>=6.2.4",
     "pytest-cov>=4.0.0",
 ]
+cse = [
+    "sympy>=1.9",
+    "drudge@git+https://github.com/tschijnmo/drudge.git@master",
+    "gristmill@git+https://github.com/tschijnmo/gristmill.git@master",
+]
 
 [tool.black]
 line-length = 100
