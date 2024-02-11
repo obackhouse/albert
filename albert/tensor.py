@@ -3,15 +3,9 @@
 
 from numbers import Number
 
+from albert import check_dependency, sympy
 from albert.algebra import Add, Mul
 from albert.base import Base
-
-try:
-    import sympy
-
-    HAS_SYMPY = True
-except ImportError:
-    HAS_SYMPY = False
 
 
 def defer_to_algebra(method):
@@ -57,11 +51,9 @@ class Symbol:
         """Return a hashable representation of the object."""
         return (self.name, self.symmetry.hashable() if self.symmetry else None)
 
+    @check_dependency(sympy)
     def as_sympy(self):
         """Return a sympy representation of the object."""
-
-        if not HAS_SYMPY:
-            raise ValueError(f"`{self.__class__.__name__}.as_sympy` requires sympy.")
 
         return sympy.IndexedBase(self.name)
 
@@ -161,11 +153,9 @@ class Tensor(Base):
         """Return a symbol for the object."""
         return Symbol(self.name, symmetry=self.symmetry)
 
+    @check_dependency(sympy)
     def as_sympy(self):
         """Return a sympy representation of the object."""
-
-        if not HAS_SYMPY:
-            raise ValueError(f"`{self.__class__.__name__}.as_sympy` requires sympy.")
 
         indices = tuple(sympy.Symbol(str(index)) for index in self.indices)
         symbol = self.as_symbol().as_sympy()

@@ -1,41 +1,12 @@
 """Interface to `gristmill`.
 """
 
-try:
-    from pyspark import SparkConf, SparkContext
-
-    SPARK_CONF = SparkConf().setAppName("albert")
-    SPARK_CTX = SparkContext(conf=SPARK_CONF)
-    SPARK_CTX.setLogLevel("ERROR")
-    HAS_SPARK = True
-except ImportError:
-    HAS_SPARK = False
-
-try:
-    import sympy
-
-    HAS_SYMPY = True
-except ImportError:
-    HAS_SYMPY = False
-
-try:
-    import drudge
-
-    HAS_DRUDGE = True
-except ImportError:
-    HAS_DRUDGE = False
-
-try:
-    import gristmill
-
-    HAS_GRISTMILL = True
-except ImportError:
-    HAS_GRISTMILL = False
-
+from albert import SPARK_CONTEXT, check_dependency, drudge, gristmill, pyspark, sympy
 from albert.algebra import Mul
 from albert.tensor import Symbol, Tensor
 
 
+@check_dependency(pyspark, sympy, drudge, gristmill)
 def optimise(
     *outputs_and_exprs, index_groups=None, sizes=None, strategy="exhaust", **gristmill_kwargs
 ):
@@ -70,18 +41,8 @@ def optimise(
     if index_groups is None:
         raise ValueError("`index_groups` must be provided")
 
-    # Check for dependencies
-    if not HAS_SYMPY:
-        raise ValueError("`optimise` requires sympy")
-    if not HAS_SPARK:
-        raise ValueError("`optimise` requires pyspark")
-    if not HAS_DRUDGE:
-        raise ValueError("`optimise` requires drudge")
-    if not HAS_GRISTMILL:
-        raise ValueError("`optimise` requires gristmill")
-
     # Get the drudge
-    dr = drudge.Drudge(SPARK_CTX)
+    dr = drudge.Drudge(SPARK_CONTEXT)
 
     # Get some convenience dictionaries
     index_to_group = {str(idx): i for i, group in enumerate(index_groups) for idx in group}

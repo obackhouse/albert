@@ -9,16 +9,9 @@ from numbers import Number
 
 import networkx as nx
 
-from albert import config
+from albert import check_dependency, config, sympy
 from albert.base import Base
 from albert.tree import Tree
-
-try:
-    import sympy
-
-    HAS_SYMPY = True
-except ImportError:
-    HAS_SYMPY = False
 
 
 class Algebraic(Base):
@@ -310,11 +303,9 @@ class Add(Algebraic):
 
         return self.copy(*args)
 
+    @check_dependency(sympy)
     def as_sympy(self):
         """Return a `sympy` representation of the object."""
-
-        if not HAS_SYMPY:
-            raise ValueError(f"`{self.__class__.__name__}.as_sympy` requires sympy.")
 
         # Convert the arguments to `sympy` objects
         args = [arg.as_sympy() if isinstance(arg, Base) else arg for arg in self.args]
@@ -521,11 +512,9 @@ class Mul(Algebraic):
 
         return graph
 
+    @check_dependency(sympy)
     def as_sympy(self):
         """Return a `sympy` representation of the object."""
-
-        if not HAS_SYMPY:
-            raise ValueError(f"`{self.__class__.__name__}.as_sympy` requires sympy.")
 
         # Convert the arguments to `sympy` objects
         args = [arg.as_sympy() if isinstance(arg, Base) else arg for arg in self.args]
