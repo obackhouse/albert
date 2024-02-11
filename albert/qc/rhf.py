@@ -1,4 +1,4 @@
-"""Expressions for restricted Hartree--Fock bases.
+"""Expressions for restricted bases.
 """
 
 from albert.symmetry import Permutation, Symmetry

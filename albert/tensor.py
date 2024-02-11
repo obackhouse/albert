@@ -51,7 +51,7 @@ class Symbol:
         """Return a hashable representation of the object."""
         return (self.name, self.symmetry.hashable() if self.symmetry else None)
 
-    @check_dependency(sympy)
+    @check_dependency("sympy")
     def as_sympy(self):
         """Return a sympy representation of the object."""
 
@@ -153,7 +153,7 @@ class Tensor(Base):
         """Return a symbol for the object."""
         return Symbol(self.name, symmetry=self.symmetry)
 
-    @check_dependency(sympy)
+    @check_dependency("sympy")
     def as_sympy(self):
         """Return a sympy representation of the object."""
 

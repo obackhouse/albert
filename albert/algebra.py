@@ -303,7 +303,7 @@ class Add(Algebraic):
 
         return self.copy(*args)
 
-    @check_dependency(sympy)
+    @check_dependency("sympy")
     def as_sympy(self):
         """Return a `sympy` representation of the object."""
 
@@ -512,7 +512,7 @@ class Mul(Algebraic):
 
         return graph
 
-    @check_dependency(sympy)
+    @check_dependency("sympy")
     def as_sympy(self):
         """Return a `sympy` representation of the object."""
 

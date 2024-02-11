@@ -1,6 +1,7 @@
-"""Expressions for generalised Hartree--Fock bases.
+"""Expressions for generalised bases.
 """
 
+from albert.qc import uhf
 from albert.qc.rhf import Fock  # noqa: F401
 from albert.symmetry import Permutation, Symmetry
 from albert.tensor import Symbol

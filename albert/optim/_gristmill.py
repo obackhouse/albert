@@ -6,7 +6,7 @@ from albert.algebra import Mul
 from albert.tensor import Symbol, Tensor
 
 
-@check_dependency(pyspark, sympy, drudge, gristmill)
+@check_dependency("pyspark", "sympy", "drudge", "gristmill")
 def optimise(
     *outputs_and_exprs, index_groups=None, sizes=None, strategy="exhaust", **gristmill_kwargs
 ):

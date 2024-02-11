@@ -39,13 +39,21 @@ except:
     gristmill = None
 
 
+_dependencies = {
+    "pyspark": pyspark,
+    "sympy": sympy,
+    "drudge": drudge,
+    "gristmill": gristmill,
+}
+
+
 def check_dependency(*deps):
     """Decorator to check for a dependency before running a function."""
 
     def decorator(func):
         def wrapper(*args, **kwargs):
             for dep in deps:
-                if dep is None:
+                if _dependencies[dep] is None:
                     raise ImportError(f"Function `{func.__name__}` requires `{dep}`")
             return func(*args, **kwargs)
 
