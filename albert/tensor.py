@@ -8,6 +8,7 @@ from albert.base import Base
 
 try:
     import sympy
+
     HAS_SYMPY = True
 except ImportError:
     HAS_SYMPY = False
@@ -166,7 +167,7 @@ class Tensor(Base):
         if not HAS_SYMPY:
             raise ValueError(f"`{self.__class__.__name__}.as_sympy` requires sympy.")
 
-        indices = tuple(sympy.Idx(str(index)) for index in self.indices)
+        indices = tuple(sympy.Symbol(str(index)) for index in self.indices)
         symbol = self.as_symbol().as_sympy()
 
         return symbol[indices]

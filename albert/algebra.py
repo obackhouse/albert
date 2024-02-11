@@ -15,6 +15,7 @@ from albert.tree import Tree
 
 try:
     import sympy
+
     HAS_SYMPY = True
 except ImportError:
     HAS_SYMPY = False
