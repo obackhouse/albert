@@ -1,9 +1,26 @@
 """Expressions for unrestricted bases.
 """
 
-from albert.qc.rhf import Fock, _make_symmetry  # noqa: F401
+from albert.qc.rhf import _make_symmetry
 from albert.symmetry import Permutations, Symmetry
 from albert.tensor import Symbol
+
+
+class Hamiltonian1e(Symbol):
+    """Constructor for one-electron Hamiltonian-like symbols."""
+
+    DESIRED_RANK = 2
+
+    def __init__(self, name):
+        """Initialise the object."""
+        self.name = name
+        self.symmetry = _make_symmetry(
+            (0, 1),
+            (1, 0),
+        )
+
+
+Fock = Hamiltonian1e("f")
 
 
 class Hamiltonian2e(Symbol):

@@ -1,8 +1,7 @@
 """Expressions for generalised bases.
 """
 
-from albert.qc import uhf
-from albert.qc.rhf import Fock  # noqa: F401
+from albert.qc.rhf import _make_symmetry
 from albert.symmetry import Permutation, Symmetry
 from albert.tensor import Symbol
 
@@ -40,6 +39,30 @@ def antisymmetric_permutations(n):
         Permutation(item, -1 if i % 2 else 1)
         for i, item in enumerate(_permutations(list(range(n))))
     ]
+
+
+class Hamiltonian1e(Symbol):
+    """Constructor for one-electron Hamiltonian-like symbols."""
+
+    DESIRED_RANK = 2
+
+    def __init__(self, name):
+        """Initialise the object."""
+        self.name = name
+        self.symmetry = _make_symmetry(
+            (0, 1),
+            (1, 0),
+        )
+
+    def get_as_uhf(self, *indices):
+        """Get the corresponding tensor for an unrestricted basis."""
+        indices_α = tuple((idx, "α") for idx in indices)
+        indices_β = tuple((idx, "β") for idx in indices)
+        uhf_symbol = getattr(uhf, self.__class__.__name__)
+        return uhf_symbol[indices_α] + uhf_symbol[indices_β]
+
+
+Fock = Hamiltonian1e("f")
 
 
 class Hamiltonian2e(Symbol):
