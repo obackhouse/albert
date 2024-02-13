@@ -1,9 +1,40 @@
 """Expressions for generalised bases.
 """
 
+import itertools
+
+from albert.qc import uhf
 from albert.qc.rhf import _make_symmetry
 from albert.symmetry import Permutation, Symmetry
-from albert.tensor import Symbol
+from albert.tensor import Symbol, Tensor
+
+_as_uhf = {}
+
+
+class GHFTensor(Tensor):
+    """Tensor subclass for generalised bases."""
+
+    def as_uhf(self):
+        """Return an unrestricted representation of the object."""
+        symbol = self.as_symbol()
+        if symbol not in _as_uhf:
+            raise NotImplementedError(
+                f"Conversion of `{symbol.__class__.__name__}` from generalised to "
+                "unrestricted is not implemented."
+            )
+        return _as_uhf[symbol](self)
+
+
+class GHFSymbol(Symbol):
+    """Symbol subclass for generalised bases."""
+
+    Tensor = GHFTensor
+
+    def __getitem__(self, indices):
+        """Return a tensor."""
+        tensor = super().__getitem__(indices)
+        tensor._symbol = self
+        return tensor
 
 
 def antisymmetric_permutations(n):
@@ -41,7 +72,7 @@ def antisymmetric_permutations(n):
     ]
 
 
-class Hamiltonian1e(Symbol):
+class Hamiltonian1e(GHFSymbol):
     """Constructor for one-electron Hamiltonian-like symbols."""
 
     DESIRED_RANK = 2
@@ -54,19 +85,28 @@ class Hamiltonian1e(Symbol):
             (1, 0),
         )
 
-    def get_as_uhf(self, *indices):
-        """Get the corresponding tensor for an unrestricted basis."""
-        indices_α = tuple((idx, "α") for idx in indices)
-        indices_β = tuple((idx, "β") for idx in indices)
-        uhf_symbol = getattr(uhf, self.__class__.__name__)
-        return uhf_symbol[indices_α] + uhf_symbol[indices_β]
-
 
 Fock = Hamiltonian1e("f")
 
 
-class Hamiltonian2e(Symbol):
-    """Constructor for two-electron Hamiltonian-like symbols."""
+def _Fock_as_uhf(tensor):
+    """
+    Convert a `Fock`-derived tensor object from generalised to
+    unrestricted.
+    """
+    indices_α = ((tensor.indices[0], "α"), (tensor.indices[1], "α"))
+    indices_β = ((tensor.indices[0], "β"), (tensor.indices[1], "β"))
+    return (uhf.Fock[indices_α], uhf.Fock[indices_β])
+
+
+_as_uhf[Fock] = _Fock_as_uhf
+
+
+class Hamiltonian2e(GHFSymbol):
+    """
+    Constructor for antisymmetric two-electron Hamiltonian-like
+    symbols.
+    """
 
     DESIRED_RANK = 4
 
@@ -89,7 +129,39 @@ class Hamiltonian2e(Symbol):
 ERI = Hamiltonian2e("v")
 
 
-class FermionicAmplitude(Symbol):
+def _ERI_as_uhf(tensor):
+    """
+    Convert a `ERI`-derived tensor object from generalised to
+    unrestricted.
+
+    Note: The result is in the chemist's notation.
+    """
+
+    uhf_tensor = []
+    indices_bare = tensor.indices
+    for spins, direct, exchange in [
+        ("αααα", True, True),
+        ("ββββ", True, True),
+        ("αβαβ", True, False),
+        ("βαβα", True, False),
+        ("αββα", False, True),
+        ("βααβ", False, True),
+    ]:
+        indices = tuple((index, spin) for index, spin in zip(indices_bare, spins))
+
+        if direct:
+            uhf_tensor.append(uhf.ERI[indices[0], indices[2], indices[1], indices[3]])
+
+        if exchange:
+            uhf_tensor.append(-uhf.ERI[indices[0], indices[3], indices[1], indices[2]])
+
+    return tuple(uhf_tensor)
+
+
+_as_uhf[ERI] = _ERI_as_uhf
+
+
+class FermionicAmplitude(GHFSymbol):
     """Constructor for amplitude symbols."""
 
     def __init__(self, name, num_covariant, num_contravariant):
@@ -106,3 +178,40 @@ class FermionicAmplitude(Symbol):
 T1 = FermionicAmplitude("t1", 1, 1)
 T2 = FermionicAmplitude("t2", 2, 2)
 T3 = FermionicAmplitude("t3", 3, 3)
+
+
+def _gen_Tn_as_uhf(n, Tn_uhf):
+    """
+    Generate a function to convert a `T1`-derived tensor object from
+    generalised to unrestricted.
+    """
+
+    def _Tn_as_uhf(tensor):
+        """
+        Convert a `T1`-derived tensor object from generalised to
+        unrestricted.
+        """
+
+        uhf_tensor = []
+        for covariant in itertools.product("αβ", repeat=n):
+            for contravariant in set(itertools.permutations(covariant)):
+                # Get the UHF tensor part
+                spins = tuple(covariant) + tuple(contravariant)
+                indices = tuple((index, spin) for index, spin in zip(tensor.indices, spins))
+                uhf_tensor_part = Tn_uhf[indices]
+
+                # Expand antisymmetry where spin allows
+                for perm in antisymmetric_permutations(n):
+                    full_perm = Permutation(range(n), 1) + perm
+                    spins_perm = tuple(spins[i] for i in full_perm.permutation)
+                    if spins == spins_perm:
+                        uhf_tensor.append(uhf_tensor_part.permute_indices(full_perm))
+
+        return tuple(uhf_tensor)
+
+    return _Tn_as_uhf
+
+
+_as_uhf[T1] = _gen_Tn_as_uhf(1, uhf.T1)
+_as_uhf[T2] = _gen_Tn_as_uhf(2, uhf.T2)
+_as_uhf[T3] = _gen_Tn_as_uhf(3, uhf.T3)

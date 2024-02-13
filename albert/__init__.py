@@ -18,24 +18,24 @@ try:
     SPARK_CONF = SparkConf().setAppName("albert").setMaster("local")
     SPARK_CONTEXT = SparkContext(conf=SPARK_CONF)
     SPARK_CONTEXT.setLogLevel("ERROR")
-except:
+except ImportError:
     pyspark = None
     SPARK_CONF = None
     SPARK_CONTEXT = None
 
 try:
     import sympy
-except:
+except ImportError:
     sympy = None
 
 try:
     import drudge
-except:
+except ImportError:
     drudge = None
 
 try:
     import gristmill
-except:
+except ImportError:
     gristmill = None
 
 
@@ -48,7 +48,10 @@ _dependencies = {
 
 
 def check_dependency(*deps):
-    """Decorator to check for a dependency before running a function."""
+    """
+    Decorate a function to check for a dependency before running a
+    function.
+    """
 
     def decorator(func):
         def wrapper(*args, **kwargs):

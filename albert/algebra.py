@@ -64,6 +64,10 @@ class Algebraic(Base):
         """Multiply two tensors."""
         return Mul(other, self)
 
+    def __neg__(self):
+        """Negate the tensor."""
+        return -1 * self
+
     def copy(self, *args):
         """Copy the object."""
         if not args:
@@ -76,6 +80,15 @@ class Algebraic(Base):
         for arg in self.args:
             if not isinstance(arg, Number):
                 arg = arg.map_indices(mapping)
+            args.append(arg)
+        return self.copy(*args)
+
+    def permute_indices(self, permutation):
+        """Permute the indices of the object."""
+        args = []
+        for arg in self.args:
+            if not isinstance(arg, Number):
+                arg = arg.permute_indices(permutation)
             args.append(arg)
         return self.copy(*args)
 
@@ -313,6 +326,43 @@ class Add(Algebraic):
         # Return the sum
         return sympy.Add(*args)
 
+    def as_uhf(self):
+        """
+        Recursively convert any GHF tensors to UHF tensors.
+
+        Returns
+        -------
+        uhf : Tensor
+            The UHF representation of the object.
+        """
+
+        # Get the UHF representation of the arguments
+        for arg in self.args:
+            arg.as_uhf()
+        args = [arg.as_uhf() if isinstance(arg, Base) else arg for arg in self.args]
+
+        # Get the external indices
+        external_indices = None
+        for arg in args:
+            if isinstance(arg, tuple):
+                external_indices = [spin_arg.external_indices for spin_arg in arg]
+                break
+
+        # If there are no spin tuples, return the tensor
+        if external_indices is None:
+            return self.copy(*args)
+
+        # Split into spin permutations
+        tensors = defaultdict(int)
+        for arg in args:
+            for spin_arg in arg:
+                tensors[spin_arg.external_indices] += spin_arg
+
+        # Build the parts
+        parts = tuple(tensors.values())
+
+        return parts
+
     def __repr__(self):
         """Return the representation of the object."""
         atoms = []
@@ -521,6 +571,40 @@ class Mul(Algebraic):
 
         # Return the product
         return sympy.Mul(*args)
+
+    def as_uhf(self):
+        """
+        Recursively convert any GHF tensors to UHF tensors.
+
+        Returns
+        -------
+        uhf : Tensor
+            The UHF representation of the object.
+        """
+
+        # Get the UHF representation of the arguments
+        args = [arg.as_uhf() if isinstance(arg, Base) else arg for arg in self.args]
+
+        # Split into spin permutations
+        parts = []
+        for mul_args in itertools.product(
+            *[arg if isinstance(arg, tuple) else (arg,) for arg in args]
+        ):
+            # Check the index spins
+            index_spins = {}
+            arg_indices = sum(
+                [list(arg.external_indices) for arg in mul_args if isinstance(arg, Base)],
+                [],
+            )
+            for index, spin in arg_indices:
+                if index_spins.get(index, spin) != spin:
+                    break
+                index_spins[index] = spin
+            else:
+                # If the index spins are consistent, add the tensor
+                parts.append(self.copy(*mul_args))
+
+        return tuple(parts)
 
     def __repr__(self):
         """Return the representation of the object."""

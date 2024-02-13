@@ -14,9 +14,7 @@ class Permutation(Base):
 
     def __call__(self, tensor):
         """Apply the permutation to the tensor."""
-        indices = tensor.external_indices
-        permuted_indices = [indices[i] for i in self.permutation]
-        return tensor.map_indices(dict(zip(indices, permuted_indices)))
+        return tensor.permute_indices(self)
 
     def hashable(self):
         """Return a hashable representation of the object."""
@@ -27,6 +25,10 @@ class Permutation(Base):
         perm = self.permutation + tuple(p + len(self.permutation) for p in other.permutation)
         sign = self.sign * other.sign
         return Permutation(perm, sign)
+
+    def __repr__(self):
+        """Return a string representation of the object."""
+        return f"Permutation({self.permutation}, {self.sign})"
 
 
 class Symmetry(Base):

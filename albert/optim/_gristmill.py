@@ -1,7 +1,7 @@
 """Interface to `gristmill`.
 """
 
-from albert import SPARK_CONTEXT, check_dependency, drudge, gristmill, pyspark, sympy
+from albert import SPARK_CONTEXT, check_dependency, drudge, gristmill, sympy
 from albert.algebra import Mul
 from albert.tensor import Symbol, Tensor
 

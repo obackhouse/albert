@@ -6,6 +6,7 @@ from numbers import Number
 from albert import check_dependency, sympy
 from albert.algebra import Add, Mul
 from albert.base import Base
+from albert.symmetry import Permutation
 
 
 def defer_to_algebra(method):
@@ -23,49 +24,6 @@ def defer_to_algebra(method):
     return wrapper
 
 
-class Symbol:
-    """Constructor for tensors."""
-
-    DESIRED_RANK = None
-
-    def __init__(self, name, symmetry=None):
-        """Initialise the object."""
-        self.name = name
-        self.symmetry = symmetry
-
-    def __getitem__(self, indices):
-        """Return a tensor."""
-        if isinstance(indices, str) and len(indices) == self.DESIRED_RANK:
-            indices = tuple(indices)
-        elif not isinstance(indices, tuple):
-            indices = (indices,)
-        if self.DESIRED_RANK is not None:
-            if len(indices) != self.DESIRED_RANK:
-                raise ValueError(
-                    f"{self.__class__.__name__} expected {self.DESIRED_RANK} indices, "
-                    f"got {len(indices)}."
-                )
-        return Tensor(*indices, name=self.name, symmetry=self.symmetry)
-
-    def hashable(self):
-        """Return a hashable representation of the object."""
-        return (self.name, self.symmetry.hashable() if self.symmetry else None)
-
-    @check_dependency("sympy")
-    def as_sympy(self):
-        """Return a sympy representation of the object."""
-
-        return sympy.IndexedBase(self.name)
-
-    def __hash__(self):
-        """Return a hash of the object."""
-        return hash(self.hashable())
-
-    def __repr__(self):
-        """Return the representation of the object."""
-        return self.name
-
-
 class Tensor(Base):
     """Base class for tensors."""
 
@@ -74,6 +32,7 @@ class Tensor(Base):
         self.indices = indices
         self.name = name
         self.symmetry = symmetry
+        self._symbol = None
 
     def __repr__(self):
         """Return the representation of the object."""
@@ -118,12 +77,24 @@ class Tensor(Base):
             name = self.name
         if not symmetry:
             symmetry = self.symmetry
-        return Tensor(*indices, name=name, symmetry=symmetry)
+        tensor = self.__class__(*indices, name=name, symmetry=symmetry)
+        tensor._symbol = self._symbol
+        return tensor
 
     def map_indices(self, mapping):
         """Map the indices of the object."""
         indices = [mapping.get(index, index) for index in self.indices]
         return self.copy(*indices)
+
+    def permute_indices(self, permutation):
+        """Permute the indices of the object."""
+        if isinstance(permutation, Permutation):
+            factor = permutation.sign
+            permutation = permutation.permutation
+        else:
+            factor = 1
+        indices = [self.indices[i] for i in permutation]
+        return self.copy(*indices) * factor
 
     def hashable(self):
         """Return a hashable representation of the object."""
@@ -151,7 +122,10 @@ class Tensor(Base):
 
     def as_symbol(self):
         """Return a symbol for the object."""
-        return Symbol(self.name, symmetry=self.symmetry)
+        if self._symbol is None:
+            return Symbol(self.name, symmetry=self.symmetry)
+        else:
+            return self._symbol
 
     @check_dependency("sympy")
     def as_sympy(self):
@@ -196,3 +170,51 @@ class Tensor(Base):
     def __rmul__(self, other):
         """Multiply two tensors."""
         return Mul(other, self)
+
+    def __neg__(self):
+        """Negate the tensor."""
+        return -1 * self
+
+
+class Symbol:
+    """Constructor for tensors."""
+
+    DESIRED_RANK = None
+    Tensor = Tensor
+
+    def __init__(self, name, symmetry=None):
+        """Initialise the object."""
+        self.name = name
+        self.symmetry = symmetry
+
+    def __getitem__(self, indices):
+        """Return a tensor."""
+        if isinstance(indices, str) and len(indices) == self.DESIRED_RANK:
+            indices = tuple(indices)
+        elif not isinstance(indices, tuple):
+            indices = (indices,)
+        if self.DESIRED_RANK is not None:
+            if len(indices) != self.DESIRED_RANK:
+                raise ValueError(
+                    f"{self.__class__.__name__} expected {self.DESIRED_RANK} indices, "
+                    f"got {len(indices)}."
+                )
+        return self.Tensor(*indices, name=self.name, symmetry=self.symmetry)
+
+    def hashable(self):
+        """Return a hashable representation of the object."""
+        return (self.name, self.symmetry.hashable() if self.symmetry else None)
+
+    @check_dependency("sympy")
+    def as_sympy(self):
+        """Return a sympy representation of the object."""
+
+        return sympy.IndexedBase(self.name)
+
+    def __hash__(self):
+        """Return a hash of the object."""
+        return hash(self.hashable())
+
+    def __repr__(self):
+        """Return the representation of the object."""
+        return self.name

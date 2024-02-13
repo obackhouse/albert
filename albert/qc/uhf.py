@@ -2,11 +2,30 @@
 """
 
 from albert.qc.rhf import _make_symmetry
-from albert.symmetry import Permutations, Symmetry
-from albert.tensor import Symbol
+from albert.tensor import Symbol, Tensor
 
 
-class Hamiltonian1e(Symbol):
+class UHFTensor(Tensor):
+    """Tensor subclass for unrestricted bases."""
+
+    def as_uhf(self):
+        """Return an unrestricted representation of the object."""
+        return self
+
+
+class UHFSymbol(Symbol):
+    """Symbol subclass for unrestricted bases."""
+
+    Tensor = UHFTensor
+
+    def __getitem__(self, indices):
+        """Return a tensor."""
+        tensor = super().__getitem__(indices)
+        tensor._symbol = self
+        return tensor
+
+
+class Hamiltonian1e(UHFSymbol):
     """Constructor for one-electron Hamiltonian-like symbols."""
 
     DESIRED_RANK = 2
@@ -23,7 +42,7 @@ class Hamiltonian1e(Symbol):
 Fock = Hamiltonian1e("f")
 
 
-class Hamiltonian2e(Symbol):
+class Hamiltonian2e(UHFSymbol):
     """Constructor for two-electron Hamiltonian-like symbols."""
 
     DESIRED_RANK = 4
@@ -43,7 +62,7 @@ class Hamiltonian2e(Symbol):
 ERI = Hamiltonian2e("v")
 
 
-class FermionicAmplitude(Symbol):
+class FermionicAmplitude(UHFSymbol):
     """Constructor for amplitude symbols."""
 
     def __init__(self, name, num_covariant, num_contravariant):
