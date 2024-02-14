@@ -95,6 +95,7 @@ class Algebraic(Base):
     def hashable(self, coefficient=True):
         """Return a hashable representation of the object."""
         return (
+            0,  # penalty
             len(self.args),
             len(self.external_indices),
             self.__class__.__name__,

@@ -99,7 +99,8 @@ class Tensor(Base):
     def hashable(self):
         """Return a hashable representation of the object."""
         return (
-            1,
+            0,  # penalty
+            1,  # size
             self.rank,
             self.__class__.__name__,
             (
