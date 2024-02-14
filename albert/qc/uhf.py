@@ -3,6 +3,7 @@
 
 from albert.qc.rhf import _make_symmetry
 from albert.tensor import Symbol, Tensor
+from albert.symmetry import Permutation, Symmetry, antisymmetric_permutations
 
 
 class UHFTensor(Tensor):
@@ -11,6 +12,25 @@ class UHFTensor(Tensor):
     def as_uhf(self):
         """Return an unrestricted representation of the object."""
         return self
+
+    def as_rhf(self):
+        """Return a restricted representation of the object."""
+        pass
+
+    def hashable(self):
+        """Return a hashable representation of the object."""
+
+        # Get the hashable representation
+        hashable = super().hashable()
+
+        # Add a penalty to prefer alternating spins
+        spins = tuple(spin for index, spin in self.indices)
+        penalty = sum(2 for i, spin in enumerate(spins) if spins[i - 1] == spin)
+        if spins[0] != min(spins):
+            penalty += 1
+        hashable = (penalty,) + hashable[1:]
+
+        return hashable
 
 
 class UHFSymbol(Symbol):
@@ -69,8 +89,11 @@ class FermionicAmplitude(UHFSymbol):
         """Initialise the object."""
         self.name = name
         self.DESIRED_RANK = num_covariant + num_contravariant
-        # FIXME how to generalise?
-        self.symmetry = _make_symmetry(tuple(range(num_covariant + num_contravariant)))
+        perms = []
+        for perm_covariant in antisymmetric_permutations(num_covariant):
+            for perm_contravariant in antisymmetric_permutations(num_contravariant):
+                perms.append(perm_covariant + perm_contravariant)
+        self.symmetry = Symmetry(*perms)
 
 
 T1 = FermionicAmplitude("t1", 1, 1)

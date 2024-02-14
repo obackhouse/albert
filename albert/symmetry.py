@@ -46,3 +46,38 @@ class Symmetry(Base):
     def hashable(self):
         """Return a hashable representation of the object."""
         return tuple(permutation.hashable() for permutation in self.permutations)
+
+
+def antisymmetric_permutations(n):
+    """
+    Return permutations of `n` objects with a sign equal to +1 for an
+    even number of swaps and -1 for an odd number of swaps.
+
+    Parameters
+    ----------
+    n : int
+        Number of objects.
+
+    Returns
+    -------
+    perms : list of Permutation
+        Permutations.
+    """
+
+    def _permutations(seq):
+        if not seq:
+            return [[]]
+
+        items = []
+        for i, item in enumerate(_permutations(seq[:-1])):
+            inds = range(len(item) + 1)
+            if i % 2 == 0:
+                inds = reversed(inds)
+            items += [item[:i] + seq[-1:] + item[i:] for i in inds]
+
+        return items
+
+    return [
+        Permutation(item, -1 if i % 2 else 1)
+        for i, item in enumerate(_permutations(list(range(n))))
+    ]

@@ -5,7 +5,7 @@ import itertools
 
 from albert.qc import uhf
 from albert.qc.rhf import _make_symmetry
-from albert.symmetry import Permutation, Symmetry
+from albert.symmetry import Permutation, Symmetry, antisymmetric_permutations
 from albert.tensor import Symbol, Tensor
 
 _as_uhf = {}
@@ -35,41 +35,6 @@ class GHFSymbol(Symbol):
         tensor = super().__getitem__(indices)
         tensor._symbol = self
         return tensor
-
-
-def antisymmetric_permutations(n):
-    """
-    Return permutations of `n` objects with a sign equal to +1 for an
-    even number of swaps and -1 for an odd number of swaps.
-
-    Parameters
-    ----------
-    n : int
-        Number of objects.
-
-    Returns
-    -------
-    perms : list of Permutation
-        Permutations.
-    """
-
-    def _permutations(seq):
-        if not seq:
-            return [[]]
-
-        items = []
-        for i, item in enumerate(_permutations(seq[:-1])):
-            inds = range(len(item) + 1)
-            if i % 2 == 0:
-                inds = reversed(inds)
-            items += [item[:i] + seq[-1:] + item[i:] for i in inds]
-
-        return items
-
-    return [
-        Permutation(item, -1 if i % 2 else 1)
-        for i, item in enumerate(_permutations(list(range(n))))
-    ]
 
 
 class Hamiltonian1e(GHFSymbol):
