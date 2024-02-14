@@ -4,7 +4,6 @@
 from albert.symmetry import Permutation, Symmetry
 from albert.tensor import Symbol, Tensor
 
-
 _as_rhf = {}
 
 

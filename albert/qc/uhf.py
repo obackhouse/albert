@@ -2,8 +2,8 @@
 """
 
 from albert.qc.rhf import _make_symmetry
+from albert.symmetry import Symmetry, antisymmetric_permutations
 from albert.tensor import Symbol, Tensor
-from albert.symmetry import Permutation, Symmetry, antisymmetric_permutations
 
 
 class UHFTensor(Tensor):
