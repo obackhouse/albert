@@ -56,10 +56,10 @@ def generalised_to_unrestricted(expr):
             # Check that the indices for this permutation have
             # consistent spins
             index_spins = {}
-            for index, spin in itertools.chain(*(arg.external_indices for arg in spin_args_perm)):
-                if index not in index_spins:
-                    index_spins[index] = spin
-                elif index_spins[index] != spin:
+            for index in itertools.chain(*(arg.external_indices for arg in spin_args_perm)):
+                if index.index not in index_spins:
+                    index_spins[index.index] = index.spin
+                elif index_spins[index.index] != index.spin:
                     break
             else:
                 # This contribution is good, add it to the new
@@ -132,6 +132,13 @@ def generalised_to_restricted(expr):
 
     # Convert to unrestricted
     expr_uhf = generalised_to_unrestricted(expr)
+
+    # Partially canonicalise
+    parts = defaultdict(int)
+    for part in expr_uhf:
+        part = sum(Mul(*arg).canonicalise() for arg in part.nested_view())
+        parts[part.external_indices] += part
+    expr_uhf = tuple(parts.values())
 
     # Convert to restricted
     expr_rhf = sum(unrestricted_to_restricted(e) for e in expr_uhf)

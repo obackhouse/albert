@@ -65,8 +65,8 @@ def _Fock_as_uhf(tensor):
     Convert a `Fock`-derived tensor object from generalised to
     unrestricted.
     """
-    indices_α = ((tensor.indices[0], "α"), (tensor.indices[1], "α"))
-    indices_β = ((tensor.indices[0], "β"), (tensor.indices[1], "β"))
+    indices_α = (uhf.SpinIndex(tensor.indices[0], "α"), uhf.SpinIndex(tensor.indices[1], "α"))
+    indices_β = (uhf.SpinIndex(tensor.indices[0], "β"), uhf.SpinIndex(tensor.indices[1], "β"))
     return (uhf.Fock[indices_α], uhf.Fock[indices_β])
 
 
@@ -118,7 +118,7 @@ def _ERI_as_uhf(tensor):
         ("αββα", False, True),
         ("βααβ", False, True),
     ]:
-        indices = tuple((index, spin) for index, spin in zip(indices_bare, spins))
+        indices = tuple(uhf.SpinIndex(index, spin) for index, spin in zip(indices_bare, spins))
 
         if direct:
             uhf_tensor.append(uhf.ERI[indices[0], indices[2], indices[1], indices[3]])
@@ -168,12 +168,14 @@ def _gen_Tn_as_uhf(n, Tn_uhf):
             for contravariant in set(itertools.permutations(covariant)):
                 # Get the UHF tensor part
                 spins = tuple(covariant) + tuple(contravariant)
-                indices = tuple((index, spin) for index, spin in zip(tensor.indices, spins))
+                indices = tuple(
+                    uhf.SpinIndex(index, spin) for index, spin in zip(tensor.indices, spins)
+                )
                 uhf_tensor_part = Tn_uhf[indices]
 
                 # Expand antisymmetry where spin allows
                 for perm in antisymmetric_permutations(n):
-                    full_perm = Permutation(range(n), 1) + perm
+                    full_perm = Permutation(tuple(range(n)), 1) + perm
                     spins_perm = tuple(spins[i] for i in full_perm.permutation)
                     if spins == spins_perm:
                         uhf_tensor.append(uhf_tensor_part.permute_indices(full_perm))

@@ -96,20 +96,26 @@ class Tensor(Base):
         indices = [self.indices[i] for i in permutation]
         return self.copy(*indices) * factor
 
-    def hashable(self):
+    def hashable(self, coefficient=True, penalty_function=None):
         """Return a hashable representation of the object."""
-        return (
-            0,  # penalty
-            1,  # size
+
+        # Get the default penalty function if not given
+        if penalty_function is None:
+            penalty_function = lambda x: 0
+
+        # Get the hashable representation for the tensor
+        hashable = (
+            penalty_function(self),
             self.rank,
             self.__class__.__name__,
-            (
-                (self.name,),
-                self.external_indices,
-                self.dummy_indices,
-                self.symmetry.hashable() if self.symmetry else None,
-            ),
+            1 if coefficient else None,
+            self.name,
+            self.external_indices,
+            self.dummy_indices,
+            self.symmetry.hashable() if self.symmetry else None,
         )
+
+        return (hashable,)
 
     def canonicalise(self):
         """Canonicalise the object."""

@@ -92,19 +92,28 @@ class Algebraic(Base):
             args.append(arg)
         return self.copy(*args)
 
-    def hashable(self, coefficient=True):
+    def hashable(self, coefficient=True, penalty_function=None):
         """Return a hashable representation of the object."""
-        return (
-            0,  # penalty
-            len(self.args),
-            len(self.external_indices),
-            self.__class__.__name__,
-            self.coefficient if coefficient else None,
-            tuple(
-                arg.hashable() if isinstance(arg, Base) else arg
-                for arg in self.without_coefficient().args
-            ),
+
+        # Recursively get the hashable representation
+        hashable = tuple(
+            arg.hashable(penalty_function=penalty_function) if isinstance(arg, Base) else arg
+            for arg in self.without_coefficient().args
         )
+
+        # Add the algebraic information
+        hashable += (self.coefficient if coefficient else None,)
+        hashable += (len(self.external_indices),)
+        hashable += (self.__class__.__name__,)
+
+        # Flatten the tuple
+        hashable = tuple(
+            itertools.chain.from_iterable(
+                (item if isinstance(item, tuple) else (item,)) for item in hashable
+            )
+        )
+
+        return hashable
 
     def canonicalise(self):
         """Canonicalise the object."""
