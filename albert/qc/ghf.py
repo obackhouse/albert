@@ -14,7 +14,7 @@ _as_uhf = {}
 class GHFTensor(Tensor):
     """Tensor subclass for generalised bases."""
 
-    def as_uhf(self):
+    def as_uhf(self, *args, **kwargs):
         """Return an unrestricted representation of the object."""
         symbol = self.as_symbol()
         if symbol not in _as_uhf:
@@ -23,6 +23,12 @@ class GHFTensor(Tensor):
                 "unrestricted is not implemented."
             )
         return _as_uhf[symbol](self)
+
+    def as_rhf(self, *args, **kwargs):
+        """Return a restricted representation of the object."""
+        raise NotImplementedError(
+            "Direct conversion of generalised to restricted is not implemented."
+        )
 
 
 class GHFSymbol(Symbol):
@@ -147,13 +153,13 @@ T3 = FermionicAmplitude("t3", 3, 3)
 
 def _gen_Tn_as_uhf(n, Tn_uhf):
     """
-    Generate a function to convert a `T1`-derived tensor object from
+    Generate a function to convert a `Tn`-derived tensor object from
     generalised to unrestricted.
     """
 
     def _Tn_as_uhf(tensor):
         """
-        Convert a `T1`-derived tensor object from generalised to
+        Convert a `Tn`-derived tensor object from generalised to
         unrestricted.
         """
 

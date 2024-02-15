@@ -121,6 +121,23 @@ class Tensor(Base):
         """Expand the object."""
         return self
 
+    def nested_view(self):
+        """
+        Return a view of the expression, with the parentheses expanded,
+        as a nested list. The first layer is the addition, the second
+        layer is the multiplication, and the third layer are the tensors
+        and scalars.
+
+        This is for compatibility with algebraic expressions, and always
+        simply returns `[[self]]`.
+
+        Returns
+        -------
+        nested : list of list of Tensor
+            The nested view of the expression.
+        """
+        return [[self]]
+
     def as_symbol(self):
         """Return a symbol for the object."""
         if self._symbol is None:

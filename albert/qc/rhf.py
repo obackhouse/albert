@@ -4,8 +4,6 @@
 from albert.symmetry import Permutation, Symmetry
 from albert.tensor import Symbol, Tensor
 
-_as_rhf = {}
-
 
 class RHFTensor(Tensor):
     """Tensor subclass for restricted bases."""
@@ -16,13 +14,7 @@ class RHFTensor(Tensor):
 
     def as_rhf(self):
         """Return a restricted representation of the object."""
-        symbol = self.as_symbol()
-        if symbol not in _as_rhf:
-            raise NotImplementedError(
-                f"Conversion of `{symbol.__class__.__name__}` from unrestricted to "
-                "restricted is not implemented."
-            )
-        return _as_rhf[symbol](self)
+        raise NotImplementedError
 
 
 class RHFSymbol(Symbol):
@@ -59,20 +51,6 @@ class Hamiltonian1e(Symbol):
 Fock = Hamiltonian1e("f")
 
 
-def _Fock_as_rhf(tensor):
-    """
-    Convert a `Fock`-derived tensor object from generalised to
-    unrestricted.
-    """
-    indices = tensor.indices
-    assert all(spin in ("α", "β") for index, spin in indices)
-    indices = tuple(index for index, spin in indices)
-    return Fock[indices]
-
-
-_as_rhf[Fock] = _Fock_as_rhf
-
-
 class Hamiltonian2e(Symbol):
     """Constructor for two-electron Hamiltonian-like symbols."""
 
@@ -95,17 +73,6 @@ class Hamiltonian2e(Symbol):
 
 
 ERI = Hamiltonian2e("v")
-
-
-def _ERI_as_rhf(tensor):
-    """
-    Convert an `ERI`-derived tensor object from generalised to
-    unrestricted.
-    """
-    indices = tensor.indices
-    assert all(spin in ("α", "β") for index, spin in indices)
-    indices = tuple(index for index, spin in indices)
-    return ERI[indices]
 
 
 class FermionicAmplitude(Symbol):
