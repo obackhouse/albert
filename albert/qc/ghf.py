@@ -14,7 +14,7 @@ _as_uhf = {}
 class GHFTensor(Tensor):
     """Tensor subclass for generalised bases."""
 
-    def as_uhf(self, *args, **kwargs):
+    def as_uhf(self, target_restricted=False):
         """Return an unrestricted representation of the object."""
         symbol = self.as_symbol()
         if symbol not in _as_uhf:
@@ -22,9 +22,9 @@ class GHFTensor(Tensor):
                 f"Conversion of `{symbol.__class__.__name__}` from generalised to "
                 "unrestricted is not implemented."
             )
-        return _as_uhf[symbol](self)
+        return _as_uhf[symbol](self, target_restricted=target_restricted)
 
-    def as_rhf(self, *args, **kwargs):
+    def as_rhf(self):
         """Return a restricted representation of the object."""
         raise NotImplementedError(
             "Direct conversion of generalised to restricted is not implemented."
@@ -60,7 +60,7 @@ class Hamiltonian1e(GHFSymbol):
 Fock = Hamiltonian1e("f")
 
 
-def _Fock_as_uhf(tensor):
+def _Fock_as_uhf(tensor, target_restricted=False):
     """
     Convert a `Fock`-derived tensor object from generalised to
     unrestricted.
@@ -100,7 +100,7 @@ class Hamiltonian2e(GHFSymbol):
 ERI = Hamiltonian2e("v")
 
 
-def _ERI_as_uhf(tensor):
+def _ERI_as_uhf(tensor, target_restricted=False):
     """
     Convert a `ERI`-derived tensor object from generalised to
     unrestricted.
@@ -157,7 +157,7 @@ def _gen_Tn_as_uhf(n, Tn_uhf):
     generalised to unrestricted.
     """
 
-    def _Tn_as_uhf(tensor):
+    def _Tn_as_uhf(tensor, target_restricted=False):
         """
         Convert a `Tn`-derived tensor object from generalised to
         unrestricted.
@@ -173,12 +173,15 @@ def _gen_Tn_as_uhf(n, Tn_uhf):
                 )
                 uhf_tensor_part = Tn_uhf[indices]
 
-                # Expand antisymmetry where spin allows
-                for perm in antisymmetric_permutations(n):
-                    full_perm = Permutation(tuple(range(n)), 1) + perm
-                    spins_perm = tuple(spins[i] for i in full_perm.permutation)
-                    if spins == spins_perm:
-                        uhf_tensor.append(uhf_tensor_part.permute_indices(full_perm))
+                if not target_restricted:
+                    # Expand antisymmetry where spin allows
+                    for perm in antisymmetric_permutations(n):
+                        full_perm = Permutation(tuple(range(n)), 1) + perm
+                        spins_perm = tuple(spins[i] for i in full_perm.permutation)
+                        if spins == spins_perm:
+                            uhf_tensor.append(uhf_tensor_part.permute_indices(full_perm))
+                else:
+                    uhf_tensor.append(uhf_tensor_part)
 
         return tuple(uhf_tensor)
 

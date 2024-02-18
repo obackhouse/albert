@@ -11,7 +11,7 @@ from albert.qc.rhf import RHFTensor
 from albert.qc.uhf import UHFTensor
 
 
-def generalised_to_unrestricted(expr):
+def generalised_to_unrestricted(expr, target_restricted=False):
     """
     Convert an expression in a generalised basis to an unrestricted
     basis.
@@ -20,6 +20,10 @@ def generalised_to_unrestricted(expr):
     ----------
     expr : Base
         The expression to convert.
+    target_restricted : bool, optional
+        Whether the function is being called with the intent to convert
+        to restricted, which sometimes requires different behaviour.
+        Default value is `False`.
 
     Returns
     -------
@@ -49,7 +53,7 @@ def generalised_to_unrestricted(expr):
                 )
 
             # Convert to the spin cases
-            spin_args.append(arg.as_uhf())
+            spin_args.append(arg.as_uhf(target_restricted=target_restricted))
 
         # Separate the spin cases
         for spin_args_perm in itertools.product(*spin_args):
@@ -70,7 +74,7 @@ def generalised_to_unrestricted(expr):
     return tuple(new_exprs.values())
 
 
-def unrestricted_to_restricted(expr):
+def _unrestricted_to_restricted(expr):
     """
     Convert an expression in a unrestricted basis to a restricted basis.
 
@@ -131,7 +135,7 @@ def generalised_to_restricted(expr):
     """
 
     # Convert to unrestricted
-    expr_uhf = generalised_to_unrestricted(expr)
+    expr_uhf = generalised_to_unrestricted(expr, target_restricted=True)
 
     # Partially canonicalise
     parts = defaultdict(int)
@@ -141,6 +145,6 @@ def generalised_to_restricted(expr):
     expr_uhf = tuple(parts.values())
 
     # Convert to restricted
-    expr_rhf = sum(unrestricted_to_restricted(e) for e in expr_uhf)
+    expr_rhf = sum(_unrestricted_to_restricted(e) for e in expr_uhf)
 
     return expr_rhf

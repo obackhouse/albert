@@ -42,11 +42,11 @@ class SpinIndex(Base):
 class UHFTensor(Tensor):
     """Tensor subclass for unrestricted bases."""
 
-    def as_uhf(self, *args, **kwargs):
+    def as_uhf(self):
         """Return an unrestricted representation of the object."""
         return self
 
-    def as_rhf(self, *args, **kwargs):
+    def as_rhf(self):
         """Return a restricted representation of the object."""
         symbol = self.as_symbol()
         if symbol not in _as_rhf:
@@ -209,7 +209,10 @@ def _gen_Tn_as_rhf(n, Tn_rhf, Tn_uhf):
                 tensors = []
                 for spin in spins:
                     indices = tuple(index.to_spin(s) for index, s in zip(tensor.indices, spin))
-                    tensors.append(Tn_uhf[indices].canonicalise())
+                    tensors.append(Tn_uhf[indices])
+
+        # Canonicalise the indices
+        tensors = [t.canonicalise().expand() for t in tensors]
 
         # Relabel the indices
         tensor = 0
@@ -226,8 +229,9 @@ def _gen_Tn_as_rhf(n, Tn_rhf, Tn_uhf):
             # Get the restricted tensor
             indices = tuple(index.index for index in t.indices)
             tensor += Tn_rhf[indices] * factor
+        print(tensor.expand())
 
-        return tensor
+        return tensor.expand()
 
     return _Tn_as_rhf
 
