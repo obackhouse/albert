@@ -229,7 +229,6 @@ def _gen_Tn_as_rhf(n, Tn_rhf, Tn_uhf):
             # Get the restricted tensor
             indices = tuple(index.index for index in t.indices)
             tensor += Tn_rhf[indices] * factor
-        print(tensor.expand())
 
         return tensor.expand()
 
