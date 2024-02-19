@@ -65,9 +65,28 @@ def _Fock_as_uhf(tensor, target_restricted=False):
     Convert a `Fock`-derived tensor object from generalised to
     unrestricted.
     """
-    indices_α = (uhf.SpinIndex(tensor.indices[0], "α"), uhf.SpinIndex(tensor.indices[1], "α"))
-    indices_β = (uhf.SpinIndex(tensor.indices[0], "β"), uhf.SpinIndex(tensor.indices[1], "β"))
-    return (uhf.Fock[indices_α], uhf.Fock[indices_β])
+
+    # Loop over spins
+    tensors = []
+    for spin in ("α", "β"):
+        # Check if first index has fixed spin
+        if isinstance(tensor.indices[0], uhf.SpinIndex):
+            if tensor.indices[0].spin != spin:
+                continue
+
+        # Check if second index has fixed spin
+        if isinstance(tensor.indices[1], uhf.SpinIndex):
+            if tensor.indices[1].spin != spin:
+                continue
+
+        # Get the UHF tensor part
+        indices = tuple(
+            uhf.SpinIndex(index, spin) if not isinstance(index, uhf.SpinIndex) else index
+            for index in tensor.indices
+        )
+        tensors.append(uhf.Fock[indices])
+
+    return tuple(tensors)
 
 
 _as_uhf[Fock] = _Fock_as_uhf
@@ -108,6 +127,7 @@ def _ERI_as_uhf(tensor, target_restricted=False):
     Note: The result is in the chemist's notation.
     """
 
+    # Loop over spins
     uhf_tensor = []
     indices_bare = tensor.indices
     for spins, direct, exchange in [
@@ -118,12 +138,25 @@ def _ERI_as_uhf(tensor, target_restricted=False):
         ("αββα", False, True),
         ("βααβ", False, True),
     ]:
-        indices = tuple(uhf.SpinIndex(index, spin) for index, spin in zip(indices_bare, spins))
+        # Check if indices have fixed spins
+        if any(
+            isinstance(index, uhf.SpinIndex) and index.spin != spin
+            for index, spin in zip(indices_bare, spins)
+        ):
+            continue
+
+        # Get the indices
+        indices = tuple(
+            uhf.SpinIndex(index, spin) if not isinstance(index, uhf.SpinIndex) else index
+            for index, spin in zip(indices_bare, spins)
+        )
 
         if direct:
+            # Get the direct contribution
             uhf_tensor.append(uhf.ERI[indices[0], indices[2], indices[1], indices[3]])
 
         if exchange:
+            # Get the exchange contribution
             uhf_tensor.append(-uhf.ERI[indices[0], indices[3], indices[1], indices[2]])
 
     return tuple(uhf_tensor)
@@ -163,13 +196,22 @@ def _gen_Tn_as_uhf(n, Tn_uhf):
         unrestricted.
         """
 
+        # Loop over spins
         uhf_tensor = []
         for covariant in itertools.product("αβ", repeat=n):
             for contravariant in set(itertools.permutations(covariant)):
+                # Check if indices have fixed spins
+                if any(
+                    isinstance(index, uhf.SpinIndex) and index.spin != spin
+                    for index, spin in zip(tensor.indices, covariant + contravariant)
+                ):
+                    continue
+
                 # Get the UHF tensor part
                 spins = tuple(covariant) + tuple(contravariant)
                 indices = tuple(
-                    uhf.SpinIndex(index, spin) for index, spin in zip(tensor.indices, spins)
+                    uhf.SpinIndex(index, spin) if not isinstance(index, uhf.SpinIndex) else index
+                    for index, spin in zip(tensor.indices, spins)
                 )
                 uhf_tensor_part = Tn_uhf[indices]
 
