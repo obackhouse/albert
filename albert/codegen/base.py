@@ -1,11 +1,10 @@
 """Base class for code generation.
 """
 
-import sys
-import platform
-import inspect
 import datetime
-from numbers import Number
+import inspect
+import platform
+import sys
 from collections import defaultdict
 
 from albert import __version__
@@ -43,7 +42,10 @@ def kernel(
     # Get the arguments
     args = sorted(
         set(
-            arg.name for expr in exprs for mul_args in expr.nested_view() for arg in mul_args
+            arg.name
+            for expr in exprs
+            for mul_args in expr.nested_view()
+            for arg in mul_args
             if isinstance(arg, Tensor) and not arg.name.startswith("tmp")
         ),
     )
@@ -83,10 +85,6 @@ def kernel(
 
     # Write the function declarations
     for i, (output, expr) in enumerate(zip(outputs, exprs)):
-        # Get the arguments and factors
-        fargs = [arg for arg in expr.args if isinstance(arg, Tensor)]
-        factors = [arg for arg in expr.args if isinstance(arg, Number)]
-
         # Write the declarations
         if output.rank == 0:
             codegen.scalar_declaration(output)
@@ -208,6 +206,7 @@ class CodeGen:
         raise NotImplementedError
 
     def __call__(self, *args, **kwargs):
+        """Write a function using a list of expressions."""
         return kernel(self, *args, **kwargs)
 
     def preamble(self):

@@ -61,6 +61,8 @@ class PermutationOperatorSymbol:
     """Permutation operator symbol."""
 
     def __getitem__(self, indices):
+        """Create a permutation operator.
+        """
         return PermutationOperator(*indices)
 
 
@@ -158,8 +160,7 @@ def _convert_symbol(symbol, index_spins=None):
 
     # Convert the indices to SpinIndex
     indices = tuple(
-        SpinIndex(index, index_spins[index]) if index in index_spins else index
-        for index in indices
+        SpinIndex(index, index_spins[index]) if index in index_spins else index for index in indices
     )
 
     return tensor_symbol[indices]
