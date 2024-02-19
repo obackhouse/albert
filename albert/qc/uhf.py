@@ -26,9 +26,15 @@ class SpinIndex(Base):
         """Return a hashable representation of the object."""
         return (self.spin, self.index)
 
+    def _prepare_other(self, other):
+        """Prepare the other object."""
+        if not isinstance(other, SpinIndex):
+            return SpinIndex(other, "")
+        return other
+
     def __repr__(self):
         """Return a string representation of the object."""
-        return f"{self.index}({self.spin})"
+        return f"{self.index}{self.spin}"
 
     def to_spin(self, spin):
         """Return a copy of the object with the spin set to `spin`."""
