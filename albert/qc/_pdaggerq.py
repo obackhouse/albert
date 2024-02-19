@@ -6,9 +6,10 @@ from numbers import Number
 
 from albert.algebra import Add, Mul
 from albert.qc.ghf import ERI, T1, T2, T3, Fock
+from albert.qc.uhf import SpinIndex
 
 
-def import_from_pdaggerq(terms):
+def import_from_pdaggerq(terms, index_spins=None):
     """Import terms from `pdaggerq` output into the internal format.
 
     Parameters
@@ -16,6 +17,10 @@ def import_from_pdaggerq(terms):
     terms : list of list of str
         Terms from `pdaggerq` output, corresponding to a single tensor
         output.
+    index_spins : dict, optional
+        Dictionary mapping indices to spins. If not provided, the
+        indices are not constrained to a single spin. Default value is
+        `None`.
 
     Returns
     -------
@@ -23,10 +28,14 @@ def import_from_pdaggerq(terms):
         Expression in the internal format.
     """
 
+    # Get the index spins
+    if index_spins is None:
+        index_spins = {}
+
     contractions = []
     for term in terms:
         # Convert symbols
-        symbols = [_convert_symbol(symbol) for symbol in term]
+        symbols = [_convert_symbol(symbol, index_spins=index_spins) for symbol in term]
 
         # Remove the permutation operators
         perm_operators = [symbol for symbol in symbols if isinstance(symbol, PermutationOperator)]
@@ -48,11 +57,21 @@ def import_from_pdaggerq(terms):
     return expr
 
 
+class PermutationOperatorSymbol:
+    """Permutation operator symbol."""
+
+    def __getitem__(self, indices):
+        return PermutationOperator(*indices)
+
+
 class PermutationOperator:
     """Permutation operator."""
 
     def __init__(self, i, j):
         self.indices = (i, j)
+
+
+P = PermutationOperatorSymbol()
 
 
 def _is_number(symbol):
@@ -79,13 +98,17 @@ def _is_number(symbol):
             return False
 
 
-def _convert_symbol(symbol):
+def _convert_symbol(symbol, index_spins=None):
     """Convert a `pdaggerq` symbol to the internal format.
 
     Parameters
     ----------
     symbol : str
         Symbol to convert.
+    index_spins : dict, optional
+        Dictionary mapping indices to spins. If not provided, the
+        indices are not constrained to a single spin. Default value is
+        `None`.
 
     Returns
     -------
@@ -99,36 +122,44 @@ def _convert_symbol(symbol):
 
     elif re.match(r"f\([a-z],[a-z]\)", symbol):
         # f(i,j)
-        symbols = tuple(symbol[2:-1].split(","))
-        return Fock[symbols]
+        indices = tuple(symbol[2:-1].split(","))
+        tensor_symbol = Fock
 
     elif re.match(r"<[a-z],[a-z]\|\|[a-z],[a-z]>", symbol):
         # <i,j||k,l>
-        symbols = tuple(symbol[1:-1].replace("||", ",").split(","))
-        return ERI[symbols]
+        indices = tuple(symbol[1:-1].replace("||", ",").split(","))
+        tensor_symbol = ERI
 
     elif re.match(r"t1\([a-z],[a-z]\)", symbol):
         # t1(i,j)
-        symbols = tuple(symbol[3:-1].split(","))
-        symbols = (symbols[1], symbols[0])
-        return T1[symbols]
+        indices = tuple(symbol[3:-1].split(","))
+        indices = (indices[1], indices[0])
+        tensor_symbol = T1
 
     elif re.match(r"t2\([a-z],[a-z],[a-z],[a-z]\)", symbol):
         # t2(i,j,k,l)
-        symbols = tuple(symbol[3:-1].split(","))
-        symbols = (symbols[2], symbols[3], symbols[0], symbols[1])
-        return T2[symbols]
+        indices = tuple(symbol[3:-1].split(","))
+        indices = (indices[2], indices[3], indices[0], indices[1])
+        tensor_symbol = T2
 
     elif re.match(r"t3\([a-z],[a-z],[a-z],[a-z],[a-z],[a-z]\)", symbol):
         # t3(i,j,k,l,m,n)
-        symbols = tuple(symbol[3:-1].split(","))
-        symbols = (symbols[3], symbols[4], symbols[5], symbols[0], symbols[1], symbols[2])
-        return T3[symbols]
+        indices = tuple(symbol[3:-1].split(","))
+        indices = (indices[3], indices[4], indices[5], indices[0], indices[1], indices[2])
+        tensor_symbol = T3
 
     elif re.match(r"P\([a-z],[a-z]\)", symbol):
         # P(i,j)
-        symbols = tuple(symbol[2:-1].split(","))
-        return PermutationOperator(*symbols)
+        indices = tuple(symbol[2:-1].split(","))
+        tensor_symbol = P
 
     else:
         raise ValueError(f"Unknown symbol {symbol}")
+
+    # Convert the indices to SpinIndex
+    indices = tuple(
+        SpinIndex(index, index_spins[index]) if index in index_spins else index
+        for index in indices
+    )
+
+    return tensor_symbol[indices]
