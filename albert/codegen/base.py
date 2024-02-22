@@ -8,7 +8,84 @@ import sys
 from collections import defaultdict
 
 from albert import __version__
+from albert.algebra import Mul
 from albert.tensor import Tensor
+
+
+def sort_exprs(returns, outputs, exprs):
+    """
+    Split the expressions into single contractions and sort them to
+    minimize the number of temporary tensors.
+
+    Parameters
+    ----------
+    returns : list of Tensor
+        The return tensors.
+    outputs : list of Tensor
+        The output tensors.
+    exprs : list of Algebraic
+        The algebraic expressions.
+
+    Returns
+    -------
+    outputs : list of Tensor
+        The output tensors.
+    exprs : list of Algebraic
+        The algebraic expressions.
+    """
+
+    # Split the expressions up into single contractions
+    tmp_outputs = []
+    tmp_exprs = []
+    tmp_names = []
+    for output, expr in zip(outputs, exprs):
+        for mul_args in expr.nested_view():
+            tmp_outputs.append(output)
+            tmp_exprs.append(Mul(*mul_args))
+            tmp_names.append({arg.name for arg in mul_args if isinstance(arg, Tensor)})
+
+    # Prepare a recursive function to place the expressions
+    new_outputs = []
+    new_exprs = []
+    new_names = []
+    remaining = set(range(len(tmp_outputs)))
+
+    def _place(i):
+        # Get the arguments for this index
+        assert i in remaining
+        output_i = tmp_outputs[i]
+        expr_i = tmp_exprs[i]
+        names_i = tmp_names[i]
+
+        # Place the expression before its first use
+        place = len(new_outputs)
+        for j, (output_j, expr_j, names_j) in enumerate(zip(new_outputs, new_exprs, new_names)):
+            if output_i.name in names_j:
+                place = j
+                break
+
+        # Insert the expression
+        new_outputs.insert(place, output_i)
+        new_exprs.insert(place, expr_i)
+        new_names.insert(place, names_i)
+        remaining.remove(i)
+
+        # Get the indices of the dependencies
+        todo = []
+        for j in remaining:
+            if tmp_outputs[j].name in names_i:
+                todo.append(j)
+
+        # Try to place the depdendencies
+        for j in reversed(sorted(todo)):
+            if j in remaining:
+                _place(j)
+
+    # Place the expressions
+    while remaining:
+        _place(max(remaining))
+
+    return new_outputs, new_exprs
 
 
 def kernel(
@@ -69,30 +146,37 @@ def kernel(
     codegen.function_docstring(docstring)
     codegen.blank()
 
+    # Sort the expressions
+    outputs, exprs = sort_exprs(returns, outputs, exprs)
+
     # Find the last appearance of each tensor
     last_appearance = {}
     for i, (output, expr) in enumerate(zip(outputs, exprs)):
         for mul_args in expr.nested_view():
             for arg in mul_args:
                 if isinstance(arg, Tensor) and arg.rank > 0:
-                    last_appearance[arg] = i
+                    last_appearance[arg.name] = i
 
     # Get the tensors to cleanup at each step
     to_cleanup = defaultdict(list)
-    for arg, i in last_appearance.items():
-        if not any(arg.name == r for r in rets) and not any(arg.name == a for a in args):
-            to_cleanup[i].append(arg)
+    for name, i in last_appearance.items():
+        if not any(name == r for r in rets) and not any(name == a for a in args):
+            to_cleanup[i].append(name)
 
     # Write the function declarations
+    declared = set()
     for i, (output, expr) in enumerate(zip(outputs, exprs)):
         # Write the declarations
-        if output.rank == 0:
-            codegen.scalar_declaration(output)
-        else:
-            codegen.tensor_declaration(output)
+        already_declared = output.name in declared
+        if not already_declared:
+            if output.rank == 0:
+                codegen.scalar_declaration(output)
+            else:
+                codegen.tensor_declaration(output)
+            declared.add(output.name)
 
         # Write the expression
-        codegen.algebraic_expression(output, expr)
+        codegen.algebraic_expression(output, expr, already_declared=already_declared)
 
         # Write the cleanup
         codegen.tensor_cleanup(*to_cleanup.get(i, []))
@@ -201,7 +285,7 @@ class CodeGen:
         """Write a tensor cleanup."""
         raise NotImplementedError
 
-    def algebraic_expression(self, output, expr):
+    def algebraic_expression(self, output, expr, already_declared=False):
         """Write an algebraic expression."""
         raise NotImplementedError
 

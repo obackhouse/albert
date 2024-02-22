@@ -61,8 +61,7 @@ class PermutationOperatorSymbol:
     """Permutation operator symbol."""
 
     def __getitem__(self, indices):
-        """Create a permutation operator.
-        """
+        """Create a permutation operator."""
         return PermutationOperator(*indices)
 
 
