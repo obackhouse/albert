@@ -160,6 +160,27 @@ class Tensor(Base):
 
         return symbol[indices]
 
+    def as_json(self):
+        """Return a JSON serialisable representation of the object."""
+        return {
+            "_type": self.__class__.__name__,
+            "_path": self.__module__,
+            "name": self.name,
+            "indices": [i.as_json() if isinstance(i, Base) else i for i in self.indices],
+            "symmetry": self.symmetry.as_json() if self.symmetry else None,
+        }
+
+    @classmethod
+    def from_json(cls, data):
+        """Return an object from a JSON serialisable representation.
+
+        Notes
+        -----
+        This method is non-recursive and the dictionary members should
+        already be parsed.
+        """
+        return cls(*data["indices"], name=data["name"], symmetry=data["symmetry"])
+
     @property
     def args(self):
         """Return the arguments of the object."""

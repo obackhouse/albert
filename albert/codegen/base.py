@@ -95,6 +95,8 @@ def kernel(
     outputs,
     exprs,
     as_dict=False,
+    preamble=None,
+    postamble=None,
 ):
     """
     Generate the code for a function using a list of expressions.
@@ -114,6 +116,10 @@ def kernel(
     as_dict : bool, optional
         Whether to return the outputs as a dictionary. Default value is
         `False`.
+    preamble : str, optional
+        Preamble to add to the function. Default value is `None`.
+    postamble : str, optional
+        Postamble to add to the function. Default value is `None`.
     """
 
     # Get the arguments
@@ -126,7 +132,7 @@ def kernel(
             if isinstance(arg, Tensor) and not arg.name.startswith("tmp")
         ),
     )
-    rets = [ret.name for ret in returns]
+    rets = sorted(set([ret.name for ret in returns]))
 
     # Write the function declaration
     codegen.function_declaration(function_name, args)
@@ -145,6 +151,10 @@ def kernel(
     docstring += returns_str
     codegen.function_docstring(docstring)
     codegen.blank()
+
+    # Write the function preamble
+    if preamble:
+        codegen.function_preamble(preamble)
 
     # Sort the expressions
     outputs, exprs = sort_exprs(returns, outputs, exprs)
@@ -167,19 +177,23 @@ def kernel(
     declared = set()
     for i, (output, expr) in enumerate(zip(outputs, exprs)):
         # Write the declarations
-        already_declared = output.name in declared
+        already_declared = codegen.get_name(output) in declared
         if not already_declared:
             if output.rank == 0:
                 codegen.scalar_declaration(output)
             else:
                 codegen.tensor_declaration(output)
-            declared.add(output.name)
+            declared.add(codegen.get_name(output))
 
         # Write the expression
         codegen.algebraic_expression(output, expr, already_declared=already_declared)
 
         # Write the cleanup
         codegen.tensor_cleanup(*to_cleanup.get(i, []))
+
+    # Write the function postamble
+    if postamble:
+        codegen.function_postamble(postamble)
 
     # Write the function return
     codegen.blank()

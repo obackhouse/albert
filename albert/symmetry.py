@@ -20,6 +20,26 @@ class Permutation(Base):
         """Return a hashable representation of the object."""
         return (self.permutation, self.sign)
 
+    def as_json(self):
+        """Return a JSON representation of the object."""
+        return {
+            "_type": self.__class__.__name__,
+            "_path": self.__module__,
+            "permutation": self.permutation,
+            "sign": self.sign,
+        }
+
+    @classmethod
+    def from_json(cls, data):
+        """Return an object from a JSON serialisable representation.
+
+        Notes
+        -----
+        This method is non-recursive and the dictionary members should
+        already be parsed.
+        """
+        return cls(data["permutation"], data["sign"])
+
     def __add__(self, other):
         """Append permutations."""
         perm = self.permutation + tuple(p + len(self.permutation) for p in other.permutation)
@@ -46,6 +66,25 @@ class Symmetry(Base):
     def hashable(self):
         """Return a hashable representation of the object."""
         return tuple(permutation.hashable() for permutation in self.permutations)
+
+    def as_json(self):
+        """Return a JSON representation of the object."""
+        return {
+            "_type": self.__class__.__name__,
+            "_path": self.__module__,
+            "permutations": [permutation.as_json() for permutation in self.permutations],
+        }
+
+    @classmethod
+    def from_json(cls, data):
+        """Return an object from a JSON serialisable representation.
+
+        Notes
+        -----
+        This method is non-recursive and the dictionary members should
+        already be parsed.
+        """
+        return cls(*data["permutations"])
 
 
 def antisymmetric_permutations(n):

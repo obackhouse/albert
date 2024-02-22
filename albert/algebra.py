@@ -210,6 +210,25 @@ class Algebraic(Base):
 
         return tree
 
+    def as_json(self):
+        """Return a JSON serialisable representation of the object."""
+        return {
+            "_type": self.__class__.__name__,
+            "_path": self.__module__,
+            "args": [arg.as_json() if isinstance(arg, Base) else arg for arg in self.args],
+        }
+
+    @classmethod
+    def from_json(cls, data):
+        """Return an object from a JSON serialisable representation.
+
+        Notes
+        -----
+        This method is non-recursive and the dictionary members should
+        already be parsed.
+        """
+        return cls(*data["args"])
+
     def replace(self, expr_old, expr_new):
         """
         Replace a subexpression.

@@ -82,7 +82,7 @@ class EinsumCodeGen(CodeGen):
 
     def function_preamble(self, preamble):
         """Write the function preamble."""
-        pass
+        self.write(preamble)
 
     def function_docstring(self, docstring):
         """Write the function docstring."""
@@ -92,7 +92,7 @@ class EinsumCodeGen(CodeGen):
 
     def function_postamble(self, postamble):
         """Write the function postamble."""
-        pass
+        self.write(postamble)
 
     def function_return(self, args, as_dict=False):
         """Write the function return."""

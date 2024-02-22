@@ -26,6 +26,26 @@ class SpinIndex(Base):
         """Return a hashable representation of the object."""
         return (self.spin, self.index)
 
+    def as_json(self):
+        """Return a JSON serialisable representation of the object."""
+        return {
+            "_type": self.__class__.__name__,
+            "_path": self.__module__,
+            "index": self.index,
+            "spin": self.spin,
+        }
+
+    @classmethod
+    def from_json(cls, data):
+        """Return an object from a JSON serialisable representation.
+
+        Notes
+        -----
+        This method is non-recursive and the dictionary members should
+        already be parsed.
+        """
+        return cls(data["index"], data["spin"])
+
     def _prepare_other(self, other):
         """Prepare the other object."""
         if not isinstance(other, SpinIndex):

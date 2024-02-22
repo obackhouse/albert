@@ -71,6 +71,13 @@ def generalised_to_unrestricted(expr, target_restricted=False):
                 new_mul = Mul(*non_spin_args, *spin_args_perm)
                 new_exprs[new_mul.external_indices] += new_mul
 
+    # Partially canonicalise
+    canon_exprs = defaultdict(int)
+    for part in tuple(new_exprs.values()):
+        part = sum(Mul(*arg).canonicalise() for arg in part.nested_view())
+        canon_exprs[part.external_indices] += part
+    new_exprs = canon_exprs
+
     return tuple(new_exprs.values())
 
 
