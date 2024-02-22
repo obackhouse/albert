@@ -47,9 +47,10 @@ class EinsumCodeGen(CodeGen):
             name_generator=name_generator,
         )
 
-    def module_imports(self):
+    def module_imports(self, imports="import numpy as np"):
         """Write the module imports."""
-        self.write("import numpy as np")
+        for line in imports.split("\n"):
+            self.write(line)
 
     def module_preamble(self, preamble):
         """Write the module preamble."""
@@ -82,7 +83,8 @@ class EinsumCodeGen(CodeGen):
 
     def function_preamble(self, preamble):
         """Write the function preamble."""
-        self.write(preamble)
+        for line in preamble.split("\n"):
+            self.write(line)
 
     def function_docstring(self, docstring):
         """Write the function docstring."""
@@ -92,7 +94,8 @@ class EinsumCodeGen(CodeGen):
 
     def function_postamble(self, postamble):
         """Write the function postamble."""
-        self.write(postamble)
+        for line in postamble.split("\n"):
+            self.write(line)
 
     def function_return(self, args, as_dict=False):
         """Write the function return."""

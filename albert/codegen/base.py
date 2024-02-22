@@ -307,15 +307,18 @@ class CodeGen:
         """Write a function using a list of expressions."""
         return kernel(self, *args, **kwargs)
 
-    def preamble(self):
+    def preamble(self, imports=None, preamble=""):
         """Write the preamble."""
         self.module_docstring()
         self.blank()
-        self.module_imports()
+        if imports:
+            self.module_imports(imports=imports)
+        else:
+            self.module_imports()
         self.blank()
-        self.module_preamble("")
+        self.module_preamble(preamble)
         self.blank()
 
-    def postamble(self):
+    def postamble(self, postamble=""):
         """Write the postamble."""
-        self.module_postamble("")
+        self.module_postamble(postamble)
