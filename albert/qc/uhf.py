@@ -8,8 +8,6 @@ from albert.qc.rhf import _make_symmetry
 from albert.symmetry import Symmetry, antisymmetric_permutations
 from albert.tensor import Symbol, Tensor
 
-_as_rhf = {}
-
 
 class SpinIndex(Base):
     """
@@ -74,13 +72,7 @@ class UHFTensor(Tensor):
 
     def as_rhf(self):
         """Return a restricted representation of the object."""
-        symbol = self.as_symbol()
-        if symbol not in _as_rhf:
-            raise NotImplementedError(
-                f"Conversion of `{symbol.__class__.__name__}` from unrestricted to "
-                "restricted is not implemented."
-            )
-        return _as_rhf[symbol](self)
+        return self._symbol._as_rhf(self)
 
     def hashable(self, penalty_function=None):
         """Return a hashable representation of the object."""
@@ -111,10 +103,11 @@ class UHFSymbol(Symbol):
         return tensor
 
 
-class Hamiltonian1e(UHFSymbol):
-    """Constructor for one-electron Hamiltonian-like symbols."""
+class FockSymbol(UHFSymbol):
+    """Constructor for one-electron Fock-like symbols."""
 
     DESIRED_RANK = 2
+    rhf_symbol = rhf.Fock
 
     def __init__(self, name):
         """Initialise the object."""
@@ -124,27 +117,43 @@ class Hamiltonian1e(UHFSymbol):
             (1, 0),
         )
 
-
-Fock = Hamiltonian1e("f")
-
-
-def _Fock_as_rhf(tensor):
-    """
-    Convert a `Fock`-derived tensor object from generalised to
-    unrestricted.
-    """
-    assert all(isinstance(index, SpinIndex) for index in tensor.indices)
-    indices = tuple(index.index for index in tensor.indices)
-    return rhf.Fock[indices]
+    @staticmethod
+    def _as_rhf(tensor):
+        """
+        Convert a `Fock`-derived tensor object from generalised to
+        unrestricted.
+        """
+        assert all(isinstance(index, SpinIndex) for index in tensor.indices)
+        indices = tuple(index.index for index in tensor.indices)
+        return tensor._symbol.rhf_symbol[indices]
 
 
-_as_rhf[Fock] = _Fock_as_rhf
+Fock = FockSymbol("f")
 
 
-class Hamiltonian2e(UHFSymbol):
+class RDM1Symbol(UHFSymbol):
+    """Constructor for one-electron reduced density matrix symbols."""
+
+    rhf_symbol = rhf.RDM1
+
+
+RDM1 = RDM1Symbol("d")
+
+
+class DeltaSymbol(UHFSymbol):
+    """Constructor for the Kronecker delta symbol."""
+
+    rhf_symbol = rhf.Delta
+
+
+Delta = DeltaSymbol("δ")
+
+
+class ERISymbol(UHFSymbol):
     """Constructor for two-electron Hamiltonian-like symbols."""
 
     DESIRED_RANK = 4
+    rhf_symbol = rhf.ERI
 
     def __init__(self, name):
         """Initialise the object."""
@@ -161,25 +170,42 @@ class Hamiltonian2e(UHFSymbol):
             (3, 2, 1, 0),
         )
 
-
-ERI = Hamiltonian2e("v")
-
-
-def _ERI_as_rhf(tensor):
-    """
-    Convert an `ERI`-derived tensor object from generalised to
-    unrestricted.
-    """
-    assert all(isinstance(index, SpinIndex) for index in tensor.indices)
-    indices = tuple(index.index for index in tensor.indices)
-    return rhf.ERI[indices]
+    @staticmethod
+    def _as_rhf(tensor):
+        """
+        Convert an `ERI`-derived tensor object from generalised to
+        unrestricted.
+        """
+        assert all(isinstance(index, SpinIndex) for index in tensor.indices)
+        indices = tuple(index.index for index in tensor.indices)
+        return tensor._symbol.rhf_symbol[indices]
 
 
-_as_rhf[ERI] = _ERI_as_rhf
+ERI = ERISymbol("v")
+
+
+class RDM2Symbol(ERISymbol):
+    """Constructor for two-electron reduced density matrix symbols."""
+
+    rhf_symbol = rhf.RDM2
+
+    def __init__(self, name):
+        """Initialise the object."""
+        self.name = name
+        self.symmetry = _make_symmetry((0, 1, 2, 3))
+
+
+RDM2 = RDM2Symbol("Γ")
 
 
 class FermionicAmplitude(UHFSymbol):
     """Constructor for amplitude symbols."""
+
+    rhf_symbol = {
+        1: rhf.T1,
+        2: rhf.T2,
+        3: rhf.T3,
+    }
 
     def __init__(self, name, num_covariant, num_contravariant):
         """Initialise the object."""
@@ -191,23 +217,15 @@ class FermionicAmplitude(UHFSymbol):
                 perms.append(perm_covariant + perm_contravariant)
         self.symmetry = Symmetry(*perms)
 
-
-T1 = FermionicAmplitude("t1", 1, 1)
-T2 = FermionicAmplitude("t2", 2, 2)
-T3 = FermionicAmplitude("t3", 3, 3)
-
-
-def _gen_Tn_as_rhf(n, Tn_rhf, Tn_uhf):
-    """
-    Generate a function to convert a `Tn`-derived tensor object from
-    unrestricted to restricted.
-    """
-
-    def _Tn_as_rhf(tensor):
+    @staticmethod
+    def _as_rhf(tensor):
         """
         Convert a `Tn`-derived tensor object from unrestricted to
         restricted.
         """
+
+        # FIXME this is just for T/L amplitudes
+        n = tensor.rank // 2
 
         # Check input
         assert all(isinstance(index, SpinIndex) for index in tensor.indices)
@@ -235,13 +253,13 @@ def _gen_Tn_as_rhf(n, Tn_rhf, Tn_uhf):
                 tensors = []
                 for spin in spins:
                     indices = tuple(index.to_spin(s) for index, s in zip(tensor.indices, spin))
-                    tensors.append(Tn_uhf[indices])
+                    tensors.append(tensor._symbol[indices])
 
         # Canonicalise the indices
         tensors = [t.canonicalise().expand() for t in tensors]
 
         # Relabel the indices
-        tensor = 0
+        tensor_out = 0
         for t in tensors:
             # The canonicalisation may have introduced a factor
             if isinstance(t, Mul):
@@ -254,13 +272,11 @@ def _gen_Tn_as_rhf(n, Tn_rhf, Tn_uhf):
 
             # Get the restricted tensor
             indices = tuple(index.index for index in t.indices)
-            tensor += Tn_rhf[indices] * factor
+            tensor_out += tensor._symbol.rhf_symbol[n][indices] * factor
 
-        return tensor.expand()
-
-    return _Tn_as_rhf
+        return tensor_out.expand()
 
 
-_as_rhf[T1] = _gen_Tn_as_rhf(1, rhf.T1, T1)
-_as_rhf[T2] = _gen_Tn_as_rhf(2, rhf.T2, T2)
-_as_rhf[T3] = _gen_Tn_as_rhf(3, rhf.T3, T3)
+T1 = FermionicAmplitude("t1", 1, 1)
+T2 = FermionicAmplitude("t2", 2, 2)
+T3 = FermionicAmplitude("t3", 3, 3)

@@ -34,7 +34,7 @@ def _make_symmetry(*perms):
     return Symmetry(*[Permutation(perm, 1) for perm in perms])
 
 
-class Hamiltonian1e(Symbol):
+class FockSymbol(RHFSymbol):
     """Constructor for one-electron Hamiltonian-like symbols."""
 
     DESIRED_RANK = 2
@@ -48,10 +48,28 @@ class Hamiltonian1e(Symbol):
         )
 
 
-Fock = Hamiltonian1e("f")
+Fock = FockSymbol("f")
 
 
-class Hamiltonian2e(Symbol):
+class RDM1Symbol(RHFSymbol):
+    """Constructor for one-electron reduced density matrix symbols."""
+
+    pass
+
+
+RDM1 = RDM1Symbol("d")
+
+
+class DeltaSymbol(RHFSymbol):
+    """Constructor for the Kronecker delta symbol."""
+
+    pass
+
+
+Delta = DeltaSymbol("δ")
+
+
+class ERISymbol(RHFSymbol):
     """Constructor for two-electron Hamiltonian-like symbols."""
 
     DESIRED_RANK = 4
@@ -72,10 +90,22 @@ class Hamiltonian2e(Symbol):
         )
 
 
-ERI = Hamiltonian2e("v")
+ERI = ERISymbol("v")
 
 
-class FermionicAmplitude(Symbol):
+class RDM2Symbol(ERISymbol):
+    """Constructor for two-electron reduced density matrix symbols."""
+
+    def __init__(self, name):
+        """Initialise the object."""
+        self.name = name
+        self.symmetry = _make_symmetry((0, 1, 2, 3))
+
+
+RDM2 = RDM2Symbol("Γ")
+
+
+class FermionicAmplitude(RHFSymbol):
     """Constructor for amplitude symbols."""
 
     def __init__(self, name, num_covariant, num_contravariant):

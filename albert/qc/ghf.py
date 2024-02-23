@@ -8,21 +8,13 @@ from albert.qc.rhf import _make_symmetry
 from albert.symmetry import Permutation, Symmetry, antisymmetric_permutations
 from albert.tensor import Symbol, Tensor
 
-_as_uhf = {}
-
 
 class GHFTensor(Tensor):
     """Tensor subclass for generalised bases."""
 
     def as_uhf(self, target_restricted=False):
         """Return an unrestricted representation of the object."""
-        symbol = self.as_symbol()
-        if symbol not in _as_uhf:
-            raise NotImplementedError(
-                f"Conversion of `{symbol.__class__.__name__}` from generalised to "
-                "unrestricted is not implemented."
-            )
-        return _as_uhf[symbol](self, target_restricted=target_restricted)
+        return self._symbol._as_uhf(self, target_restricted=target_restricted)
 
     def as_rhf(self):
         """Return a restricted representation of the object."""
@@ -43,10 +35,11 @@ class GHFSymbol(Symbol):
         return tensor
 
 
-class Hamiltonian1e(GHFSymbol):
-    """Constructor for one-electron Hamiltonian-like symbols."""
+class FockSymbol(GHFSymbol):
+    """Constructor for Fock-like symbols."""
 
     DESIRED_RANK = 2
+    uhf_symbol = uhf.Fock
 
     def __init__(self, name):
         """Initialise the object."""
@@ -56,49 +49,64 @@ class Hamiltonian1e(GHFSymbol):
             (1, 0),
         )
 
+    @staticmethod
+    def _as_uhf(tensor, target_restricted=False):
+        """
+        Convert a `Fock`-derived tensor object from generalised to
+        unrestricted.
+        """
 
-Fock = Hamiltonian1e("f")
+        # Loop over spins
+        tensors = []
+        for spin in ("α", "β"):
+            # Check if first index has fixed spin
+            if isinstance(tensor.indices[0], uhf.SpinIndex):
+                if tensor.indices[0].spin != spin:
+                    continue
+
+            # Check if second index has fixed spin
+            if isinstance(tensor.indices[1], uhf.SpinIndex):
+                if tensor.indices[1].spin != spin:
+                    continue
+
+            # Get the UHF tensor part
+            indices = tuple(
+                uhf.SpinIndex(index, spin) if not isinstance(index, uhf.SpinIndex) else index
+                for index in tensor.indices
+            )
+            tensors.append(tensor._symbol.uhf_symbol[indices])
+
+        return tuple(tensors)
 
 
-def _Fock_as_uhf(tensor, target_restricted=False):
+Fock = FockSymbol("f")
+
+
+class RDM1Symbol(GHFSymbol):
+    """Constructor for one-electron reduced density matrix symbols."""
+
+    uhf_symbol = uhf.RDM1
+
+
+RDM1 = RDM1Symbol("d")
+
+
+class DeltaSymbol(GHFSymbol):
+    """Constructor for the Kronecker delta symbol."""
+
+    uhf_symbol = uhf.Delta
+
+
+Delta = DeltaSymbol("δ")
+
+
+class ERISymbol(GHFSymbol):
     """
-    Convert a `Fock`-derived tensor object from generalised to
-    unrestricted.
-    """
-
-    # Loop over spins
-    tensors = []
-    for spin in ("α", "β"):
-        # Check if first index has fixed spin
-        if isinstance(tensor.indices[0], uhf.SpinIndex):
-            if tensor.indices[0].spin != spin:
-                continue
-
-        # Check if second index has fixed spin
-        if isinstance(tensor.indices[1], uhf.SpinIndex):
-            if tensor.indices[1].spin != spin:
-                continue
-
-        # Get the UHF tensor part
-        indices = tuple(
-            uhf.SpinIndex(index, spin) if not isinstance(index, uhf.SpinIndex) else index
-            for index in tensor.indices
-        )
-        tensors.append(uhf.Fock[indices])
-
-    return tuple(tensors)
-
-
-_as_uhf[Fock] = _Fock_as_uhf
-
-
-class Hamiltonian2e(GHFSymbol):
-    """
-    Constructor for antisymmetric two-electron Hamiltonian-like
-    symbols.
+    Constructor for antisymmetric two-electron integral symbols.
     """
 
     DESIRED_RANK = 4
+    uhf_symbol = uhf.ERI
 
     def __init__(self, name):
         """Initialise the object."""
@@ -115,58 +123,128 @@ class Hamiltonian2e(GHFSymbol):
             (Permutation((3, 2, 1, 0), +1)),
         )
 
+    @staticmethod
+    def _as_uhf(tensor, target_restricted=False):
+        """
+        Convert a `ERI`-derived tensor object from generalised to
+        unrestricted.
 
-ERI = Hamiltonian2e("v")
+        Note: The result is in the chemist's notation.
+        """
+
+        # Loop over spins
+        uhf_tensor = []
+        indices_bare = tensor.indices
+        for spins, direct, exchange in [
+            ("αααα", True, True),
+            ("ββββ", True, True),
+            ("αβαβ", True, False),
+            ("βαβα", True, False),
+            ("αββα", False, True),
+            ("βααβ", False, True),
+        ]:
+            # Check if indices have fixed spins
+            if any(
+                isinstance(index, uhf.SpinIndex) and index.spin != spin
+                for index, spin in zip(indices_bare, spins)
+            ):
+                continue
+
+            # Get the indices
+            indices = tuple(
+                uhf.SpinIndex(index, spin) if not isinstance(index, uhf.SpinIndex) else index
+                for index, spin in zip(indices_bare, spins)
+            )
+
+            # Get the UHF symbol
+            uhf_symbol = tensor._symbol.uhf_symbol
+
+            if direct:
+                # Get the direct contribution
+                uhf_tensor.append(uhf_symbol[indices[0], indices[2], indices[1], indices[3]])
+
+            if exchange:
+                # Get the exchange contribution
+                uhf_tensor.append(-uhf_symbol[indices[0], indices[3], indices[1], indices[2]])
+
+        return tuple(uhf_tensor)
 
 
-def _ERI_as_uhf(tensor, target_restricted=False):
-    """
-    Convert a `ERI`-derived tensor object from generalised to
-    unrestricted.
+ERI = ERISymbol("v")
 
-    Note: The result is in the chemist's notation.
-    """
 
-    # Loop over spins
-    uhf_tensor = []
-    indices_bare = tensor.indices
-    for spins, direct, exchange in [
-        ("αααα", True, True),
-        ("ββββ", True, True),
-        ("αβαβ", True, False),
-        ("βαβα", True, False),
-        ("αββα", False, True),
-        ("βααβ", False, True),
-    ]:
-        # Check if indices have fixed spins
-        if any(
-            isinstance(index, uhf.SpinIndex) and index.spin != spin
-            for index, spin in zip(indices_bare, spins)
-        ):
-            continue
+class RDM2Symbol(GHFSymbol):
+    """Constructor for two-electron reduced density matrix symbols."""
 
-        # Get the indices
-        indices = tuple(
-            uhf.SpinIndex(index, spin) if not isinstance(index, uhf.SpinIndex) else index
-            for index, spin in zip(indices_bare, spins)
+    DESIRED_RANK = 4
+    uhf_symbol = uhf.RDM2
+
+    def __init__(self, name):
+        """Initialise the object."""
+        self.name = name
+        self.symmetry = Symmetry(
+            (Permutation((0, 1, 2, 3), +1)),
+            (Permutation((0, 1, 3, 2), -1)),
+            (Permutation((1, 0, 2, 3), -1)),
+            (Permutation((1, 0, 3, 2), +1)),
         )
 
-        if direct:
-            # Get the direct contribution
-            uhf_tensor.append(uhf.ERI[indices[0], indices[2], indices[1], indices[3]])
+    @staticmethod
+    def _as_uhf(tensor, target_restricted=False):
+        """
+        Convert a `RDM2`-derived tensor object from generalised to
+        unrestricted.
+        """
 
-        if exchange:
-            # Get the exchange contribution
-            uhf_tensor.append(-uhf.ERI[indices[0], indices[3], indices[1], indices[2]])
+        # Loop over spins
+        uhf_tensor = []
+        indices_bare = tensor.indices
+        for spins, direct, exchange in [
+            ("αααα", True, True),
+            ("ββββ", True, True),
+            ("αβαβ", True, False),
+            ("βαβα", True, False),
+            ("αββα", False, True),
+            ("βααβ", False, True),
+        ]:
+            # Check if indices have fixed spins
+            if any(
+                isinstance(index, uhf.SpinIndex) and index.spin != spin
+                for index, spin in zip(indices_bare, spins)
+            ):
+                continue
 
-    return tuple(uhf_tensor)
+            # Get the indices
+            indices = tuple(
+                uhf.SpinIndex(index, spin) if not isinstance(index, uhf.SpinIndex) else index
+                for index, spin in zip(indices_bare, spins)
+            )
+
+            # Get the UHF symbol
+            uhf_symbol = tensor._symbol.uhf_symbol
+
+            if direct:
+                # Get the direct contribution
+                uhf_tensor.append(uhf_symbol[indices[0], indices[1], indices[2], indices[3]])
+
+            if exchange:
+                # Get the exchange contribution
+                uhf_tensor.append(-uhf_symbol[indices[0], indices[1], indices[3], indices[2]])
+
+        return tuple(uhf_tensor)
 
 
-_as_uhf[ERI] = _ERI_as_uhf
+RDM2 = RDM2Symbol("Γ")
 
 
 class FermionicAmplitude(GHFSymbol):
     """Constructor for amplitude symbols."""
+
+    uhf_symbol = {
+        1: uhf.T1,
+        2: uhf.T2,
+        3: uhf.T3,
+    }
 
     def __init__(self, name, num_covariant, num_contravariant):
         """Initialise the object."""
@@ -178,23 +256,15 @@ class FermionicAmplitude(GHFSymbol):
                 perms.append(perm_covariant + perm_contravariant)
         self.symmetry = Symmetry(*perms)
 
-
-T1 = FermionicAmplitude("t1", 1, 1)
-T2 = FermionicAmplitude("t2", 2, 2)
-T3 = FermionicAmplitude("t3", 3, 3)
-
-
-def _gen_Tn_as_uhf(n, Tn_uhf):
-    """
-    Generate a function to convert a `Tn`-derived tensor object from
-    generalised to unrestricted.
-    """
-
-    def _Tn_as_uhf(tensor, target_restricted=False):
+    @staticmethod
+    def _as_uhf(tensor, target_restricted=False):
         """
         Convert a `Tn`-derived tensor object from generalised to
         unrestricted.
         """
+
+        # FIXME this is just for T/L amplitudes
+        n = tensor.rank // 2
 
         # Loop over spins
         uhf_tensor = []
@@ -213,7 +283,7 @@ def _gen_Tn_as_uhf(n, Tn_uhf):
                     uhf.SpinIndex(index, spin) if not isinstance(index, uhf.SpinIndex) else index
                     for index, spin in zip(tensor.indices, spins)
                 )
-                uhf_tensor_part = Tn_uhf[indices]
+                uhf_tensor_part = tensor._symbol.uhf_symbol[n][indices]
 
                 if not target_restricted:
                     # Expand antisymmetry where spin allows
@@ -227,9 +297,7 @@ def _gen_Tn_as_uhf(n, Tn_uhf):
 
         return tuple(uhf_tensor)
 
-    return _Tn_as_uhf
 
-
-_as_uhf[T1] = _gen_Tn_as_uhf(1, uhf.T1)
-_as_uhf[T2] = _gen_Tn_as_uhf(2, uhf.T2)
-_as_uhf[T3] = _gen_Tn_as_uhf(3, uhf.T3)
+T1 = FermionicAmplitude("t1", 1, 1)
+T2 = FermionicAmplitude("t2", 2, 2)
+T3 = FermionicAmplitude("t3", 3, 3)
