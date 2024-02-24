@@ -159,7 +159,10 @@ class EinsumCodeGen(CodeGen):
 
             # Write the expression
             if len(tensors) > 1:
-                kwargs = ", " + ", ".join(f"{k}={v}" for k, v in self.einsum_kwargs.items())
+                if self.einsum_kwargs:
+                    kwargs = ", " + ", ".join(f"{k}={v}" for k, v in self.einsum_kwargs.items())
+                else:
+                    kwargs = ""
                 args = ", ".join(args)
                 self.write(f"{output_name} {operator} {self.einsum_func}({args}{kwargs}){factor}")
             else:
