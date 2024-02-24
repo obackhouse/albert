@@ -47,7 +47,7 @@ dev = [
 cse = [
     "sympy>=1.9",
     "drudge@git+https://github.com/tschijnmo/drudge.git@master",
-    "gristmill@git+https://github.com/tschijnmo/gristmill.git@master",
+    "gristmill@git+https://github.com/obackhouse/gristmill.git@master",
 ]
 
 [tool.black]
