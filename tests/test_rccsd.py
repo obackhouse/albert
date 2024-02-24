@@ -4,6 +4,7 @@
 import os
 import unittest
 import warnings
+from io import StringIO
 
 import pdaggerq
 import numpy as np
@@ -28,11 +29,11 @@ def name_generator(tensor):
 
 class TestRCCSD(unittest.TestCase):
     def generate_code_pdaggerq(self):
+        stdout = StringIO()
         codegen = EinsumCodeGen(
-            stdout=open("test_rccsd_tmp.py", "w"),
+            stdout=stdout,
             name_generator=name_generator,
         )
-        codegen.preamble()
 
         pq = pdaggerq.pq_helper("fermi")
 
@@ -100,15 +101,13 @@ class TestRCCSD(unittest.TestCase):
             exprs,
             as_dict=True,
         )
-        codegen.stdout.close()
 
-    def clean_up(self):
-        os.remove("test_rccsd_tmp.py")
+        return stdout
 
     def test_rccsd(self):
-        self.generate_code_pdaggerq()
-
-        from test_rccsd_tmp import update_amps, energy
+        stdout = self.generate_code_pdaggerq()
+        exec(stdout.getvalue(), globals())
+        stdout.close()
 
         nocc = 4
         nvir = 20
@@ -138,8 +137,6 @@ class TestRCCSD(unittest.TestCase):
         e_cc = energy(f=f, v=v, t1=amps["t1new"], t2=amps["t2new"])
 
         self.assertAlmostEqual(e_cc, 23956467724253, places=-1)
-
-        self.clean_up()
 
 
 if __name__ == "__main__":
