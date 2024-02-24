@@ -172,6 +172,11 @@ def _convert_symbol(symbol, index_spins=None):
         indices = tuple(symbol[2:-1].split(","))
         tensor_symbol = Delta
 
+    elif re.match(r"P\([a-z],[a-z]\)", symbol):
+        # P(i,j)
+        indices = tuple(symbol[2:-1].split(","))
+        tensor_symbol = P
+
     else:
         raise ValueError(f"Unknown symbol {symbol}")
 
