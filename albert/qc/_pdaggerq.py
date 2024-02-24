@@ -5,7 +5,7 @@ import re
 from numbers import Number
 
 from albert.algebra import Add, Mul
-from albert.qc.ghf import ERI, L1, L2, L3, T1, T2, T3, Fock
+from albert.qc.ghf import ERI, L1, L2, L3, RDM1, RDM2, T1, T2, T3, Fock
 from albert.qc.uhf import SpinIndex
 
 
@@ -166,6 +166,16 @@ def _convert_symbol(symbol, index_spins=None):
         indices = tuple(symbol[3:-1].split(","))
         indices = (indices[3], indices[4], indices[5], indices[0], indices[1], indices[2])
         tensor_symbol = L3
+
+    elif re.match(r"d\([a-z],[a-z]\)", symbol):
+        # d(i,j)
+        indices = tuple(symbol[2:-1].split(","))
+        tensor_symbol = RDM1
+
+    elif re.match(r"Γ\([a-z],[a-z],[a-z],[a-z]\)", symbol):
+        # Γ(i,j,k,l)
+        indices = tuple(symbol[2:-1].split(","))
+        tensor_symbol = RDM2
 
     elif re.match(r"P\([a-z],[a-z]\)", symbol):
         # P(i,j)
