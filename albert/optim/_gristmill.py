@@ -88,21 +88,30 @@ def optimise(
     for output, expr in outputs_and_exprs:
         # Convert the expression to sympy
         output_sympy = output.as_sympy()
+        if output.rank == 0:
+            output_base = output_sympy
+            output_indices = []
+        else:
+            output_base = output_sympy.base
+            output_indices = output_sympy.indices
         expr_sympy = expr.expand().as_sympy()
 
         # Get the ranges on the LHS
-        ranges_lhs = [(i, ranges[f"i{index_to_group[i.name]}"]) for i in output_sympy.indices]
+        ranges_lhs = [(i, ranges[f"i{index_to_group[i.name]}"]) for i in output_indices]
 
         # Get the einstein summation
         rhs = dr.einst(expr_sympy)
-        terms.append(dr.define(output_sympy.base, *ranges_lhs, rhs))
+        terms.append(dr.define(output_base, *ranges_lhs, rhs))
 
         # Record the permutations and symbols
         tensors = [output] + sum(expr.nested_view(), [])
         tensors = [t for t in tensors if isinstance(t, Tensor)]
         done = set()
         for tensor in tensors:
-            base = tensor.as_sympy().base
+            if tensor.rank == 0:
+                base = tensor.as_sympy()
+            else:
+                base = tensor.as_sympy().base
 
             # Set the symmetry
             if tensor.symmetry and base not in done:
