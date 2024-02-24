@@ -2,7 +2,7 @@
 name = "albert"
 version = "0.0.1"
 description = "Toolbox for manipulating, optimising, and generating code for Einstein summations"
-keys = [
+keywords = [
     "einstein", "summation",
     "einsum",
     "tensor", "contraction",
