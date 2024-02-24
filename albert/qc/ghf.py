@@ -363,3 +363,6 @@ class FermionicAmplitude(GHFSymbol):
 T1 = FermionicAmplitude("t1", 1, 1)
 T2 = FermionicAmplitude("t2", 2, 2)
 T3 = FermionicAmplitude("t3", 3, 3)
+L1 = FermionicAmplitude("l1", 1, 1)
+L2 = FermionicAmplitude("l2", 2, 2)
+L3 = FermionicAmplitude("l3", 3, 3)
