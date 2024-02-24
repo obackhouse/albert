@@ -51,7 +51,7 @@ class FockSymbol(RHFSymbol):
 Fock = FockSymbol("f")
 
 
-class RDM1Symbol(RHFSymbol):
+class RDM1Symbol(FockSymbol):
     """Constructor for one-electron reduced density matrix symbols."""
 
     pass
@@ -60,7 +60,7 @@ class RDM1Symbol(RHFSymbol):
 RDM1 = RDM1Symbol("d")
 
 
-class DeltaSymbol(RHFSymbol):
+class DeltaSymbol(FockSymbol):
     """Constructor for the Kronecker delta symbol."""
 
     pass

@@ -131,7 +131,7 @@ class FockSymbol(UHFSymbol):
 Fock = FockSymbol("f")
 
 
-class RDM1Symbol(UHFSymbol):
+class RDM1Symbol(FockSymbol):
     """Constructor for one-electron reduced density matrix symbols."""
 
     rhf_symbol = rhf.RDM1
@@ -140,7 +140,7 @@ class RDM1Symbol(UHFSymbol):
 RDM1 = RDM1Symbol("d")
 
 
-class DeltaSymbol(UHFSymbol):
+class DeltaSymbol(FockSymbol):
     """Constructor for the Kronecker delta symbol."""
 
     rhf_symbol = rhf.Delta
