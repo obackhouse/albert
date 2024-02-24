@@ -5,7 +5,7 @@ import re
 from numbers import Number
 
 from albert.algebra import Add, Mul
-from albert.qc.ghf import ERI, T1, T2, T3, Fock
+from albert.qc.ghf import ERI, L1, L2, L3, T1, T2, T3, Fock
 from albert.qc.uhf import SpinIndex
 
 
@@ -148,6 +148,24 @@ def _convert_symbol(symbol, index_spins=None):
         indices = tuple(symbol[3:-1].split(","))
         indices = (indices[3], indices[4], indices[5], indices[0], indices[1], indices[2])
         tensor_symbol = T3
+
+    elif re.match(r"l1\([a-z],[a-z]\)", symbol):
+        # t1(i,j)
+        indices = tuple(symbol[3:-1].split(","))
+        indices = (indices[1], indices[0])
+        tensor_symbol = L1
+
+    elif re.match(r"l2\([a-z],[a-z],[a-z],[a-z]\)", symbol):
+        # t2(i,j,k,l)
+        indices = tuple(symbol[3:-1].split(","))
+        indices = (indices[2], indices[3], indices[0], indices[1])
+        tensor_symbol = L2
+
+    elif re.match(r"l3\([a-z],[a-z],[a-z],[a-z],[a-z],[a-z]\)", symbol):
+        # t3(i,j,k,l,m,n)
+        indices = tuple(symbol[3:-1].split(","))
+        indices = (indices[3], indices[4], indices[5], indices[0], indices[1], indices[2])
+        tensor_symbol = L3
 
     elif re.match(r"P\([a-z],[a-z]\)", symbol):
         # P(i,j)
