@@ -150,7 +150,7 @@ Delta = DeltaSymbol("δ")
 
 
 class ERISymbol(UHFSymbol):
-    """Constructor for two-electron Hamiltonian-like symbols."""
+    """Constructor for two-electron integral-like symbols."""
 
     DESIRED_RANK = 4
     rhf_symbol = rhf.ERI
@@ -182,6 +182,38 @@ class ERISymbol(UHFSymbol):
 
 
 ERI = ERISymbol("v")
+
+
+class CDERISymbol(UHFSymbol):
+    """
+    Constructor for Cholesky-decomposed two-electron integral-like
+    symbols.
+    """
+
+    DESIRED_RANK = 3
+    rhf_symbol = rhf.CDERI
+
+    def __init__(self, name):
+        """Initialise the object."""
+        self.name = name
+        # FIXME this is for real orbitals only
+        self.symmetry = _make_symmetry(
+            (0, 1, 2),
+            (0, 2, 1),
+        )
+
+    @staticmethod
+    def _as_rhf(tensor):
+        """
+        Convert an `ERI`-derived tensor object from generalised to
+        unrestricted.
+        """
+        assert all(isinstance(index, SpinIndex) for index in tensor.indices[1:])
+        indices = (tensor.indices[0],) + tuple(index.index for index in tensor.indices[1:])
+        return tensor._symbol.rhf_symbol[indices]
+
+
+CDERI = CDERISymbol("v")
 
 
 class RDM2Symbol(ERISymbol):

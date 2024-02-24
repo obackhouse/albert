@@ -35,7 +35,7 @@ def _make_symmetry(*perms):
 
 
 class FockSymbol(RHFSymbol):
-    """Constructor for one-electron Hamiltonian-like symbols."""
+    """Constructor for one-electron Fock-like symbols."""
 
     DESIRED_RANK = 2
 
@@ -70,7 +70,7 @@ Delta = DeltaSymbol("δ")
 
 
 class ERISymbol(RHFSymbol):
-    """Constructor for two-electron Hamiltonian-like symbols."""
+    """Constructor for two-electron Fock-like symbols."""
 
     DESIRED_RANK = 4
 
@@ -91,6 +91,27 @@ class ERISymbol(RHFSymbol):
 
 
 ERI = ERISymbol("v")
+
+
+class CDERISymbol(RHFSymbol):
+    """
+    Constructor for Cholesky-decomposed two-electron integral-like
+    symbols.
+    """
+
+    DESIRED_RANK = 3
+
+    def __init__(self, name):
+        """Initialise the object."""
+        self.name = name
+        # FIXME this is for real orbitals only
+        self.symmetry = _make_symmetry(
+            (0, 1, 2),
+            (0, 2, 1),
+        )
+
+
+CDERI = CDERISymbol("v")
 
 
 class RDM2Symbol(ERISymbol):

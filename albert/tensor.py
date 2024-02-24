@@ -155,6 +155,9 @@ class Tensor(Base):
     def as_sympy(self):
         """Return a sympy representation of the object."""
 
+        if self.rank == 0:
+            return sympy.Symbol(self.name)
+
         indices = tuple(sympy.Symbol(str(index)) for index in self.indices)
         symbol = self.as_symbol().as_sympy()
 

@@ -173,6 +173,68 @@ class ERISymbol(GHFSymbol):
 ERI = ERISymbol("v")
 
 
+class SingleERISymbol(GHFSymbol):
+    """
+    Constructor for non-antisymmetric two-electron integral symbols.
+    """
+
+    DESIRED_RANK = 4
+    uhf_symbol = uhf.ERI
+
+    def __init__(self, name):
+        """Initialise the object."""
+        self.name = name
+        # FIXME this is for real orbitals only
+        self.symmetry = Symmetry(
+            (Permutation((0, 1, 2, 3), +1)),
+            (Permutation((1, 0, 3, 2), +1)),
+            (Permutation((2, 3, 0, 1), +1)),
+            (Permutation((3, 2, 1, 0), +1)),
+        )
+
+    @staticmethod
+    def _as_uhf(tensor, target_restricted=False):
+        """
+        Convert a `ERI`-derived tensor object from generalised to
+        unrestricted.
+
+        Note: The result is in the chemist's notation.
+        """
+
+        # Loop over spins
+        uhf_tensor = []
+        indices_bare = tensor.indices
+        for spins in [
+            ("αααα"),
+            ("ββββ"),
+            ("αβαβ"),
+            ("βαβα"),
+        ]:
+            # Check if indices have fixed spins
+            if any(
+                isinstance(index, uhf.SpinIndex) and index.spin != spin
+                for index, spin in zip(indices_bare, spins)
+            ):
+                continue
+
+            # Get the indices
+            indices = tuple(
+                uhf.SpinIndex(index, spin) if not isinstance(index, uhf.SpinIndex) else index
+                for index, spin in zip(indices_bare, spins)
+            )
+
+            # Get the UHF symbol
+            uhf_symbol = tensor._symbol.uhf_symbol
+
+            # Get the tensor
+            uhf_tensor.append(uhf_symbol[indices[0], indices[2], indices[1], indices[3]])
+
+        return tuple(uhf_tensor)
+
+
+SingleERI = SingleERISymbol("vs")
+
+
 class RDM2Symbol(GHFSymbol):
     """Constructor for two-electron reduced density matrix symbols."""
 
