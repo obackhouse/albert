@@ -37,6 +37,7 @@ class EinsumCodeGen(CodeGen):
         einsum_kwargs=None,
         transpose_func="np.transpose",
         name_generator=None,
+        **kwargs,
     ):
         if einsum_kwargs is None:
             einsum_kwargs = {"optimize": True}
@@ -45,6 +46,7 @@ class EinsumCodeGen(CodeGen):
             einsum_kwargs=einsum_kwargs,
             transpose_func=transpose_func,
             name_generator=name_generator,
+            **kwargs,
         )
 
     def module_imports(self, imports="import numpy as np"):

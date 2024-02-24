@@ -206,10 +206,10 @@ class CodeGen:
     """Base class for code generation."""
 
     def __init__(self, name_generator=None, **kwargs):
-        self.__dict__.update(kwargs)
         self._indent = 0
-        self.stdout = sys.stdout
         self._name_generator = name_generator
+        self.stdout = sys.stdout
+        self.__dict__.update(kwargs)
 
     def indent(self):
         """Indent the code."""
