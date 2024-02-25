@@ -302,13 +302,9 @@ RDM2 = RDM2Symbol("Γ")
 class FermionicAmplitude(GHFSymbol):
     """Constructor for amplitude symbols."""
 
-    uhf_symbol = {
-        1: uhf.T1,
-        2: uhf.T2,
-        3: uhf.T3,
-    }
+    uhf_symbol = None
 
-    def __init__(self, name, num_covariant, num_contravariant):
+    def __init__(self, name, num_covariant, num_contravariant, uhf_symbol=None):
         """Initialise the object."""
         self.name = name
         self.DEISRED_RANK = num_covariant + num_contravariant
@@ -317,6 +313,7 @@ class FermionicAmplitude(GHFSymbol):
             for perm_contravariant in antisymmetric_permutations(num_contravariant):
                 perms.append(perm_covariant + perm_contravariant)
         self.symmetry = Symmetry(*perms)
+        self.uhf_symbol = uhf_symbol
 
     @staticmethod
     def _as_uhf(tensor, target_restricted=False):
@@ -345,7 +342,7 @@ class FermionicAmplitude(GHFSymbol):
                     uhf.SpinIndex(index, spin) if not isinstance(index, uhf.SpinIndex) else index
                     for index, spin in zip(tensor.indices, spins)
                 )
-                uhf_tensor_part = tensor._symbol.uhf_symbol[n][indices]
+                uhf_tensor_part = tensor._symbol.uhf_symbol[indices]
 
                 if not target_restricted:
                     # Expand antisymmetry where spin allows
@@ -360,9 +357,9 @@ class FermionicAmplitude(GHFSymbol):
         return tuple(uhf_tensor)
 
 
-T1 = FermionicAmplitude("t1", 1, 1)
-T2 = FermionicAmplitude("t2", 2, 2)
-T3 = FermionicAmplitude("t3", 3, 3)
-L1 = FermionicAmplitude("l1", 1, 1)
-L2 = FermionicAmplitude("l2", 2, 2)
-L3 = FermionicAmplitude("l3", 3, 3)
+T1 = FermionicAmplitude("t1", 1, 1, uhf_symbol=uhf.T1)
+T2 = FermionicAmplitude("t2", 2, 2, uhf_symbol=uhf.T2)
+T3 = FermionicAmplitude("t3", 3, 3, uhf_symbol=uhf.T3)
+L1 = FermionicAmplitude("l1", 1, 1, uhf_symbol=uhf.L1)
+L2 = FermionicAmplitude("l2", 2, 2, uhf_symbol=uhf.L2)
+L3 = FermionicAmplitude("l3", 3, 3, uhf_symbol=uhf.L3)

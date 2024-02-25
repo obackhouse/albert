@@ -233,13 +233,9 @@ RDM2 = RDM2Symbol("Γ")
 class FermionicAmplitude(UHFSymbol):
     """Constructor for amplitude symbols."""
 
-    rhf_symbol = {
-        1: rhf.T1,
-        2: rhf.T2,
-        3: rhf.T3,
-    }
+    rhf_symbol = None
 
-    def __init__(self, name, num_covariant, num_contravariant):
+    def __init__(self, name, num_covariant, num_contravariant, rhf_symbol=None):
         """Initialise the object."""
         self.name = name
         self.DESIRED_RANK = num_covariant + num_contravariant
@@ -248,6 +244,7 @@ class FermionicAmplitude(UHFSymbol):
             for perm_contravariant in antisymmetric_permutations(num_contravariant):
                 perms.append(perm_covariant + perm_contravariant)
         self.symmetry = Symmetry(*perms)
+        self.rhf_symbol = rhf_symbol
 
     @staticmethod
     def _as_rhf(tensor):
@@ -304,14 +301,14 @@ class FermionicAmplitude(UHFSymbol):
 
             # Get the restricted tensor
             indices = tuple(index.index for index in t.indices)
-            tensor_out += tensor._symbol.rhf_symbol[n][indices] * factor
+            tensor_out += tensor._symbol.rhf_symbol[indices] * factor
 
         return tensor_out.expand()
 
 
-T1 = FermionicAmplitude("t1", 1, 1)
-T2 = FermionicAmplitude("t2", 2, 2)
-T3 = FermionicAmplitude("t3", 3, 3)
-L1 = FermionicAmplitude("l1", 1, 1)
-L2 = FermionicAmplitude("l2", 2, 2)
-L3 = FermionicAmplitude("l3", 3, 3)
+T1 = FermionicAmplitude("t1", 1, 1, rhf_symbol=rhf.T1)
+T2 = FermionicAmplitude("t2", 2, 2, rhf_symbol=rhf.T2)
+T3 = FermionicAmplitude("t3", 3, 3, rhf_symbol=rhf.T3)
+L1 = FermionicAmplitude("l1", 1, 1, rhf_symbol=rhf.L1)
+L2 = FermionicAmplitude("l2", 2, 2, rhf_symbol=rhf.L2)
+L3 = FermionicAmplitude("l3", 3, 3, rhf_symbol=rhf.L3)

@@ -150,19 +150,19 @@ def _convert_symbol(symbol, index_spins=None):
         tensor_symbol = T3
 
     elif re.match(r"l1\([a-z],[a-z]\)", symbol):
-        # t1(i,j)
+        # l1(i,j)
         indices = tuple(symbol[3:-1].split(","))
         indices = (indices[1], indices[0])
         tensor_symbol = L1
 
     elif re.match(r"l2\([a-z],[a-z],[a-z],[a-z]\)", symbol):
-        # t2(i,j,k,l)
+        # l2(i,j,k,l)
         indices = tuple(symbol[3:-1].split(","))
         indices = (indices[2], indices[3], indices[0], indices[1])
         tensor_symbol = L2
 
     elif re.match(r"l3\([a-z],[a-z],[a-z],[a-z],[a-z],[a-z]\)", symbol):
-        # t3(i,j,k,l,m,n)
+        # l3(i,j,k,l,m,n)
         indices = tuple(symbol[3:-1].split(","))
         indices = (indices[3], indices[4], indices[5], indices[0], indices[1], indices[2])
         tensor_symbol = L3
