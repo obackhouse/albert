@@ -129,7 +129,7 @@ def kernel(
             for expr in exprs
             for mul_args in expr.nested_view()
             for arg in mul_args
-            if isinstance(arg, Tensor) and not arg.name.startswith("tmp")
+            if isinstance(arg, Tensor) and not codegen.ignore_argument(arg)
         ),
     )
     rets = sorted(set([ret.name for ret in returns]))
@@ -250,6 +250,13 @@ class CodeGen:
             "python_version": sys.version,
             "albert_version": __version__,
         }
+
+    def ignore_argument(self, arg):
+        """
+        Return `True` if a potential function argument should be
+        ignored.
+        """
+        return "tmp" in arg.name
 
     def module_imports(self):
         """Write the module imports."""
