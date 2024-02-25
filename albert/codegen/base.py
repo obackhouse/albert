@@ -125,14 +125,14 @@ def kernel(
     # Get the arguments
     args = sorted(
         set(
-            arg.name
+            codegen.get_name(arg, spaces=False)
             for expr in exprs
             for mul_args in expr.nested_view()
             for arg in mul_args
             if isinstance(arg, Tensor) and not codegen.ignore_argument(arg)
         ),
     )
-    rets = sorted(set([ret.name for ret in returns]))
+    rets = sorted(set([codegen.get_name(ret, spaces=False) for ret in returns]))
 
     # Write the function declaration
     codegen.function_declaration(function_name, args)
@@ -165,7 +165,7 @@ def kernel(
         for mul_args in expr.nested_view():
             for arg in mul_args:
                 if isinstance(arg, Tensor) and arg.rank > 0:
-                    last_appearance[arg.name] = i
+                    last_appearance[codegen.get_name(arg, spaces=False)] = i
 
     # Get the tensors to cleanup at each step
     to_cleanup = defaultdict(list)
@@ -219,10 +219,10 @@ class CodeGen:
         """Dedent the code."""
         self._indent -= 1
 
-    def get_name(self, tensor):
+    def get_name(self, tensor, spaces=True):
         """Get a name."""
         if self._name_generator is not None:
-            return self._name_generator(tensor)
+            return self._name_generator(tensor, spaces=spaces)
         return tensor.name
 
     def write(self, string, end="\n"):
