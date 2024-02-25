@@ -19,10 +19,13 @@ from albert.optim._gristmill import optimise
 np.random.seed(1)
 
 
-def name_generator(tensor):
+def name_generator(tensor, add_spaces=True):
     if tensor.name in ("f", "v"):
-        spaces = ["o" if i in "ijklmn" else "v" for i in tensor.indices]
-        return f"{tensor.name}.{''.join(spaces)}"
+        if add_spaces:
+            spaces = ["o" if i in "ijklmn" else "v" for i in tensor.indices]
+            return f"{tensor.name}.{''.join(spaces)}"
+        else:
+            return tensor.name
     else:
         return tensor.name
 
