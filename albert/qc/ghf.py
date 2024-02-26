@@ -300,14 +300,14 @@ RDM2 = RDM2Symbol("Γ")
 
 
 class FermionicAmplitude(GHFSymbol):
-    """Constructor for amplitude symbols."""
+    """Constructor for fermionic amplitude symbols."""
 
     uhf_symbol = None
 
     def __init__(self, name, num_covariant, num_contravariant, uhf_symbol=None):
         """Initialise the object."""
         self.name = name
-        self.DEISRED_RANK = num_covariant + num_contravariant
+        self.DESIRED_RANK = num_covariant + num_contravariant
         perms = []
         for perm_covariant in antisymmetric_permutations(num_covariant):
             for perm_contravariant in antisymmetric_permutations(num_contravariant):
@@ -363,3 +363,98 @@ T3 = FermionicAmplitude("t3", 3, 3, uhf_symbol=uhf.T3)
 L1 = FermionicAmplitude("l1", 1, 1, uhf_symbol=uhf.L1)
 L2 = FermionicAmplitude("l2", 2, 2, uhf_symbol=uhf.L2)
 L3 = FermionicAmplitude("l3", 3, 3, uhf_symbol=uhf.L3)
+
+
+class BosonicAmplitude(GHFSymbol):
+    """Constructor for bosonic amplitude symbols."""
+
+    uhf_symbol = None
+
+    def __init__(self, name, num_bosons, uhf_symbol=None):
+        """Initialise the object."""
+        self.name = name
+        self.DESIRED_RANK = num_bosons
+        perms = []
+        for perm in antisymmetric_permutations(num_bosons):
+            perms.append(Permutation(perm.permutation, 1))
+        self.symmetry = Symmetry(*perms)
+        self.uhf_symbol = uhf_symbol
+
+    @staticmethod
+    def _as_uhf(tensor, target_restricted=False):
+        """
+        Convert a `Sn`-derived tensor object from generalised to
+        unrestricted.
+        """
+        return tensor
+
+
+S1 = BosonicAmplitude("s1", 1, uhf_symbol=uhf.S1)
+S2 = BosonicAmplitude("s2", 2, uhf_symbol=uhf.S2)
+
+
+class MixedAmplitude(GHFSymbol):
+    """Constructor for mixed amplitude symbols."""
+
+    uhf_symbol = None
+
+    def __init__(self, name, num_bosons, num_covariant, num_contravariant, uhf_symbol=None):
+        """Initialise the object."""
+        self.name = name
+        self.DESIRED_RANK = num_bosons + num_covariant + num_contravariant
+        self.NUM_BOSONS = num_bosons
+        perms = []
+        for perm_boson in antisymmetric_permutations(num_bosons):
+            perm_boson = Permutation(perm_boson.permutation, 1)
+            for perm_covariant in antisymmetric_permutations(num_covariant):
+                for perm_contravariant in antisymmetric_permutations(num_contravariant):
+                    perms.append(perm_boson + perm_covariant + perm_contravariant)
+        self.symmetry = Symmetry(*perms)
+        self.uhf_symbol = uhf_symbol
+
+    @staticmethod
+    def _as_uhf(tensor, target_restricted=False):
+        """
+        Convert a `Unm`-derived tensor object from generalised to
+        unrestricted.
+        """
+
+        # FIXME this is just for U/LU amplitudes
+        nb = tensor._symbol.NUM_BOSONS
+        nf = (tensor.rank - tensor._symbol.NUM_BOSONS) // 2
+
+        # Loop over spins
+        uhf_tensor = []
+        for covariant in itertools.product("αβ", repeat=nf):
+            for contravariant in set(itertools.permutations(covariant)):
+                # Check if indices have fixed spins
+                if any(
+                    isinstance(index, uhf.SpinIndex) and index.spin != spin
+                    for index, spin in zip(tensor.indices[nb:], covariant + contravariant)
+                ):
+                    continue
+
+                # Get the UHF tensor part
+                spins = tuple(covariant) + tuple(contravariant)
+                indices = tuple(
+                    uhf.SpinIndex(index, spin) if not isinstance(index, uhf.SpinIndex) else index
+                    for index, spin in zip(tensor.indices[nb:], spins)
+                )
+                indices = tensor.indices[:nb] + indices
+                uhf_tensor_part = tensor._symbol.uhf_symbol[indices]
+
+                if not target_restricted:
+                    # Expand antisymmetry where spin allows
+                    for perm in antisymmetric_permutations(nf):
+                        full_perm = Permutation(tuple(range(nb + nf)), 1) + perm
+                        spins_perm = tuple(spins[i] for i in full_perm.permutation)
+                        if spins == spins_perm:
+                            uhf_tensor.append(uhf_tensor_part.permute_indices(full_perm))
+                else:
+                    uhf_tensor.append(uhf_tensor_part)
+
+        return tuple(uhf_tensor)
+
+
+U11 = MixedAmplitude("u11", 1, 1, 1, uhf_symbol=uhf.U11)
+U12 = MixedAmplitude("u12", 2, 1, 1, uhf_symbol=uhf.U12)

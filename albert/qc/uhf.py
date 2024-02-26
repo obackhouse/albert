@@ -312,3 +312,118 @@ T3 = FermionicAmplitude("t3", 3, 3, rhf_symbol=rhf.T3)
 L1 = FermionicAmplitude("l1", 1, 1, rhf_symbol=rhf.L1)
 L2 = FermionicAmplitude("l2", 2, 2, rhf_symbol=rhf.L2)
 L3 = FermionicAmplitude("l3", 3, 3, rhf_symbol=rhf.L3)
+
+
+class BosonicAmplitude(UHFSymbol):
+    """Constructor for bosonic amplitude symbols."""
+
+    rhf_symbol = None
+
+    def __init__(self, name, num_bosons, rhf_symbol=None):
+        """Initialise the object."""
+        self.name = name
+        self.DESIRED_RANK = num_bosons
+        perms = []
+        for perm in antisymmetric_permutations(num_bosons):
+            perms.append(Permutation(perm.permutation, 1))
+        self.symmetry = Symmetry(*perms)
+        self.rhf_symbol = rhf_symbol
+
+    @staticmethod
+    def _as_rhf(tensor):
+        """
+        Convert a `Sn`-derived tensor object from unrestricted to
+        restricted.
+        """
+        return tensor
+
+
+S1 = BosonicAmplitude("s1", 1, rhf_symbol=rhf.S1)
+S2 = BosonicAmplitude("s2", 2, rhf_symbol=rhf.S2)
+
+
+class MixedAmplitude(UHFSymbol):
+    """Constructor for mixed amplitude symbols."""
+
+    rhf_symbol = None
+
+    def __init__(self, name, num_bosons, num_covariant, num_contravariant, rhf_symbol=None):
+        """Initialise the object."""
+        self.name = name
+        self.DESIRED_RANK = num_bosons + num_covariant + num_contravariant
+        self.NUM_BOSONS = num_bosons
+        perms = []
+        for perm_boson in antisymmetric_permutations(num_bosons):
+            perm_boson = Permutation(perm_boson.permutation, 1)
+            for perm_covariant in antisymmetric_permutations(num_covariant):
+                for perm_contravariant in antisymmetric_permutations(num_contravariant):
+                    perms.append(perm_boson + perm_covariant + perm_contravariant)
+        self.symmetry = Symmetry(*perms)
+        self.rhf_symbol = rhf_symbol
+
+    @staticmethod
+    def _as_rhf(tensor):
+        """
+        Convert a `Tn`-derived tensor object from unrestricted to
+        restricted.
+        """
+
+        # FIXME this is just for T/L amplitudes
+        nb = tensor._symbol.NUM_BOSONS
+        nf = (tensor.rank - tensor._symbol.NUM_BOSONS) // 2
+
+        # Check input
+        assert all(isinstance(index, SpinIndex) for index in tensor.indices[nb:])
+
+        # Spin flip if needed
+        nα = sum(index.spin == "α" for index in tensor.indices[nb:])
+        nβ = sum(index.spin == "β" for index in tensor.indices[nb:])
+        if nβ > nα:
+            indices = tuple(index.spin_flip() for index in tensor.indices[nb:])
+            indices = tensor.indices[:nb] + indices
+            tensor = tensor.copy(*indices)
+
+        # Expand same spin contributions as linear combinations of
+        # mixed spin contributions
+        tensors = [tensor]
+        if tensor.rank > 2:
+            if all(index.spin == "α" for index in tensor.indices[nb:]):
+                # Get the spins of the tensors in the linear combination
+                spins = []
+                for k in range(nf):
+                    spin = [("α", "β")[j % 2] for j in range(n)]
+                    spin += [("α", "β")[j == k] for j in range(n)]
+                    spins.append(spin)
+
+                # Get the new tensors
+                tensors = []
+                for spin in spins:
+                    indices = tuple(index.to_spin(s) for index, s in zip(tensor.indices[nb:], spin))
+                    indices = tensor.indices[:nb] + indices
+                    tensors.append(tensor._symbol[indices])
+
+        # Canonicalise the indices
+        tensors = [t.canonicalise().expand() for t in tensors]
+
+        # Relabel the indices
+        tensor_out = 0
+        for t in tensors:
+            # The canonicalisation may have introduced a factor
+            if isinstance(t, Mul):
+                factor = t.coefficient
+                args = t.without_coefficient().args
+                assert len(args) == 1
+                t = args[0]
+            else:
+                factor = 1
+
+            # Get the restricted tensor
+            indices = tuple(index.index for index in t.indices[nb:])
+            indices = tensor.indices[:nb] + indices
+            tensor_out += tensor._symbol.rhf_symbol[indices] * factor
+
+        return tensor_out.expand()
+
+
+U11 = MixedAmplitude("u11", 1, 1, 1, rhf_symbol=rhf.U11)
+U12 = MixedAmplitude("u12", 2, 1, 1, rhf_symbol=rhf.U12)

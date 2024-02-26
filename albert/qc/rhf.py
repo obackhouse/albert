@@ -154,3 +154,41 @@ T3 = FermionicAmplitude("t3", 3, 3)
 L1 = FermionicAmplitude("l1", 1, 1)
 L2 = FermionicAmplitude("l2", 2, 2)
 L3 = FermionicAmplitude("l3", 3, 3)
+
+
+class BosonicAmplitude(RHFSymbol):
+    """Constructor for bosonic amplitude symbols."""
+
+    def __init__(self, name, num_bosons):
+        """Initialise the object."""
+        self.name = name
+        self.DESIRED_RANK = num_bosons
+        perms = []
+        for perm in antisymmetric_permutations(num_bosons):
+            perms.append(Permutation(perm.permutation, 1))
+        self.symmetry = Symmetry(*perms)
+
+
+S1 = BosonicAmplitude("s1", 1)
+S2 = BosonicAmplitude("s2", 2)
+
+
+class MixedAmplitude(RHFSymbol):
+    """Constructor for mixed amplitude symbols."""
+
+    def __init__(self, name, num_bosons, num_covariant, num_contravariant):
+        """Initialise the object."""
+        self.name = name
+        self.DESIRED_RANK = num_bosons + num_covariant + num_contravariant
+        self.NUM_BOSONS = num_bosons
+        perms = []
+        for perm_boson in antisymmetric_permutations(num_bosons):
+            perm_boson = Permutation(perm_boson.permutation, 1)
+            for perm_covariant in antisymmetric_permutations(num_covariant):
+                for perm_contravariant in antisymmetric_permutations(num_contravariant):
+                    perms.append(perm_boson + perm_covariant + perm_contravariant)
+        self.symmetry = Symmetry(*perms)
+
+
+U11 = MixedAmplitude("u11", 1, 1, 1)
+U12 = MixedAmplitude("u12", 2, 1, 1)
