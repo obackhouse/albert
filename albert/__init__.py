@@ -12,8 +12,18 @@ __version__ = "0.0.0"
 # Optional dependencies:
 
 try:
-    import pyspark
-    from pyspark import SparkContext, SparkConf
+    try:
+        # FIXME this sucks
+
+        import collections
+        import collections.abc
+        collections.Iterable = collections.abc.Iterable
+
+        import dummy_spark as pyspark
+        from dummy_spark import SparkContext, SparkConf
+    except ImportError:
+        import pyspark
+        from pyspark import SparkContext, SparkConf
 
     SPARK_CONF = SparkConf().setAppName("albert").setMaster("local")
     SPARK_CONTEXT = SparkContext(conf=SPARK_CONF)

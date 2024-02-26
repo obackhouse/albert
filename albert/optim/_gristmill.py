@@ -101,6 +101,7 @@ def optimise(
 
         # Get the einstein summation
         rhs = dr.einst(expr_sympy)
+        rhs = rhs.simplify()
         terms.append(dr.define(output_base, *ranges_lhs, rhs))
 
         # Record the permutations and symbols
