@@ -5,7 +5,7 @@ from albert.algebra import Mul
 from albert.base import Base
 from albert.qc import rhf
 from albert.qc.rhf import _make_symmetry
-from albert.symmetry import Symmetry, antisymmetric_permutations
+from albert.symmetry import Symmetry, Permutation, antisymmetric_permutations
 from albert.tensor import Symbol, Tensor
 
 

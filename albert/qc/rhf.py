@@ -1,7 +1,7 @@
 """Expressions for restricted bases.
 """
 
-from albert.symmetry import Permutation, Symmetry
+from albert.symmetry import Permutation, Symmetry, antisymmetric_permutations
 from albert.tensor import Symbol, Tensor
 
 
@@ -184,9 +184,9 @@ class MixedAmplitude(RHFSymbol):
         perms = []
         for perm_boson in antisymmetric_permutations(num_bosons):
             perm_boson = Permutation(perm_boson.permutation, 1)
-            for perm_covariant in antisymmetric_permutations(num_covariant):
-                for perm_contravariant in antisymmetric_permutations(num_contravariant):
-                    perms.append(perm_boson + perm_covariant + perm_contravariant)
+            perm_covariant = Permutation(tuple(range(num_covariant)), 1)
+            perm_contravariant = Permutation(tuple(range(num_contravariant)), 1)
+            perms.append(perm_boson + perm_covariant + perm_contravariant)
         self.symmetry = Symmetry(*perms)
 
 
