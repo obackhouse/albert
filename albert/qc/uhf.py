@@ -340,6 +340,8 @@ class BosonicAmplitude(UHFSymbol):
 
 S1 = BosonicAmplitude("s1", 1, rhf_symbol=rhf.S1)
 S2 = BosonicAmplitude("s2", 2, rhf_symbol=rhf.S2)
+LS1 = BosonicAmplitude("ls1", 1, rhf_symbol=rhf.LS1)
+LS2 = BosonicAmplitude("ls2", 2, rhf_symbol=rhf.LS2)
 
 
 class MixedAmplitude(UHFSymbol):
@@ -427,3 +429,5 @@ class MixedAmplitude(UHFSymbol):
 
 U11 = MixedAmplitude("u11", 1, 1, 1, rhf_symbol=rhf.U11)
 U12 = MixedAmplitude("u12", 2, 1, 1, rhf_symbol=rhf.U12)
+LU11 = MixedAmplitude("lu11", 1, 1, 1, rhf_symbol=rhf.LU11)
+LU12 = MixedAmplitude("lu12", 2, 1, 1, rhf_symbol=rhf.LU12)
