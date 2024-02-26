@@ -131,6 +131,58 @@ class FockSymbol(UHFSymbol):
 Fock = FockSymbol("f")
 
 
+class BosonicHamiltonianSymbol(UHFSymbol):
+    """Constructor for bosonic Hamiltonian symbols."""
+
+    DESIRED_RANK = 1
+    rhf_symbol = rhf.BosonicHamiltonian
+
+    def __init__(self, name):
+        """Initialise the object."""
+        self.name = name
+        self.symmetry = _make_symmetry((0,))
+
+    @staticmethod
+    def _as_rhf(tensor):
+        """
+        Convert a `BosonicHamiltonian`-derived tensor object from
+        unrestricted to restricted.
+        """
+        return tensor
+
+
+BosonicHamiltonian = BosonicHamiltonianSymbol("G")
+
+
+class ElectronBosonHamiltonianSymbol(UHFSymbol):
+    """Constructor for electron-boson Hamiltonian symbols."""
+
+    DESIRED_RANK = 3
+    rhf_symbol = rhf.ElectronBosonHamiltonian
+
+    def __init__(self, name):
+        """Initialise the object."""
+        self.name = name
+        self.symmetry = _make_symmetry(
+            (0, 1, 2),
+            (0, 2, 1),
+        )
+
+    @staticmethod
+    def _as_rhf(tensor):
+        """
+        Convert a `ElectronBosonHamiltonian`-derived tensor object from
+        unrestricted to restricted.
+        """
+        assert all(isinstance(index, SpinIndex) for index in tensor.indices[1:])
+        indices = tuple(index.index for index in tensor.indices[1:])
+        indices = (tensor.indices[0],) + indices
+        return tensor._symbol.rhf_symbol[indices]
+
+
+ElectronBosonHamiltonian = ElectronBosonHamiltonianSymbol("g")
+
+
 class RDM1Symbol(FockSymbol):
     """Constructor for one-electron reduced density matrix symbols."""
 

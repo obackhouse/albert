@@ -82,6 +82,77 @@ class FockSymbol(GHFSymbol):
 Fock = FockSymbol("f")
 
 
+class BosonicHamiltonianSymbol(GHFSymbol):
+    """Constructor for bosonic Hamiltonian symbols."""
+
+    DESIRED_RANK = 1
+    uhf_symbol = uhf.BosonicHamiltonian
+
+    def __init__(self, name):
+        """Initialise the object."""
+        self.name = name
+        self.symmetry = _make_symmetry((0,))
+
+    @staticmethod
+    def _as_uhf(tensor, target_restricted=False):
+        """
+        Convert a `BosonicHamiltonian`-derived tensor object from
+        generalised to unrestricted.
+        """
+        return tensor
+
+
+BosonicHamiltonian = BosonicHamiltonianSymbol("G")
+
+
+class ElectronBosonHamiltonianSymbol(GHFSymbol):
+    """Constructor for electron-boson Hamiltonian symbols."""
+
+    DESIRED_RANK = 3
+    uhf_symbol = uhf.ElectronBosonHamiltonian
+
+    def __init__(self, name):
+        """Initialise the object."""
+        self.name = name
+        self.symmetry = _make_symmetry(
+            (0, 1, 2),
+            (0, 2, 1),
+        )
+
+    @staticmethod
+    def _as_uhf(tensor, target_restricted=False):
+        """
+        Convert a `ElectronBosonHamiltonian`-derived tensor object from
+        generalised to unrestricted.
+        """
+
+        # Loop over spins
+        tensors = []
+        for spin in ("α", "β"):
+            # Check if first index has fixed spin
+            if isinstance(tensor.indices[1], uhf.SpinIndex):
+                if tensor.indices[1].spin != spin:
+                    continue
+
+            # Check if second index has fixed spin
+            if isinstance(tensor.indices[2], uhf.SpinIndex):
+                if tensor.indices[2].spin != spin:
+                    continue
+
+            # Get the UHF tensor part
+            indices = tuple(
+                uhf.SpinIndex(index, spin) if not isinstance(index, uhf.SpinIndex) else index
+                for index in tensor.indices[1:]
+            )
+            indices = (tensor.indices[0],) + indices
+            tensors.append(tensor._symbol.uhf_symbol[indices])
+
+        return tuple(tensors)
+
+
+ElectronBosonHamiltonian = ElectronBosonHamiltonianSymbol("g")
+
+
 class RDM1Symbol(FockSymbol):
     """Constructor for one-electron reduced density matrix symbols."""
 

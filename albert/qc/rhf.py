@@ -51,6 +51,37 @@ class FockSymbol(RHFSymbol):
 Fock = FockSymbol("f")
 
 
+class BosonicHamiltonianSymbol(RHFSymbol):
+    """Constructor for bosonic Hamiltonian symbols."""
+
+    DESIRED_RANK = 1
+
+    def __init__(self, name):
+        """Initialise the object."""
+        self.name = name
+        self.symmetry = _make_symmetry((0,))
+
+
+BosonicHamiltonian = BosonicHamiltonianSymbol("G")
+
+
+class ElectronBosonHamiltonianSymbol(RHFSymbol):
+    """Constructor for electron-boson Hamiltonian symbols."""
+
+    DESIRED_RANK = 3
+
+    def __init__(self, name):
+        """Initialise the object."""
+        self.name = name
+        self.symmetry = _make_symmetry(
+            (0, 1, 2),
+            (0, 2, 1),
+        )
+
+
+ElectronBosonHamiltonian = ElectronBosonHamiltonianSymbol("g")
+
+
 class RDM1Symbol(FockSymbol):
     """Constructor for one-electron reduced density matrix symbols."""
 
