@@ -171,6 +171,8 @@ class BosonicAmplitude(RHFSymbol):
 
 S1 = BosonicAmplitude("s1", 1)
 S2 = BosonicAmplitude("s2", 2)
+LS1 = BosonicAmplitude("ls1", 1)
+LS2 = BosonicAmplitude("ls2", 2)
 
 
 class MixedAmplitude(RHFSymbol):
@@ -192,3 +194,5 @@ class MixedAmplitude(RHFSymbol):
 
 U11 = MixedAmplitude("u11", 1, 1, 1)
 U12 = MixedAmplitude("u12", 2, 1, 1)
+LU11 = MixedAmplitude("lu11", 1, 1, 1)
+LU12 = MixedAmplitude("lu12", 2, 1, 1)
