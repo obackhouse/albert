@@ -17,6 +17,7 @@ try:
 
         import collections
         import collections.abc
+
         collections.Iterable = collections.abc.Iterable
 
         import dummy_spark as pyspark

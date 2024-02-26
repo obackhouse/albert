@@ -5,7 +5,7 @@ from albert.algebra import Mul
 from albert.base import Base
 from albert.qc import rhf
 from albert.qc.rhf import _make_symmetry
-from albert.symmetry import Symmetry, Permutation, antisymmetric_permutations
+from albert.symmetry import Permutation, Symmetry, antisymmetric_permutations
 from albert.tensor import Symbol, Tensor
 
 
@@ -393,8 +393,8 @@ class MixedAmplitude(UHFSymbol):
                 # Get the spins of the tensors in the linear combination
                 spins = []
                 for k in range(nf):
-                    spin = [("α", "β")[j % 2] for j in range(n)]
-                    spin += [("α", "β")[j == k] for j in range(n)]
+                    spin = [("α", "β")[j % 2] for j in range(nf)]
+                    spin += [("α", "β")[j == k] for j in range(nf)]
                     spins.append(spin)
 
                 # Get the new tensors
