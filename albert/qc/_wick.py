@@ -105,7 +105,7 @@ def _convert_symbol(symbol, index_spins=None):
     """
 
     # Swap the bosonic indices
-    for src, dst in zip("IJKL", "WXYZ"):
+    for src, dst in zip("IJKL", "wxyz"):
         symbol = symbol.replace(src, dst)
 
     if _is_number(symbol):

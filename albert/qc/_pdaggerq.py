@@ -123,58 +123,58 @@ def _convert_symbol(symbol, index_spins=None):
 
     elif re.match(r"f\([a-z],[a-z]\)", symbol):
         # f(i,j)
-        indices = tuple(symbol[2:-1].split(","))
+        indices = tuple(symbol[2:-1].replace("t", "p").split(","))
         tensor_symbol = Fock
 
     elif re.match(r"<[a-z],[a-z]\|\|[a-z],[a-z]>", symbol):
         # <i,j||k,l>
-        indices = tuple(symbol[1:-1].replace("||", ",").split(","))
+        indices = tuple(symbol[1:-1].replace("t", "p").replace("||", ",").split(","))
         tensor_symbol = ERI
 
     elif re.match(r"t1\([a-z],[a-z]\)", symbol):
         # t1(i,j)
-        indices = tuple(symbol[3:-1].split(","))
+        indices = tuple(symbol[3:-1].replace("t", "p").split(","))
         indices = (indices[1], indices[0])
         tensor_symbol = T1
 
     elif re.match(r"t2\([a-z],[a-z],[a-z],[a-z]\)", symbol):
         # t2(i,j,k,l)
-        indices = tuple(symbol[3:-1].split(","))
+        indices = tuple(symbol[3:-1].replace("t", "p").split(","))
         indices = (indices[2], indices[3], indices[0], indices[1])
         tensor_symbol = T2
 
     elif re.match(r"t3\([a-z],[a-z],[a-z],[a-z],[a-z],[a-z]\)", symbol):
         # t3(i,j,k,l,m,n)
-        indices = tuple(symbol[3:-1].split(","))
+        indices = tuple(symbol[3:-1].replace("t", "p").split(","))
         indices = (indices[3], indices[4], indices[5], indices[0], indices[1], indices[2])
         tensor_symbol = T3
 
     elif re.match(r"l1\([a-z],[a-z]\)", symbol):
         # l1(i,j)
-        indices = tuple(symbol[3:-1].split(","))
+        indices = tuple(symbol[3:-1].replace("t", "p").split(","))
         indices = (indices[1], indices[0])
         tensor_symbol = L1
 
     elif re.match(r"l2\([a-z],[a-z],[a-z],[a-z]\)", symbol):
         # l2(i,j,k,l)
-        indices = tuple(symbol[3:-1].split(","))
+        indices = tuple(symbol[3:-1].replace("t", "p").split(","))
         indices = (indices[2], indices[3], indices[0], indices[1])
         tensor_symbol = L2
 
     elif re.match(r"l3\([a-z],[a-z],[a-z],[a-z],[a-z],[a-z]\)", symbol):
         # l3(i,j,k,l,m,n)
-        indices = tuple(symbol[3:-1].split(","))
+        indices = tuple(symbol[3:-1].replace("t", "p").split(","))
         indices = (indices[3], indices[4], indices[5], indices[0], indices[1], indices[2])
         tensor_symbol = L3
 
     elif re.match(r"d\([a-z],[a-z]\)", symbol):
         # d(i,j)
-        indices = tuple(symbol[2:-1].split(","))
+        indices = tuple(symbol[2:-1].replace("t", "p").split(","))
         tensor_symbol = Delta
 
     elif re.match(r"P\([a-z],[a-z]\)", symbol):
         # P(i,j)
-        indices = tuple(symbol[2:-1].split(","))
+        indices = tuple(symbol[2:-1].replace("t", "p").split(","))
         tensor_symbol = P
 
     else:
