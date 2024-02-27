@@ -5,11 +5,18 @@ import itertools
 import re
 from fractions import Fraction
 
-from wick.convenience import commute, ep11, one_e, one_p, two_e, two_p
-from wick.expression import Expression, Sigma, Tensor, Term
-from wick.index import Idx
-from wick.operator import BOperator, FOperator, TensorSym
-from wick.wick import apply_wick  # noqa: F401
+try:
+    from qwick.convenience import commute, ep11, one_e, one_p, two_e, two_p
+    from qwick.expression import Expression, Sigma, Tensor, Term
+    from qwick.index import Idx
+    from qwick.operator import BOperator, FOperator, TensorSym
+    from qwick.wick import apply_wick  # noqa: F401
+except:
+    from wick.convenience import commute, ep11, one_e, one_p, two_e, two_p
+    from wick.expression import Expression, Sigma, Tensor, Term
+    from wick.index import Idx
+    from wick.operator import BOperator, FOperator, TensorSym
+    from wick.wick import apply_wick  # noqa: F401
 
 from albert.algebra import Add, Mul
 from albert.qc._pdaggerq import _is_number
