@@ -104,6 +104,10 @@ def _convert_symbol(symbol, index_spins=None):
         Converted symbol.
     """
 
+    # Swap the bosonic indices
+    for src, dst in zip("IJKL", "WXYZ"):
+        symbol = symbol.replace(src, dst)
+
     if _is_number(symbol):
         # factor
         return float(symbol)
