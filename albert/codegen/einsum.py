@@ -168,8 +168,8 @@ class EinsumCodeGen(CodeGen):
             else:
                 transpose = tuple(indices[0].index(i) for i in indices[1])
                 if transpose != tuple(range(len(transpose))):
-                    transpose = self.transpose_func.format(arg=args[0], transpose=transpose)
+                    targ = self.transpose_func.format(arg=args[0], transpose=transpose)
                 else:
-                    transpose = args[0]
+                    targ = args[0]
                 copy = ".copy()" if i == 0 and not already_declared else ""
-                self.write(f"{output_name} {operator} {transpose}{copy}{factor}")
+                self.write(f"{output_name} {operator} {targ}{copy}{factor}")
