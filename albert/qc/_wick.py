@@ -7,15 +7,15 @@ from fractions import Fraction
 
 try:
     from qwick.convenience import commute, ep11, one_e, one_p, two_e, two_p
-    from qwick.expression import Expression, Sigma, Tensor, Term
+    from qwick.expression import Expression, Term
     from qwick.index import Idx
-    from qwick.operator import BOperator, FOperator, TensorSym
+    from qwick.operator import BOperator, FOperator, Sigma, Tensor, TensorSym
     from qwick.wick import apply_wick  # noqa: F401
-except:
+except Exception as e:
     from wick.convenience import commute, ep11, one_e, one_p, two_e, two_p
-    from wick.expression import Expression, Sigma, Tensor, Term
+    from wick.expression import Expression, Term
     from wick.index import Idx
-    from wick.operator import BOperator, FOperator, TensorSym
+    from wick.operator import BOperator, Sigma, Tensor, FOperator, TensorSym
     from wick.wick import apply_wick  # noqa: F401
 
 from albert.algebra import Add, Mul
