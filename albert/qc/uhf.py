@@ -154,19 +154,42 @@ class BosonicHamiltonianSymbol(UHFSymbol):
 BosonicHamiltonian = BosonicHamiltonianSymbol("G")
 
 
+class BosonicInteractionHamiltonianSymbol(UHFSymbol):
+    """Constructor for bosonic interaction Hamiltonian symbols."""
+
+    DESIRED_RANK = 2
+    rhf_symbol = rhf.BosonicInteractionHamiltonian
+
+    def __init__(self, name):
+        """Initialise the object."""
+        self.name = name
+        self.symmetry = _make_symmetry((0, 1), (1, 0))
+
+    @staticmethod
+    def _as_rhf(tensor):
+        """
+        Convert a `BosonicInteractionHamiltonian`-derived tensor object
+        from unrestricted to restricted.
+        """
+        return tensor
+
+
+BosonicInteractionHamiltonian = BosonicInteractionHamiltonianSymbol("w")
+
+
 class ElectronBosonHamiltonianSymbol(UHFSymbol):
     """Constructor for electron-boson Hamiltonian symbols."""
 
     DESIRED_RANK = 3
-    rhf_symbol = rhf.ElectronBosonHamiltonian
 
-    def __init__(self, name):
+    def __init__(self, name, rhf_symbol):
         """Initialise the object."""
         self.name = name
         self.symmetry = _make_symmetry(
             (0, 1, 2),
             (0, 2, 1),
         )
+        self.rhf_symbol = rhf_symbol
 
     @staticmethod
     def _as_rhf(tensor):
@@ -180,7 +203,10 @@ class ElectronBosonHamiltonianSymbol(UHFSymbol):
         return tensor._symbol.rhf_symbol[indices]
 
 
-ElectronBosonHamiltonian = ElectronBosonHamiltonianSymbol("g")
+ElectronBosonHamiltonian = ElectronBosonHamiltonianSymbol("g", rhf.ElectronBosonHamiltonian)
+ElectronBosonConjHamiltonian = ElectronBosonHamiltonianSymbol(
+    "gc", rhf.ElectronBosonConjHamiltonian
+)
 
 
 class RDM1Symbol(FockSymbol):

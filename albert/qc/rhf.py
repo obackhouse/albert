@@ -65,6 +65,20 @@ class BosonicHamiltonianSymbol(RHFSymbol):
 BosonicHamiltonian = BosonicHamiltonianSymbol("G")
 
 
+class BosonicInteractionHamiltonianSymbol(RHFSymbol):
+    """Constructor for bosonic interaction Hamiltonian symbols."""
+
+    DESIRED_RANK = 2
+
+    def __init__(self, name):
+        """Initialise the object."""
+        self.name = name
+        self.symmetry = _make_symmetry((0, 1), (1, 0))
+
+
+BosonicInteractionHamiltonian = BosonicInteractionHamiltonianSymbol("w")
+
+
 class ElectronBosonHamiltonianSymbol(RHFSymbol):
     """Constructor for electron-boson Hamiltonian symbols."""
 
@@ -80,6 +94,7 @@ class ElectronBosonHamiltonianSymbol(RHFSymbol):
 
 
 ElectronBosonHamiltonian = ElectronBosonHamiltonianSymbol("g")
+ElectronBosonConjHamiltonian = ElectronBosonHamiltonianSymbol("gc")
 
 
 class RDM1Symbol(FockSymbol):

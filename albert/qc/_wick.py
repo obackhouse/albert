@@ -11,7 +11,7 @@ try:
     from qwick.index import Idx
     from qwick.operator import BOperator, FOperator, Sigma, Tensor, TensorSym
     from qwick.wick import apply_wick  # noqa: F401
-except Exception as e:
+except ImportError:
     from wick.convenience import commute, ep11, one_e, one_p, two_e, two_p
     from wick.expression import Expression, Term
     from wick.index import Idx
@@ -37,7 +37,9 @@ from albert.qc.ghf import (
     U11,
     U12,
     BosonicHamiltonian,
+    BosonicInteractionHamiltonian,
     Delta,
+    ElectronBosonConjHamiltonian,
     ElectronBosonHamiltonian,
     Fock,
 )
@@ -134,10 +136,20 @@ def _convert_symbol(symbol, index_spins=None):
         indices = tuple(symbol[3:4])
         tensor_symbol = BosonicHamiltonian
 
+    elif re.match(r"w_\{[a-z][a-z]\}", symbol):
+        # w_{IJ}
+        indices = tuple(symbol[3:5])
+        tensor_symbol = BosonicInteractionHamiltonian
+
     elif re.match(r"g_\{[a-z][a-z][a-z]\}", symbol):
         # g_{Iij}
         indices = tuple(symbol[3:6])
         tensor_symbol = ElectronBosonHamiltonian
+
+    elif re.match(r"gc_\{[a-z][a-z][a-z]\}", symbol):
+        # gc_{Iij}
+        indices = tuple(symbol[3:6])
+        tensor_symbol = ElectronBosonConjHamiltonian
 
     elif re.match(r"t1_\{[a-z][a-z]\}", symbol):
         # t1_{ij}
