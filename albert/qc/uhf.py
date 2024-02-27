@@ -79,7 +79,7 @@ class UHFTensor(Tensor):
 
         # Get the penalty function
         def _penalty(tensor):
-            spins = tuple(index.spin for index in tensor.indices)
+            spins = tuple(getattr(index, "spin", "") for index in tensor.indices)
             penalty = sum(2 for i, spin in enumerate(spins) if spins[i - 1] == spin)
             if spins[0] != min(spins):
                 penalty += 1

@@ -8,7 +8,7 @@ from numbers import Number
 from albert.algebra import Mul
 from albert.qc.ghf import GHFTensor
 from albert.qc.rhf import RHFTensor
-from albert.qc.uhf import UHFTensor
+from albert.qc.uhf import SpinIndex, UHFTensor
 
 
 def generalised_to_unrestricted(expr, target_restricted=False):
@@ -61,10 +61,11 @@ def generalised_to_unrestricted(expr, target_restricted=False):
             # consistent spins
             index_spins = {}
             for index in itertools.chain(*(arg.external_indices for arg in spin_args_perm)):
-                if index.index not in index_spins:
-                    index_spins[index.index] = index.spin
-                elif index_spins[index.index] != index.spin:
-                    break
+                if isinstance(index, SpinIndex):
+                    if index.index not in index_spins:
+                        index_spins[index.index] = index.spin
+                    elif index_spins[index.index] != index.spin:
+                        break
             else:
                 # This contribution is good, add it to the new
                 # expression for the relevant indices

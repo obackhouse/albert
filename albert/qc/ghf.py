@@ -99,7 +99,7 @@ class BosonicHamiltonianSymbol(GHFSymbol):
         Convert a `BosonicHamiltonian`-derived tensor object from
         generalised to unrestricted.
         """
-        return tensor
+        return (tensor._symbol.uhf_symbol[tensor.indices],)
 
 
 BosonicHamiltonian = BosonicHamiltonianSymbol("G")
@@ -457,7 +457,7 @@ class BosonicAmplitude(GHFSymbol):
         Convert a `Sn`-derived tensor object from generalised to
         unrestricted.
         """
-        return tensor
+        return (tensor._symbol.uhf_symbol[tensor.indices],)
 
 
 S1 = BosonicAmplitude("s1", 1, uhf_symbol=uhf.S1)
