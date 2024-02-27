@@ -35,7 +35,7 @@ class EinsumCodeGen(CodeGen):
         self,
         einsum_func="np.einsum",
         einsum_kwargs=None,
-        transpose_func="np.transpose",
+        transpose_func="np.transpose({arg}, {transpose})",
         name_generator=None,
         **kwargs,
     ):
@@ -167,6 +167,9 @@ class EinsumCodeGen(CodeGen):
                 self.write(f"{output_name} {operator} {self.einsum_func}({args}{kwargs}){factor}")
             else:
                 transpose = tuple(indices[0].index(i) for i in indices[1])
-                transpose = self.transpose_func + f"({args[0]}, {transpose})"
+                if transpose != tuple(range(len(transpose))):
+                    transpose = self.transpose_func.format(arg=args[0], transpose=transpose)
+                else:
+                    transpose = args[0]
                 copy = ".copy()" if i == 0 and not already_declared else ""
                 self.write(f"{output_name} {operator} {transpose}{copy}{factor}")
