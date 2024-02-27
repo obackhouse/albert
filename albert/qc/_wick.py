@@ -141,15 +141,15 @@ def _convert_symbol(symbol, index_spins=None):
         indices = tuple(symbol[3:5])
         tensor_symbol = BosonicInteractionHamiltonian
 
+    elif re.match(r"gc_\{[a-z][a-z][a-z]\}", symbol):
+        # gc_{Iij}
+        indices = tuple(symbol[4:7])
+        tensor_symbol = ElectronBosonConjHamiltonian
+
     elif re.match(r"g_\{[a-z][a-z][a-z]\}", symbol):
         # g_{Iij}
         indices = tuple(symbol[3:6])
         tensor_symbol = ElectronBosonHamiltonian
-
-    elif re.match(r"gc_\{[a-z][a-z][a-z]\}", symbol):
-        # gc_{Iij}
-        indices = tuple(symbol[3:6])
-        tensor_symbol = ElectronBosonConjHamiltonian
 
     elif re.match(r"t1_\{[a-z][a-z]\}", symbol):
         # t1_{ij}
@@ -181,16 +181,6 @@ def _convert_symbol(symbol, index_spins=None):
         indices = tuple(symbol[4:10])
         tensor_symbol = L3
 
-    elif re.match(r"s1_\{[a-z]\}", symbol):
-        # s1_{I}
-        indices = tuple(symbol[4:5])
-        tensor_symbol = S1
-
-    elif re.match(r"s2_\{[a-z][a-z]\}", symbol):
-        # s2_{IJ}
-        indices = tuple(symbol[4:6])
-        tensor_symbol = S2
-
     elif re.match(r"ls1_\{[a-z]\}", symbol):
         # ls1_{I}
         indices = tuple(symbol[5:6])
@@ -201,15 +191,15 @@ def _convert_symbol(symbol, index_spins=None):
         indices = tuple(symbol[5:7])
         tensor_symbol = LS2
 
-    elif re.match(r"u11_\{[a-z][a-z][a-z]\}", symbol):
-        # u11_{Iij}
-        indices = tuple(symbol[5:8])
-        tensor_symbol = U11
+    elif re.match(r"s1_\{[a-z]\}", symbol):
+        # s1_{I}
+        indices = tuple(symbol[4:5])
+        tensor_symbol = S1
 
-    elif re.match(r"u12_\{[a-z][a-z][a-z][a-z]\}", symbol):
-        # u12_{IJij}
-        indices = tuple(symbol[5:9])
-        tensor_symbol = U12
+    elif re.match(r"s2_\{[a-z][a-z]\}", symbol):
+        # s2_{IJ}
+        indices = tuple(symbol[4:6])
+        tensor_symbol = S2
 
     elif re.match(r"lu11_\{[a-z][a-z][a-z]\}", symbol):
         # lu11_{Iij}
@@ -220,6 +210,16 @@ def _convert_symbol(symbol, index_spins=None):
         # lu12_{IJij}
         indices = tuple(symbol[5:9])
         tensor_symbol = LU12
+
+    elif re.match(r"u11_\{[a-z][a-z][a-z]\}", symbol):
+        # u11_{Iij}
+        indices = tuple(symbol[5:8])
+        tensor_symbol = U11
+
+    elif re.match(r"u12_\{[a-z][a-z][a-z][a-z]\}", symbol):
+        # u12_{IJij}
+        indices = tuple(symbol[5:9])
+        tensor_symbol = U12
 
     elif re.match(r"delta_\{[a-z][a-z]\}", symbol):
         # delta_{ij}
