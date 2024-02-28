@@ -203,7 +203,7 @@ def _convert_symbol(symbol, index_spins=None):
 
     elif re.match(r"lu11_\{[a-z][a-z][a-z]\}", symbol):
         # lu11_{Iij}
-        indices = tuple(symbol[6:10])
+        indices = tuple(symbol[6:9])
         tensor_symbol = LU11
 
     elif re.match(r"lu12_\{[a-z][a-z][a-z][a-z]\}", symbol):
