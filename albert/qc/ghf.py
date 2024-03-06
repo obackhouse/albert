@@ -44,7 +44,10 @@ class FockSymbol(GHFSymbol):
     def __init__(self, name):
         """Initialise the object."""
         self.name = name
-        self.symmetry = _make_symmetry((0, 1), (1, 0),)
+        self.symmetry = _make_symmetry(
+            (0, 1),
+            (1, 0),
+        )
 
     @staticmethod
     def _as_uhf(tensor, target_restricted=False):
@@ -133,7 +136,10 @@ class ElectronBosonHamiltonianSymbol(GHFSymbol):
     def __init__(self, name, rhf_symbol):
         """Initialise the object."""
         self.name = name
-        self.symmetry = _make_symmetry((0, 1, 2), (0, 2, 1),)
+        self.symmetry = _make_symmetry(
+            (0, 1, 2),
+            (0, 2, 1),
+        )
         self.rhf_symbol = rhf_symbol
 
     @staticmethod

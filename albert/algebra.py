@@ -189,12 +189,14 @@ class Algebraic(Base):
         node = (self, seed)
 
         # Get the children
-        seeds = [random.randint(0, 2 ** 32) for _ in self.args]
+        seeds = [random.randint(0, 2**32) for _ in self.args]
         children = [(arg, seed) for arg, seed in zip(self.args, seeds)]
 
         # Add the operator node
         tree.add(
-            node, name=self.__class__.__name__, children=children,
+            node,
+            name=self.__class__.__name__,
+            children=children,
         )
 
         # Add the children

@@ -112,7 +112,10 @@ class FockSymbol(UHFSymbol):
     def __init__(self, name):
         """Initialise the object."""
         self.name = name
-        self.symmetry = _make_symmetry((0, 1), (1, 0),)
+        self.symmetry = _make_symmetry(
+            (0, 1),
+            (1, 0),
+        )
 
     @staticmethod
     def _as_rhf(tensor):
@@ -182,7 +185,10 @@ class ElectronBosonHamiltonianSymbol(UHFSymbol):
     def __init__(self, name, rhf_symbol):
         """Initialise the object."""
         self.name = name
-        self.symmetry = _make_symmetry((0, 1, 2), (0, 2, 1),)
+        self.symmetry = _make_symmetry(
+            (0, 1, 2),
+            (0, 2, 1),
+        )
         self.rhf_symbol = rhf_symbol
 
     @staticmethod
@@ -269,7 +275,10 @@ class CDERISymbol(UHFSymbol):
         """Initialise the object."""
         self.name = name
         # FIXME this is for real orbitals only
-        self.symmetry = _make_symmetry((0, 1, 2), (0, 2, 1),)
+        self.symmetry = _make_symmetry(
+            (0, 1, 2),
+            (0, 2, 1),
+        )
 
     @staticmethod
     def _as_rhf(tensor):
