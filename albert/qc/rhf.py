@@ -42,10 +42,7 @@ class FockSymbol(RHFSymbol):
     def __init__(self, name):
         """Initialise the object."""
         self.name = name
-        self.symmetry = _make_symmetry(
-            (0, 1),
-            (1, 0),
-        )
+        self.symmetry = _make_symmetry((0, 1), (1, 0),)
 
 
 Fock = FockSymbol("f")
@@ -87,10 +84,7 @@ class ElectronBosonHamiltonianSymbol(RHFSymbol):
     def __init__(self, name):
         """Initialise the object."""
         self.name = name
-        self.symmetry = _make_symmetry(
-            (0, 1, 2),
-            (0, 2, 1),
-        )
+        self.symmetry = _make_symmetry((0, 1, 2), (0, 2, 1),)
 
 
 ElectronBosonHamiltonian = ElectronBosonHamiltonianSymbol("g")
@@ -151,10 +145,7 @@ class CDERISymbol(RHFSymbol):
         """Initialise the object."""
         self.name = name
         # FIXME this is for real orbitals only
-        self.symmetry = _make_symmetry(
-            (0, 1, 2),
-            (0, 2, 1),
-        )
+        self.symmetry = _make_symmetry((0, 1, 2), (0, 2, 1),)
 
 
 CDERI = CDERISymbol("v")
@@ -181,10 +172,7 @@ class FermionicAmplitude(RHFSymbol):
         self.DESIRED_RANK = num_covariant + num_contravariant
         # FIXME how to generalise?
         if (num_covariant, num_contravariant) == (2, 2):
-            self.symmetry = _make_symmetry(
-                (0, 1, 2, 3),
-                (1, 0, 3, 2),
-            )
+            self.symmetry = _make_symmetry((0, 1, 2, 3), (1, 0, 3, 2),)
         elif (num_covariant, num_contravariant) == (3, 3):
             self.symmetry = Symmetry(
                 Permutation((0, 1, 2, 3, 4, 5), +1),

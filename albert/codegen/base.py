@@ -2,6 +2,7 @@
 """
 
 import datetime
+import functools
 import inspect
 import platform
 import sys
@@ -44,46 +45,55 @@ def sort_exprs(returns, outputs, exprs):
             tmp_exprs.append(Mul(*mul_args))
             tmp_names.append({arg.name for arg in mul_args if isinstance(arg, Tensor)})
 
-    # Prepare a recursive function to place the expressions
+    # Initialise the output
     new_outputs = []
     new_exprs = []
-    new_names = []
-    remaining = set(range(len(tmp_outputs)))
 
-    def _place(i):
-        # Get the arguments for this index
-        assert i in remaining
-        output_i = tmp_outputs[i]
-        expr_i = tmp_exprs[i]
-        names_i = tmp_names[i]
+    # Push any expressions resulting in a return to the end
+    for i in range(len(tmp_outputs) - 1, -1, -1):
+        if any(tmp_outputs[i].name == ret.name for ret in returns):
+            new_outputs.insert(0, tmp_outputs.pop(i))
+            new_exprs.insert(0, tmp_exprs.pop(i))
 
-        # Place the expression before its first use
-        place = len(new_outputs)
-        for j, (output_j, expr_j, names_j) in enumerate(zip(new_outputs, new_exprs, new_names)):
-            if output_i.name in names_j:
-                place = j
-                break
+    # Sort the output expressions by the RHS
+    def score_rhs(expr):
+        return max(
+            [0]
+            + [
+                int(t.name.replace("tmp", "")) if "tmp" in t.name else -1
+                for mul_args in expr.nested_view()
+                for t in mul_args
+                if isinstance(t, Tensor)
+            ]
+        )
 
-        # Insert the expression
-        new_outputs.insert(place, output_i)
-        new_exprs.insert(place, expr_i)
-        new_names.insert(place, names_i)
-        remaining.remove(i)
+    new_outputs, new_exprs = zip(
+        *sorted(zip(new_outputs, new_exprs), key=lambda x: score_rhs(x[1]))
+    )
+    new_outputs = list(new_outputs)
+    new_exprs = list(new_exprs)
 
-        # Get the indices of the dependencies
-        todo = []
-        for j in remaining:
-            if tmp_outputs[j].name in names_i:
-                todo.append(j)
+    if len(exprs):
+        # Sort the remaining expressions by the LHS
+        def score_lhs(output):
+            return int(output.name.replace("tmp", "")) if "tmp" in output.name else -1
 
-        # Try to place the depdendencies
-        for j in reversed(sorted(todo)):
-            if j in remaining:
-                _place(j)
+        tmp_outputs, tmp_exprs = zip(
+            *sorted(zip(tmp_outputs, tmp_exprs), key=lambda x: score_lhs(x[0]))
+        )
+        tmp_outputs = list(tmp_outputs)
+        tmp_exprs = list(tmp_exprs)
 
-    # Place the expressions
-    while remaining:
-        _place(max(remaining))
+        # Insert the remaining expressions
+        i = 0
+        while len(tmp_exprs):
+            current = score_rhs(new_exprs[i])
+            if current != -1:
+                while len(tmp_exprs) and score_lhs(tmp_outputs[0]) <= current:
+                    new_exprs.insert(i, tmp_exprs.pop(0))
+                    new_outputs.insert(i, tmp_outputs.pop(0))
+                    i += 1
+            i += 1
 
     return new_outputs, new_exprs
 
@@ -97,6 +107,8 @@ def kernel(
     as_dict=False,
     preamble=None,
     postamble=None,
+    ignore_arguments=None,
+    get_name=None,
 ):
     """
     Generate the code for a function using a list of expressions.
@@ -120,6 +132,12 @@ def kernel(
         Preamble to add to the function. Default value is `None`.
     postamble : str, optional
         Postamble to add to the function. Default value is `None`.
+    ignore_arguments : list of str, optional
+        The arguments to ignore, on top of those defined by the class.
+        Default value is `None`.
+    get_name : callable, optional
+        The function to get the name of a tensor. If `None`. use the
+        function defined by the class. Default value is `None`.
     """
 
     # Get the arguments
@@ -129,10 +147,14 @@ def kernel(
             for expr in exprs
             for mul_args in expr.nested_view()
             for arg in mul_args
-            if isinstance(arg, Tensor) and not codegen.ignore_argument(arg)
+            if isinstance(arg, Tensor)
+            and not (
+                codegen.ignore_argument(arg) or (ignore_arguments and arg.name in ignore_arguments)
+            )
         ),
     )
     rets = sorted(set([codegen.get_name(ret, add_spaces=False) for ret in returns]))
+    get_name = get_name or codegen.get_name
 
     # Write the function declaration
     codegen.function_declaration(function_name, args)
@@ -165,7 +187,7 @@ def kernel(
         for mul_args in expr.nested_view():
             for arg in mul_args:
                 if isinstance(arg, Tensor) and arg.rank > 0:
-                    last_appearance[codegen.get_name(arg, add_spaces=False)] = i
+                    last_appearance[get_name(arg, add_spaces=False)] = i
 
     # Get the tensors to cleanup at each step
     to_cleanup = defaultdict(list)
@@ -173,17 +195,17 @@ def kernel(
         if not any(name == r for r in rets) and not any(name == a for a in args):
             to_cleanup[i].append(name)
 
-    # Write the function declarations
+    # Write the contractions
     declared = set()
     for i, (output, expr) in enumerate(zip(outputs, exprs)):
         # Write the declarations
-        already_declared = codegen.get_name(output) in declared
+        already_declared = get_name(output) in declared
         if not already_declared:
             if output.rank == 0:
                 codegen.scalar_declaration(output)
             else:
                 codegen.tensor_declaration(output)
-            declared.add(codegen.get_name(output))
+            declared.add(get_name(output))
 
         # Write the expression
         codegen.algebraic_expression(output, expr, already_declared=already_declared)

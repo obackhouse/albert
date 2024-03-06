@@ -59,13 +59,7 @@ def plot_graph(graph, ax=None, show=True):
 
     # Draw the nodes
     nx.draw_networkx_nodes(
-        graph,
-        pos,
-        ax=ax,
-        node_color="w",
-        edgecolors="k",
-        linewidths=1,
-        node_size=500,
+        graph, pos, ax=ax, node_color="w", edgecolors="k", linewidths=1, node_size=500,
     )
 
     # Draw the edges
@@ -101,10 +95,7 @@ def plot_graph(graph, ax=None, show=True):
 
     # Draw the labels
     nx.draw_networkx_labels(
-        graph,
-        pos,
-        ax=ax,
-        labels={node: graph._node[node]["data"].name for node in graph.nodes},
+        graph, pos, ax=ax, labels={node: graph._node[node]["data"].name for node in graph.nodes},
     )
 
     # Show the figure
