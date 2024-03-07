@@ -2,65 +2,10 @@
 """
 
 from albert.algebra import Mul
-from albert.base import Base
 from albert.qc import rhf
 from albert.qc.rhf import _make_symmetry
 from albert.symmetry import Permutation, Symmetry, antisymmetric_permutations
 from albert.tensor import Symbol, Tensor
-
-
-class SpinIndex(Base):
-    """
-    Class to represent a spin index. Adds a `spin` attribute to any
-    accepted index type.
-    """
-
-    def __init__(self, index, spin):
-        """Initialise the object."""
-        self.index = index
-        self.spin = spin
-
-    def hashable(self):
-        """Return a hashable representation of the object."""
-        return (self.spin, self.index)
-
-    def as_json(self):
-        """Return a JSON serialisable representation of the object."""
-        return {
-            "_type": self.__class__.__name__,
-            "_path": self.__module__,
-            "index": self.index,
-            "spin": self.spin,
-        }
-
-    @classmethod
-    def from_json(cls, data):
-        """Return an object from a JSON serialisable representation.
-
-        Notes
-        -----
-        This method is non-recursive and the dictionary members should
-        already be parsed.
-        """
-        return cls(data["index"], data["spin"])
-
-    def _prepare_other(self, other):
-        """Prepare the other object."""
-        if not isinstance(other, SpinIndex):
-            return SpinIndex(other, "")
-        return other
-
-    def __repr__(self):
-        """Return a string representation of the object."""
-        return f"{self.index}{self.spin}"
-
-    def to_spin(self, spin):
-        """Return a copy of the object with the spin set to `spin`."""
-        return SpinIndex(self.index, spin)
-
-    def spin_flip(self):
-        """Return a copy of the object with the spin flipped."""
-        return self.to_spin({"α": "β", "β": "α"}[self.spin])
 
 
 class UHFTensor(Tensor):
@@ -123,8 +68,8 @@ class FockSymbol(UHFSymbol):
         Convert a `Fock`-derived tensor object from generalised to
         unrestricted.
         """
-        assert all(isinstance(index, SpinIndex) for index in tensor.indices)
-        indices = tuple(index.index for index in tensor.indices)
+        assert all(index.spin is not None for index in tensor.indices)
+        indices = tuple(index.to_spin(None) for index in tensor.indices)
         return tensor._symbol.rhf_symbol[indices]
 
 
@@ -197,8 +142,8 @@ class ElectronBosonHamiltonianSymbol(UHFSymbol):
         Convert a `ElectronBosonHamiltonian`-derived tensor object from
         unrestricted to restricted.
         """
-        assert all(isinstance(index, SpinIndex) for index in tensor.indices[1:])
-        indices = tuple(index.index for index in tensor.indices[1:])
+        assert all(index.spin is not None for index in tensor.indices[1:])
+        indices = tuple(index.to_spin(None) for index in tensor.indices[1:])
         indices = (tensor.indices[0],) + indices
         return tensor._symbol.rhf_symbol[indices]
 
@@ -254,8 +199,8 @@ class ERISymbol(UHFSymbol):
         Convert an `ERI`-derived tensor object from generalised to
         unrestricted.
         """
-        assert all(isinstance(index, SpinIndex) for index in tensor.indices)
-        indices = tuple(index.index for index in tensor.indices)
+        assert all(index.spin is not None for index in tensor.indices)
+        indices = tuple(index.to_spin(None) for index in tensor.indices)
         return tensor._symbol.rhf_symbol[indices]
 
 
@@ -286,8 +231,8 @@ class CDERISymbol(UHFSymbol):
         Convert an `ERI`-derived tensor object from generalised to
         unrestricted.
         """
-        assert all(isinstance(index, SpinIndex) for index in tensor.indices[1:])
-        indices = (tensor.indices[0],) + tuple(index.index for index in tensor.indices[1:])
+        assert all(index.spin is not None for index in tensor.indices[1:])
+        indices = (tensor.indices[0],) + tuple(index.to_spin(None) for index in tensor.indices[1:])
         return tensor._symbol.rhf_symbol[indices]
 
 
@@ -335,7 +280,7 @@ class FermionicAmplitude(UHFSymbol):
         n = tensor.rank // 2
 
         # Check input
-        assert all(isinstance(index, SpinIndex) for index in tensor.indices)
+        assert all(index.spin is not None for index in tensor.indices)
 
         # Spin flip if needed
         nα = sum(index.spin == "α" for index in tensor.indices)
@@ -378,7 +323,7 @@ class FermionicAmplitude(UHFSymbol):
                 factor = 1
 
             # Get the restricted tensor
-            indices = tuple(index.index for index in t.indices)
+            indices = tuple(index.to_spin(None) for index in t.indices)
             tensor_out += tensor._symbol.rhf_symbol[indices] * factor
 
         return tensor_out.expand()
@@ -453,7 +398,7 @@ class MixedAmplitude(UHFSymbol):
         nf = (tensor.rank - tensor._symbol.NUM_BOSONS) // 2
 
         # Check input
-        assert all(isinstance(index, SpinIndex) for index in tensor.indices[nb:])
+        assert all(index.spin is not None for index in tensor.indices[nb:])
 
         # Spin flip if needed
         nα = sum(index.spin == "α" for index in tensor.indices[nb:])
@@ -498,7 +443,7 @@ class MixedAmplitude(UHFSymbol):
                 factor = 1
 
             # Get the restricted tensor
-            indices = tuple(index.index for index in t.indices[nb:])
+            indices = tuple(index.to_spin(None) for index in t.indices[nb:])
             indices = tensor.indices[:nb] + indices
             tensor_out += tensor._symbol.rhf_symbol[indices] * factor
 

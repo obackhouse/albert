@@ -2,7 +2,6 @@
 """
 
 import datetime
-import functools
 import inspect
 import platform
 import sys
@@ -73,7 +72,7 @@ def sort_exprs(returns, outputs, exprs):
     new_outputs = list(new_outputs)
     new_exprs = list(new_exprs)
 
-    if len(exprs):
+    if len(tmp_exprs):
         # Sort the remaining expressions by the LHS
         def score_lhs(output):
             return int(output.name.replace("tmp", "")) if "tmp" in output.name else -1

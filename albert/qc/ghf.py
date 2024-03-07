@@ -60,20 +60,15 @@ class FockSymbol(GHFSymbol):
         tensors = []
         for spin in ("α", "β"):
             # Check if first index has fixed spin
-            if isinstance(tensor.indices[0], uhf.SpinIndex):
-                if tensor.indices[0].spin != spin:
-                    continue
+            if tensor.indices[0].spin is not None and tensor.indices[0].spin != spin:
+                continue
 
             # Check if second index has fixed spin
-            if isinstance(tensor.indices[1], uhf.SpinIndex):
-                if tensor.indices[1].spin != spin:
-                    continue
+            if tensor.indices[1].spin is not None and tensor.indices[1].spin != spin:
+                continue
 
             # Get the UHF tensor part
-            indices = tuple(
-                uhf.SpinIndex(index, spin) if not isinstance(index, uhf.SpinIndex) else index
-                for index in tensor.indices
-            )
+            indices = tuple(index.to_spin(spin) for index in tensor.indices)
             tensors.append(tensor._symbol.uhf_symbol[indices])
 
         return tuple(tensors)
@@ -153,20 +148,15 @@ class ElectronBosonHamiltonianSymbol(GHFSymbol):
         tensors = []
         for spin in ("α", "β"):
             # Check if first index has fixed spin
-            if isinstance(tensor.indices[1], uhf.SpinIndex):
-                if tensor.indices[1].spin != spin:
-                    continue
+            if tensor.indices[1].spin is not None and tensor.indices[1].spin != spin:
+                continue
 
             # Check if second index has fixed spin
-            if isinstance(tensor.indices[2], uhf.SpinIndex):
-                if tensor.indices[2].spin != spin:
-                    continue
+            if tensor.indices[2].spin is not None and tensor.indices[2].spin != spin:
+                continue
 
             # Get the UHF tensor part
-            indices = tuple(
-                uhf.SpinIndex(index, spin) if not isinstance(index, uhf.SpinIndex) else index
-                for index in tensor.indices[1:]
-            )
+            indices = tuple(index.to_spin(spin) for index in tensor.indices[1:])
             indices = (tensor.indices[0],) + indices
             tensors.append(tensor._symbol.uhf_symbol[indices])
 
@@ -242,16 +232,13 @@ class ERISymbol(GHFSymbol):
         ]:
             # Check if indices have fixed spins
             if any(
-                isinstance(index, uhf.SpinIndex) and index.spin != spin
+                index.spin is not None and index.spin != spin
                 for index, spin in zip(indices_bare, spins)
             ):
                 continue
 
             # Get the indices
-            indices = tuple(
-                uhf.SpinIndex(index, spin) if not isinstance(index, uhf.SpinIndex) else index
-                for index, spin in zip(indices_bare, spins)
-            )
+            indices = tuple(index.to_spin(spin) for index, spin in zip(indices_bare, spins))
 
             # Get the UHF symbol
             uhf_symbol = tensor._symbol.uhf_symbol
@@ -309,16 +296,13 @@ class SingleERISymbol(GHFSymbol):
         ]:
             # Check if indices have fixed spins
             if any(
-                isinstance(index, uhf.SpinIndex) and index.spin != spin
+                index.spin is not None and index.spin != spin
                 for index, spin in zip(indices_bare, spins)
             ):
                 continue
 
             # Get the indices
-            indices = tuple(
-                uhf.SpinIndex(index, spin) if not isinstance(index, uhf.SpinIndex) else index
-                for index, spin in zip(indices_bare, spins)
-            )
+            indices = tuple(index.to_spin(spin) for index, spin in zip(indices_bare, spins))
 
             # Get the UHF symbol
             uhf_symbol = tensor._symbol.uhf_symbol
@@ -368,16 +352,13 @@ class RDM2Symbol(GHFSymbol):
         ]:
             # Check if indices have fixed spins
             if any(
-                isinstance(index, uhf.SpinIndex) and index.spin != spin
+                index.spin is not None and index.spin != spin
                 for index, spin in zip(indices_bare, spins)
             ):
                 continue
 
             # Get the indices
-            indices = tuple(
-                uhf.SpinIndex(index, spin) if not isinstance(index, uhf.SpinIndex) else index
-                for index, spin in zip(indices_bare, spins)
-            )
+            indices = tuple(index.to_spin(spin) for index, spin in zip(indices_bare, spins))
 
             # Get the UHF symbol
             uhf_symbol = tensor._symbol.uhf_symbol
@@ -428,17 +409,14 @@ class FermionicAmplitude(GHFSymbol):
             for contravariant in set(itertools.permutations(covariant)):
                 # Check if indices have fixed spins
                 if any(
-                    isinstance(index, uhf.SpinIndex) and index.spin != spin
+                    index.spin is not None and index.spin != spin
                     for index, spin in zip(tensor.indices, covariant + contravariant)
                 ):
                     continue
 
                 # Get the UHF tensor part
                 spins = tuple(covariant) + tuple(contravariant)
-                indices = tuple(
-                    uhf.SpinIndex(index, spin) if not isinstance(index, uhf.SpinIndex) else index
-                    for index, spin in zip(tensor.indices, spins)
-                )
+                indices = tuple(index.to_spin(spin) for index, spin in zip(tensor.indices, spins))
                 uhf_tensor_part = tensor._symbol.uhf_symbol[indices]
 
                 if not target_restricted:
@@ -528,7 +506,7 @@ class MixedAmplitude(GHFSymbol):
             for contravariant in set(itertools.permutations(covariant)):
                 # Check if indices have fixed spins
                 if any(
-                    isinstance(index, uhf.SpinIndex) and index.spin != spin
+                    index.spin is not None and index.spin != spin
                     for index, spin in zip(tensor.indices[nb:], covariant + contravariant)
                 ):
                     continue
@@ -536,8 +514,7 @@ class MixedAmplitude(GHFSymbol):
                 # Get the UHF tensor part
                 spins = tuple(covariant) + tuple(contravariant)
                 indices = tuple(
-                    uhf.SpinIndex(index, spin) if not isinstance(index, uhf.SpinIndex) else index
-                    for index, spin in zip(tensor.indices[nb:], spins)
+                    index.to_spin(spin) for index, spin in zip(tensor.indices[nb:], spins)
                 )
                 indices = tensor.indices[:nb] + indices
                 uhf_tensor_part = tensor._symbol.uhf_symbol[indices]

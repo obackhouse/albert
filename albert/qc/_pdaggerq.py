@@ -6,7 +6,7 @@ from numbers import Number
 
 from albert.algebra import Add, Mul
 from albert.qc.ghf import ERI, L1, L2, L3, T1, T2, T3, Delta, Fock
-from albert.qc.uhf import SpinIndex
+from albert.qc.index import Index
 
 
 def import_from_pdaggerq(terms, index_spins=None):
@@ -55,6 +55,28 @@ def import_from_pdaggerq(terms, index_spins=None):
     expr = Add(*contractions)
 
     return expr
+
+
+def _to_space(index):
+    """Convert an index to a space.
+
+    Parameters
+    ----------
+    index : str
+        Index to convert.
+
+    Returns
+    -------
+    out : str
+        Space.
+    """
+
+    if index in "ijklmnot" or index.startswith("o"):
+        return "o"
+    elif index in "abcdefgh" or index.startswith("v"):
+        return "v"
+    else:
+        raise ValueError(f"Unknown index {index}")
 
 
 class PermutationOperatorSymbol:
@@ -180,9 +202,9 @@ def _convert_symbol(symbol, index_spins=None):
     else:
         raise ValueError(f"Unknown symbol {symbol}")
 
-    # Convert the indices to SpinIndex
+    # Convert the indices to Index
     indices = tuple(
-        SpinIndex(index, index_spins[index]) if index in index_spins else index for index in indices
+        Index(index, spin=index_spins.get(index), space=_to_space(index)) for index in indices
     )
 
     return tensor_symbol[indices]

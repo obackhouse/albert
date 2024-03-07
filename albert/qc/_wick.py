@@ -43,7 +43,7 @@ from albert.qc.ghf import (
     ElectronBosonHamiltonian,
     Fock,
 )
-from albert.qc.uhf import SpinIndex
+from albert.qc.index import Index
 from albert.symmetry import antisymmetric_permutations
 
 
@@ -93,6 +93,30 @@ def import_from_wick(expr, index_spins=None):
     expr = Add(*contractions)
 
     return expr
+
+
+def _to_space(index):
+    """Convert an index to a space.
+
+    Parameters
+    ----------
+    index : str
+        Index to convert.
+
+    Returns
+    -------
+    space : str
+        Space of the index.
+    """
+
+    if index in "ijklmnop":
+        return "o"
+    elif index in "abcdefgh":
+        return "v"
+    elif index in "xyz" or index.startswith("b"):
+        return "b"
+    else:
+        raise ValueError(f"Unknown index {index}")
 
 
 def _convert_symbol(symbol, index_spins=None):
@@ -229,9 +253,9 @@ def _convert_symbol(symbol, index_spins=None):
     else:
         raise ValueError(f"Unknown symbol {symbol}")
 
-    # Convert the indices to SpinIndex
+    # Convert the indices to Index
     indices = tuple(
-        SpinIndex(index, index_spins[index]) if index in index_spins else index for index in indices
+        Index(index, spin=index_spins.get(index), space=_to_space(index)) for index in indices
     )
 
     return tensor_symbol[indices]

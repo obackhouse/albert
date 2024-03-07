@@ -14,6 +14,7 @@ from albert.qc._pdaggerq import import_from_pdaggerq
 from albert.canon import canonicalise_indices
 from albert.tensor import Tensor
 from albert.qc.spin import generalised_to_restricted
+from albert.qc.index import Index
 from albert.optim._gristmill import optimise
 
 np.random.seed(1)
@@ -22,7 +23,7 @@ np.random.seed(1)
 def name_generator(tensor, add_spaces=True):
     if tensor.name in ("f", "v"):
         if add_spaces:
-            spaces = ["o" if i in "ijklmn" else "v" for i in tensor.indices]
+            spaces = [index.space for index in tensor.indices]
             return f"{tensor.name}.{''.join(spaces)}"
         else:
             return tensor.name
@@ -53,7 +54,13 @@ class TestRCCSD(unittest.TestCase):
             "energy",
             [output_energy],
             [output_energy],
-            [generalised_to_restricted(canonicalise_indices(import_from_pdaggerq(energy), "ijklmn", "abcdef"))],
+            [generalised_to_restricted(
+                canonicalise_indices(
+                    import_from_pdaggerq(energy),
+                    "ijklmn",
+                    "abcdef",
+                ),
+            )],
         )
 
         pq.clear()
@@ -73,25 +80,28 @@ class TestRCCSD(unittest.TestCase):
         expr_t1 = import_from_pdaggerq(t1, index_spins={"i": "α", "a": "α"})
         expr_t1 = canonicalise_indices(expr_t1, "ijklmn", "abcdef")
         expr_t1 = generalised_to_restricted(expr_t1)
-        output_t1 = Tensor("i", "a", name="t1new")
+        output_t1 = Tensor(Index("i"), Index("a"), name="t1new")
 
         expr_t2 = import_from_pdaggerq(t2, index_spins={"i": "α", "j": "β", "a": "α", "b": "β"})
         expr_t2 = canonicalise_indices(expr_t2, "ijklmn", "abcdef")
         expr_t2 = generalised_to_restricted(expr_t2)
-        output_t2 = Tensor("i", "j", "a", "b", name="t2new")
+        output_t2 = Tensor(Index("i"), Index("j"), Index("a"), Index("b"), name="t2new")
 
         returns = (
-            Tensor("i", "a", name="t1new"),
-            Tensor("i", "j", "a", "b", name="t2new"),
+            output_t1,
+            output_t2,
         )
 
         opt = optimise(
             (output_t1, expr_t1),
             (output_t2, expr_t2),
-            index_groups=["ijklmn", "abcdef"],
+            index_groups=[
+                [Index(i, space="o") for i in "ijklmn"],
+                [Index(i, space="v") for i in "abcdef"],
+            ],
             sizes={
-                **{i: 4 for i in "ijklmn"},
-                **{i: 20 for i in "abcdef"},
+                **{Index(i, space="o"): 4 for i in "ijklmn"},
+                **{Index(i, space="v"): 20 for i in "abcdef"},
             },
             strategy="greedy",
         )
