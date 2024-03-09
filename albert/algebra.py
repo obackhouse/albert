@@ -92,6 +92,17 @@ class Algebraic(Base):
             args.append(arg)
         return self.copy(*args)
 
+    def map_tensors(self, mapping):
+        """Map the tensors of the object."""
+        args = []
+        for arg in self.args:
+            if not isinstance(arg, Number):
+                arg = arg.map_tensors(mapping)
+            else:
+                arg = mapping.get(arg, arg)
+            args.append(arg)
+        return self.copy(*args)
+
     def hashable(self, coefficient=True, penalty_function=None):
         """Return a hashable representation of the object."""
 

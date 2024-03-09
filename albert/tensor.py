@@ -96,6 +96,12 @@ class Tensor(Base):
         indices = [self.indices[i] for i in permutation]
         return self.copy(*indices) * factor
 
+    def map_tensors(self, mapping):
+        """Map the tensors of the object."""
+        if self in mapping:
+            return mapping[self]
+        return self
+
     def hashable(self, coefficient=True, penalty_function=None):
         """Return a hashable representation of the object."""
 
