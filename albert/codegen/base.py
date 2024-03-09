@@ -10,91 +10,7 @@ from collections import defaultdict
 from albert import __version__
 from albert.algebra import Mul
 from albert.tensor import Tensor
-
-
-def sort_exprs(returns, outputs, exprs):
-    """
-    Split the expressions into single contractions and sort them to
-    minimize the number of temporary tensors.
-
-    Parameters
-    ----------
-    returns : list of Tensor
-        The return tensors.
-    outputs : list of Tensor
-        The output tensors.
-    exprs : list of Algebraic
-        The algebraic expressions.
-
-    Returns
-    -------
-    outputs : list of Tensor
-        The output tensors.
-    exprs : list of Algebraic
-        The algebraic expressions.
-    """
-
-    # Split the expressions up into single contractions
-    tmp_outputs = []
-    tmp_exprs = []
-    tmp_names = []
-    for output, expr in zip(outputs, exprs):
-        for mul_args in expr.nested_view():
-            tmp_outputs.append(output)
-            tmp_exprs.append(Mul(*mul_args))
-            tmp_names.append({arg.name for arg in mul_args if isinstance(arg, Tensor)})
-
-    # Initialise the output
-    new_outputs = []
-    new_exprs = []
-
-    # Push any expressions resulting in a return to the end
-    for i in range(len(tmp_outputs) - 1, -1, -1):
-        if any(tmp_outputs[i].name == ret.name for ret in returns):
-            new_outputs.insert(0, tmp_outputs.pop(i))
-            new_exprs.insert(0, tmp_exprs.pop(i))
-
-    # Sort the output expressions by the RHS
-    def score_rhs(expr):
-        return max(
-            [0]
-            + [
-                int(t.name.replace("tmp", "")) if "tmp" in t.name else -1
-                for mul_args in expr.nested_view()
-                for t in mul_args
-                if isinstance(t, Tensor)
-            ]
-        )
-
-    new_outputs, new_exprs = zip(
-        *sorted(zip(new_outputs, new_exprs), key=lambda x: score_rhs(x[1]))
-    )
-    new_outputs = list(new_outputs)
-    new_exprs = list(new_exprs)
-
-    if len(tmp_exprs):
-        # Sort the remaining expressions by the LHS
-        def score_lhs(output):
-            return int(output.name.replace("tmp", "")) if "tmp" in output.name else -1
-
-        tmp_outputs, tmp_exprs = zip(
-            *sorted(zip(tmp_outputs, tmp_exprs), key=lambda x: score_lhs(x[0]))
-        )
-        tmp_outputs = list(tmp_outputs)
-        tmp_exprs = list(tmp_exprs)
-
-        # Insert the remaining expressions
-        i = 0
-        while len(tmp_exprs):
-            current = score_rhs(new_exprs[i])
-            if current != -1:
-                while len(tmp_exprs) and score_lhs(tmp_outputs[0]) <= current:
-                    new_exprs.insert(i, tmp_exprs.pop(0))
-                    new_outputs.insert(i, tmp_outputs.pop(0))
-                    i += 1
-            i += 1
-
-    return new_outputs, new_exprs
+from albert.optim.sort import split_exprs, sort_exprs
 
 
 def kernel(
@@ -178,7 +94,8 @@ def kernel(
         codegen.function_preamble(preamble)
 
     # Sort the expressions
-    outputs, exprs = sort_exprs(returns, outputs, exprs)
+    outputs, exprs = split_exprs(returns, outputs, exprs)
+    outputs, exprs = sort_exprs(returns, outputs, exprs, get_name=codegen.get_name)
 
     # Find the last appearance of each tensor
     last_appearance = {}
