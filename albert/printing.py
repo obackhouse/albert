@@ -1,20 +1,21 @@
 """Printing tools.
 """
 
-from collections import OrderedDict
 import re
-
+from collections import OrderedDict
 
 ANSI_RESET = "\033[0m"
 
-ANSI_COLOURS = OrderedDict([
-    ("red", "\033[91m"),
-    ("green", "\033[92m"),
-    ("yellow", "\033[93m"),
-    ("blue", "\033[94m"),
-    ("magenta", "\033[95m"),
-    ("cyan", "\033[96m"),
-])
+ANSI_COLOURS = OrderedDict(
+    [
+        ("red", "\033[91m"),
+        ("green", "\033[92m"),
+        ("yellow", "\033[93m"),
+        ("blue", "\033[94m"),
+        ("magenta", "\033[95m"),
+        ("cyan", "\033[96m"),
+    ]
+)
 
 
 def highlight_string(string, marker, colour="red", regex=False):
@@ -44,4 +45,3 @@ def highlight_string(string, marker, colour="red", regex=False):
     else:
         string = string.replace(marker, f"{ANSI_COLOURS[colour]}{marker}{ANSI_RESET}")
     return string
-

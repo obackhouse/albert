@@ -8,9 +8,8 @@ import sys
 from collections import defaultdict
 
 from albert import __version__
-from albert.algebra import Mul
+from albert.optim.sort import sort_exprs, split_exprs
 from albert.tensor import Tensor
-from albert.optim.sort import split_exprs, sort_exprs
 
 
 def kernel(

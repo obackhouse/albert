@@ -2,19 +2,17 @@
 """
 
 from collections import defaultdict
-import functools
 
 import networkx as nx
 
-from albert.tensor import Tensor
 from albert.algebra import Mul
+from albert.tensor import Tensor
 
 # TODO the toposort is not perfect
 
 
 def _build_graph(outputs, exprs, get_name=None, exclude_names=None):
-    """Build a graph of dependencies in the expressions.
-    """
+    """Build a graph of dependencies in the expressions."""
 
     # Get the name function
     if get_name is None:
@@ -115,7 +113,7 @@ def sort_exprs(returns, outputs, exprs, get_name=None):
         exclude_names=set(get_name(ret) for ret in returns),
     )
 
-    # Sort the names 
+    # Sort the names
     sorted_names = list(nx.topological_sort(nx.DiGraph(graph)))[::-1]
 
     # Sort the expressions
