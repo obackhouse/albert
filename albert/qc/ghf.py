@@ -60,11 +60,11 @@ class FockSymbol(GHFSymbol):
         tensors = []
         for spin in ("α", "β"):
             # Check if first index has fixed spin
-            if tensor.indices[0].spin is not None and tensor.indices[0].spin != spin:
+            if tensor.indices[0].spin and tensor.indices[0].spin != spin:
                 continue
 
             # Check if second index has fixed spin
-            if tensor.indices[1].spin is not None and tensor.indices[1].spin != spin:
+            if tensor.indices[1].spin and tensor.indices[1].spin != spin:
                 continue
 
             # Get the UHF tensor part
@@ -128,14 +128,14 @@ class ElectronBosonHamiltonianSymbol(GHFSymbol):
 
     DESIRED_RANK = 3
 
-    def __init__(self, name, rhf_symbol):
+    def __init__(self, name, uhf_symbol):
         """Initialise the object."""
         self.name = name
         self.symmetry = _make_symmetry(
             (0, 1, 2),
             (0, 2, 1),
         )
-        self.rhf_symbol = rhf_symbol
+        self.uhf_symbol = uhf_symbol
 
     @staticmethod
     def _as_uhf(tensor, target_restricted=False):
@@ -148,11 +148,11 @@ class ElectronBosonHamiltonianSymbol(GHFSymbol):
         tensors = []
         for spin in ("α", "β"):
             # Check if first index has fixed spin
-            if tensor.indices[1].spin is not None and tensor.indices[1].spin != spin:
+            if tensor.indices[1].spin and tensor.indices[1].spin != spin:
                 continue
 
             # Check if second index has fixed spin
-            if tensor.indices[2].spin is not None and tensor.indices[2].spin != spin:
+            if tensor.indices[2].spin and tensor.indices[2].spin != spin:
                 continue
 
             # Get the UHF tensor part
@@ -232,7 +232,7 @@ class ERISymbol(GHFSymbol):
         ]:
             # Check if indices have fixed spins
             if any(
-                index.spin is not None and index.spin != spin
+                index.spin and index.spin != spin
                 for index, spin in zip(indices_bare, spins)
             ):
                 continue
@@ -296,7 +296,7 @@ class SingleERISymbol(GHFSymbol):
         ]:
             # Check if indices have fixed spins
             if any(
-                index.spin is not None and index.spin != spin
+                index.spin and index.spin != spin
                 for index, spin in zip(indices_bare, spins)
             ):
                 continue
@@ -352,7 +352,7 @@ class RDM2Symbol(GHFSymbol):
         ]:
             # Check if indices have fixed spins
             if any(
-                index.spin is not None and index.spin != spin
+                index.spin and index.spin != spin
                 for index, spin in zip(indices_bare, spins)
             ):
                 continue
@@ -409,7 +409,7 @@ class FermionicAmplitude(GHFSymbol):
             for contravariant in set(itertools.permutations(covariant)):
                 # Check if indices have fixed spins
                 if any(
-                    index.spin is not None and index.spin != spin
+                    index.spin and index.spin != spin
                     for index, spin in zip(tensor.indices, covariant + contravariant)
                 ):
                     continue
@@ -506,7 +506,7 @@ class MixedAmplitude(GHFSymbol):
             for contravariant in set(itertools.permutations(covariant)):
                 # Check if indices have fixed spins
                 if any(
-                    index.spin is not None and index.spin != spin
+                    index.spin and index.spin != spin
                     for index, spin in zip(tensor.indices[nb:], covariant + contravariant)
                 ):
                     continue

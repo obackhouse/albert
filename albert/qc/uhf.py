@@ -68,7 +68,7 @@ class FockSymbol(UHFSymbol):
         Convert a `Fock`-derived tensor object from generalised to
         unrestricted.
         """
-        assert all(index.spin is not None for index in tensor.indices)
+        assert all(index.spin for index in tensor.indices)
         indices = tuple(index.to_spin(None) for index in tensor.indices)
         return tensor._symbol.rhf_symbol[indices]
 
@@ -142,7 +142,7 @@ class ElectronBosonHamiltonianSymbol(UHFSymbol):
         Convert a `ElectronBosonHamiltonian`-derived tensor object from
         unrestricted to restricted.
         """
-        assert all(index.spin is not None for index in tensor.indices[1:])
+        assert all(index.spin for index in tensor.indices[1:])
         indices = tuple(index.to_spin(None) for index in tensor.indices[1:])
         indices = (tensor.indices[0],) + indices
         return tensor._symbol.rhf_symbol[indices]
@@ -199,7 +199,7 @@ class ERISymbol(UHFSymbol):
         Convert an `ERI`-derived tensor object from generalised to
         unrestricted.
         """
-        assert all(index.spin is not None for index in tensor.indices)
+        assert all(index.spin for index in tensor.indices)
         indices = tuple(index.to_spin(None) for index in tensor.indices)
         return tensor._symbol.rhf_symbol[indices]
 
@@ -231,7 +231,7 @@ class CDERISymbol(UHFSymbol):
         Convert an `ERI`-derived tensor object from generalised to
         unrestricted.
         """
-        assert all(index.spin is not None for index in tensor.indices[1:])
+        assert all(index.spin for index in tensor.indices[1:])
         indices = (tensor.indices[0],) + tuple(index.to_spin(None) for index in tensor.indices[1:])
         return tensor._symbol.rhf_symbol[indices]
 
@@ -280,7 +280,7 @@ class FermionicAmplitude(UHFSymbol):
         n = tensor.rank // 2
 
         # Check input
-        assert all(index.spin is not None for index in tensor.indices)
+        assert all(index.spin for index in tensor.indices)
 
         # Spin flip if needed
         nα = sum(index.spin == "α" for index in tensor.indices)
@@ -398,7 +398,7 @@ class MixedAmplitude(UHFSymbol):
         nf = (tensor.rank - tensor._symbol.NUM_BOSONS) // 2
 
         # Check input
-        assert all(index.spin is not None for index in tensor.indices[nb:])
+        assert all(index.spin for index in tensor.indices[nb:])
 
         # Spin flip if needed
         nα = sum(index.spin == "α" for index in tensor.indices[nb:])

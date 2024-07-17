@@ -10,7 +10,7 @@ class Index(Base):
     def __init__(self, name, spin=None, space=None):
         """Initialise the object."""
         self.name = name
-        self.spin = spin
+        self._spin = spin
         self.space = space
 
     def hashable(self):
@@ -54,8 +54,20 @@ class Index(Base):
 
     def spin_flip(self):
         """Return a copy of the object with the spin flipped."""
-        return self.to_spin({"α": "β", "β": "α", None: None}[self.spin])
+        return self.to_spin({"α": "β", "β": "α", "": None}[self.spin])
 
     def to_space(self, space):
         """Return a copy of the object with the space set to `space`."""
         return Index(self.name, self.spin, space)
+
+    @property
+    def spin(self):
+        """Return the spin of the object."""
+        if not self._spin:
+            return ""
+        return self._spin
+
+    @spin.setter
+    def spin(self, value):
+        """Set the spin of the object."""
+        self._spin = value

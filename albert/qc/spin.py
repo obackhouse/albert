@@ -61,7 +61,7 @@ def generalised_to_unrestricted(expr, target_restricted=False):
             # consistent spins
             index_spins = {}
             for index in itertools.chain(*(arg.external_indices for arg in spin_args_perm)):
-                if index.spin is not None:
+                if index.spin:
                     if index.name not in index_spins:
                         index_spins[index.name] = index.spin
                     elif index_spins[index.name] != index.spin:
