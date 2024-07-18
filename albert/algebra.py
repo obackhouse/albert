@@ -103,6 +103,15 @@ class Algebraic(Base):
             args.append(arg)
         return self.copy(*args)
 
+    def apply(self, function):
+        """Apply a function to the object."""
+        args = []
+        for arg in self.args:
+            if not isinstance(arg, Number):
+                arg = arg.apply(function)
+            args.append(arg)
+        return self.copy(*args)
+
     def hashable(self, coefficient=True, penalty_function=None):
         """Return a hashable representation of the object."""
 

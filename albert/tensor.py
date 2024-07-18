@@ -102,6 +102,10 @@ class Tensor(Base):
             return mapping[self]
         return self
 
+    def apply(self, function):
+        """Apply a function to the object."""
+        return function(self)
+
     def hashable(self, coefficient=True, penalty_function=None):
         """Return a hashable representation of the object."""
 

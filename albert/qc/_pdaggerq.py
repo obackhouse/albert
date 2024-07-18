@@ -5,7 +5,30 @@ import re
 from numbers import Number
 
 from albert.algebra import Add, Mul
-from albert.qc.ghf import ERI, L1, L2, L3, T1, T2, T3, Delta, Fock
+from albert.qc.ghf import (
+    ERI,
+    SingleERI,
+    L1,
+    L2,
+    L3,
+    LS1,
+    LS2,
+    LU11,
+    LU12,
+    S1,
+    S2,
+    T1,
+    T2,
+    T3,
+    U11,
+    U12,
+    BosonicHamiltonian,
+    BosonicInteractionHamiltonian,
+    Delta,
+    ElectronBosonConjHamiltonian,
+    ElectronBosonHamiltonian,
+    Fock,
+)
 from albert.qc.index import Index
 
 
@@ -152,6 +175,11 @@ def _convert_symbol(symbol, index_spins=None):
         # <i,j||k,l>
         indices = tuple(symbol[1:-1].replace("t", "p").replace("||", ",").split(","))
         tensor_symbol = ERI
+
+    elif re.match(r"<[a-z],[a-z]\|[a-z],[a-z]>", symbol):
+        # <i,j|k,l>
+        indices = tuple(symbol[1:-1].replace("t", "p").replace("|", ",").split(","))
+        tensor_symbol = SingleERI
 
     elif re.match(r"t1\([a-z],[a-z]\)", symbol):
         # t1(i,j)

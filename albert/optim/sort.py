@@ -127,7 +127,7 @@ def sort_exprs(returns, outputs, exprs, get_name=None):
 
     # Insert the returns
     for output, expr in zip(outputs, exprs):
-        if any(output.name == ret.name for ret in returns):
+        if any(get_name(output) == get_name(ret) for ret in returns):
             # Get the dependencies that are not inputs
             deps = set()
             for mul_args in expr.nested_view():
