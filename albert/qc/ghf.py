@@ -231,10 +231,7 @@ class ERISymbol(GHFSymbol):
             ("βααβ", False, True),
         ]:
             # Check if indices have fixed spins
-            if any(
-                index.spin and index.spin != spin
-                for index, spin in zip(indices_bare, spins)
-            ):
+            if any(index.spin and index.spin != spin for index, spin in zip(indices_bare, spins)):
                 continue
 
             # Get the indices
@@ -295,10 +292,7 @@ class SingleERISymbol(GHFSymbol):
             ("βαβα"),
         ]:
             # Check if indices have fixed spins
-            if any(
-                index.spin and index.spin != spin
-                for index, spin in zip(indices_bare, spins)
-            ):
+            if any(index.spin and index.spin != spin for index, spin in zip(indices_bare, spins)):
                 continue
 
             # Get the indices
@@ -351,10 +345,7 @@ class RDM2Symbol(GHFSymbol):
             ("βααβ", False, True),
         ]:
             # Check if indices have fixed spins
-            if any(
-                index.spin and index.spin != spin
-                for index, spin in zip(indices_bare, spins)
-            ):
+            if any(index.spin and index.spin != spin for index, spin in zip(indices_bare, spins)):
                 continue
 
             # Get the indices

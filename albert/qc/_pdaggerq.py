@@ -7,7 +7,6 @@ from numbers import Number
 from albert.algebra import Add, Mul
 from albert.qc.ghf import (
     ERI,
-    SingleERI,
     L1,
     L2,
     L3,
@@ -28,6 +27,7 @@ from albert.qc.ghf import (
     ElectronBosonConjHamiltonian,
     ElectronBosonHamiltonian,
     Fock,
+    SingleERI,
 )
 from albert.qc.index import Index
 
