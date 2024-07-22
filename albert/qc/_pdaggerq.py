@@ -5,7 +5,7 @@ import re
 from numbers import Number
 
 from albert.algebra import Add, Mul
-from albert.qc.ghf import ERI, L1, L2, L3, T1, T2, T3, Delta, Fock, SingleERI
+from albert.qc.ghf import ERI, L1, L2, L3, T1, T2, T3, R1ip, R2ip, R3ip, R1ea, R2ea, R3ea, R1ee, R2ee, R3ee, Delta, Fock, SingleERI
 from albert.qc.index import Index
 
 
@@ -193,6 +193,52 @@ def _convert_symbol(symbol, index_spins=None):
         indices = tuple(symbol[3:-1].replace("t", "p").split(","))
         indices = (indices[3], indices[4], indices[5], indices[0], indices[1], indices[2])
         tensor_symbol = L3
+
+    elif re.match(r"r1\([a-z]\)", symbol):
+        # r1(i)
+        indices = (symbol[3],)
+        #tensor_symbol = R1ip if _to_space(symbol[3]) == "o" else R1ea
+        tensor_symbol = R1ip  # FIXME
+
+    elif re.match(r"r2\([a-z],[a-z],[a-z]\)", symbol):
+        # r2(i,j,a)
+        indices = tuple(symbol[3:-1].replace("t", "p").split(","))
+        if _to_space(indices[1]) == "o":
+            indices = (indices[1], indices[2], indices[0])
+            tensor_symbol = R2ip
+        else:
+            #indices = (indices[2], indices[0], indices[1])
+            #tensor_symbol = R2ea
+            tensor_symbol = R2ip  # FIXME
+
+    elif re.match(r"r3\([a-z],[a-z],[a-z],[a-z],[a-z]\)", symbol):
+        # r3(i,j,k,a,b)
+        indices = tuple(symbol[3:-1].replace("t", "p").split(","))
+        if _to_space(indices[2]) == "o":
+            indices = (indices[2], indices[3], indices[4], indices[0], indices[1])
+            tensor_symbol = R3ip
+        else:
+            #indices = (indices[3], indices[4], indices[0], indices[1], indices[2])
+            #tensor_symbol = R3ea
+            tensor_symbol = R3ip  # FIXME
+
+    elif re.match(r"r1\([a-z],[a-z]\)", symbol):
+        # r1(a,i)
+        indices = tuple(symbol[3:-1].replace("t", "p").split(","))
+        indices = (indices[1], indices[0])
+        tensor_symbol = R1ee
+
+    elif re.match(r"r2\([a-z],[a-z],[a-z],[a-z]\)", symbol):
+        # r2(a,b,i,j)
+        indices = tuple(symbol[3:-1].replace("t", "p").split(","))
+        indices = (indices[2], indices[3], indices[0], indices[1])
+        tensor_symbol = R2ee
+
+    elif re.match(r"r3\([a-z],[a-z],[a-z],[a-z],[a-z],[a-z]\)", symbol):
+        # r3(a,b,c,i,j,k)
+        indices = tuple(symbol[3:-1].replace("t", "p").split(","))
+        indices = (indices[3], indices[4], indices[5], indices[0], indices[1], indices[2])
+        tensor_symbol = R3ee
 
     elif re.match(r"d\([a-z],[a-z]\)", symbol):
         # d(i,j)

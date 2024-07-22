@@ -35,6 +35,23 @@ class UHFTensor(Tensor):
 
         return hashable
 
+    def canonicalise(self):
+        """Canonicalise the object."""
+        if not self.symmetry:
+            return self
+        candidates = list(self.symmetry(self))
+        # FIXME this is super hacky
+        if hasattr(self._symbol, "_num_covariant"):
+            new_candidates = []
+            for i in range(len(candidates)):
+                spins_covariant = tuple(index.spin for index in candidates[i].external_indices[: self._symbol._num_covariant])
+                spins_contravariant = tuple(index.spin for index in candidates[i].external_indices[self._symbol._num_covariant :])
+                n = min(len(spins_covariant), len(spins_contravariant))
+                if spins_covariant[:n] == spins_contravariant[:n]:
+                    new_candidates.append(candidates[i])
+            candidates = new_candidates
+        return min(candidates)
+
 
 class UHFSymbol(Symbol):
     """Symbol subclass for unrestricted bases."""
@@ -262,6 +279,8 @@ class FermionicAmplitude(UHFSymbol):
         """Initialise the object."""
         self.name = name
         self.DESIRED_RANK = num_covariant + num_contravariant
+        self._num_covariant = num_covariant
+        self._num_contravariant = num_contravariant
         perms = []
         for perm_covariant in antisymmetric_permutations(num_covariant):
             for perm_contravariant in antisymmetric_permutations(num_contravariant):
@@ -335,6 +354,16 @@ T3 = FermionicAmplitude("t3", 3, 3, rhf_symbol=rhf.T3)
 L1 = FermionicAmplitude("l1", 1, 1, rhf_symbol=rhf.L1)
 L2 = FermionicAmplitude("l2", 2, 2, rhf_symbol=rhf.L2)
 L3 = FermionicAmplitude("l3", 3, 3, rhf_symbol=rhf.L3)
+
+R1ip = FermionicAmplitude("r1", 1, 0, rhf_symbol=rhf.R1ip)
+R2ip = FermionicAmplitude("r2", 2, 1, rhf_symbol=rhf.R2ip)
+R3ip = FermionicAmplitude("r3", 3, 2, rhf_symbol=rhf.R3ip)
+R1ea = FermionicAmplitude("r1", 0, 1, rhf_symbol=rhf.R1ea)
+R2ea = FermionicAmplitude("r2", 1, 2, rhf_symbol=rhf.R2ea)
+R3ea = FermionicAmplitude("r3", 2, 3, rhf_symbol=rhf.R3ea)
+R1ee = FermionicAmplitude("r1", 1, 1, rhf_symbol=rhf.R1ee)
+R2ee = FermionicAmplitude("r2", 2, 2, rhf_symbol=rhf.R2ee)
+R3ee = FermionicAmplitude("r3", 3, 3, rhf_symbol=rhf.R3ee)
 
 
 class BosonicAmplitude(UHFSymbol):

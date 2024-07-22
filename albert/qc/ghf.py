@@ -377,6 +377,8 @@ class FermionicAmplitude(GHFSymbol):
         """Initialise the object."""
         self.name = name
         self.DESIRED_RANK = num_covariant + num_contravariant
+        self._num_covariant = num_covariant
+        self._num_contravariant = num_contravariant
         perms = []
         for perm_covariant in antisymmetric_permutations(num_covariant):
             for perm_contravariant in antisymmetric_permutations(num_contravariant):
@@ -391,29 +393,35 @@ class FermionicAmplitude(GHFSymbol):
         unrestricted.
         """
 
-        # FIXME this is just for T/L amplitudes
-        n = tensor.rank // 2
+        n = (tensor._symbol._num_covariant, tensor._symbol._num_contravariant)
 
         # Loop over spins
         uhf_tensor = []
-        for covariant in itertools.product("αβ", repeat=n):
+        for covariant in itertools.product("αβ", repeat=max(n)):
             for contravariant in set(itertools.permutations(covariant)):
+                if n[0] > n[1]:
+                    spins = covariant[:n[0]] + contravariant[:n[1]]
+                else:
+                    spins = contravariant[:n[1]] + covariant[:n[0]]
+
                 # Check if indices have fixed spins
                 if any(
                     index.spin and index.spin != spin
-                    for index, spin in zip(tensor.indices, covariant + contravariant)
+                    for index, spin in zip(tensor.indices, spins)
                 ):
                     continue
 
                 # Get the UHF tensor part
-                spins = tuple(covariant) + tuple(contravariant)
                 indices = tuple(index.to_spin(spin) for index, spin in zip(tensor.indices, spins))
                 uhf_tensor_part = tensor._symbol.uhf_symbol[indices]
 
                 if not target_restricted:
                     # Expand antisymmetry where spin allows
-                    for perm in antisymmetric_permutations(n):
-                        full_perm = Permutation(tuple(range(n)), 1) + perm
+                    for perm in antisymmetric_permutations(max(n)):
+                        if n[0] > n[1]:
+                            full_perm = perm + Permutation(tuple(range(n[1])), 1)
+                        else:
+                            full_perm = Permutation(tuple(range(n[0])), 1) + perm
                         spins_perm = tuple(spins[i] for i in full_perm.permutation)
                         if spins == spins_perm:
                             uhf_tensor.append(uhf_tensor_part.permute_indices(full_perm))
@@ -429,6 +437,16 @@ T3 = FermionicAmplitude("t3", 3, 3, uhf_symbol=uhf.T3)
 L1 = FermionicAmplitude("l1", 1, 1, uhf_symbol=uhf.L1)
 L2 = FermionicAmplitude("l2", 2, 2, uhf_symbol=uhf.L2)
 L3 = FermionicAmplitude("l3", 3, 3, uhf_symbol=uhf.L3)
+
+R1ip = FermionicAmplitude("r1", 1, 0, uhf_symbol=uhf.R1ip)
+R2ip = FermionicAmplitude("r2", 2, 1, uhf_symbol=uhf.R2ip)
+R3ip = FermionicAmplitude("r3", 3, 2, uhf_symbol=uhf.R3ip)
+R1ea = FermionicAmplitude("r1", 0, 1, uhf_symbol=uhf.R1ea)
+R2ea = FermionicAmplitude("r2", 1, 2, uhf_symbol=uhf.R2ea)
+R3ea = FermionicAmplitude("r3", 2, 3, uhf_symbol=uhf.R3ea)
+R1ee = FermionicAmplitude("r1", 1, 1, uhf_symbol=uhf.R1ee)
+R2ee = FermionicAmplitude("r2", 2, 2, uhf_symbol=uhf.R2ee)
+R3ee = FermionicAmplitude("r3", 3, 3, uhf_symbol=uhf.R3ee)
 
 
 class BosonicAmplitude(GHFSymbol):

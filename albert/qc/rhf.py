@@ -179,6 +179,8 @@ class FermionicAmplitude(RHFSymbol):
         """Initialise the object."""
         self.name = name
         self.DESIRED_RANK = num_covariant + num_contravariant
+        self._num_covariant = num_covariant
+        self._num_contravariant = num_contravariant
         # FIXME how to generalise?
         if (num_covariant, num_contravariant) == (2, 2):
             self.symmetry = _make_symmetry(
@@ -202,6 +204,16 @@ T3 = FermionicAmplitude("t3", 3, 3)
 L1 = FermionicAmplitude("l1", 1, 1)
 L2 = FermionicAmplitude("l2", 2, 2)
 L3 = FermionicAmplitude("l3", 3, 3)
+
+R1ip = FermionicAmplitude("r1", 1, 0)
+R2ip = FermionicAmplitude("r2", 2, 1)
+R3ip = FermionicAmplitude("r3", 3, 2)
+R1ea = FermionicAmplitude("r1", 0, 1)
+R2ea = FermionicAmplitude("r2", 1, 2)
+R3ea = FermionicAmplitude("r3", 2, 3)
+R1ee = FermionicAmplitude("r1", 1, 1)
+R2ee = FermionicAmplitude("r2", 2, 2)
+R3ee = FermionicAmplitude("r3", 3, 3)
 
 
 class BosonicAmplitude(RHFSymbol):
