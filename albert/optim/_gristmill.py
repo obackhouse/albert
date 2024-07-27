@@ -158,7 +158,7 @@ def optimise(
             for i, tensor in enumerate(amp.atoms(sympy.Indexed)):
                 base = symbols.get(tensor.base, Symbol(str(tensor.base)))
                 inds = [indices[ind] for ind in tensor.indices]
-                mul_args.append(base[tuple(inds)])
+                mul_args.append(base[tuple(inds)].canonicalise())
             expr += Mul(*mul_args)
         exprs.append(expr)
 
