@@ -25,7 +25,9 @@ class UHFTensor(Tensor):
         # Get the penalty function
         def _penalty(tensor):
             spins = tuple(getattr(index, "spin", "") for index in tensor.indices)
-            penalty = sum(2 for i, spin in enumerate(spins) if spins[i - 1] == spin)
+            penalty = 0
+            for i in range(len(spins) - 1):
+                penalty += int(spins[i] == spins[i + 1]) * 2
             if spins[0] != min(spins):
                 penalty += 1
             return penalty

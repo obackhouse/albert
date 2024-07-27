@@ -159,7 +159,7 @@ def optimise(
                 base = symbols.get(tensor.base, Symbol(str(tensor.base)))
                 inds = [indices[ind] for ind in tensor.indices]
                 mul_args.append(base[tuple(inds)])
-            expr += Mul(*mul_args).canonicalise()
+            expr += Mul(*mul_args)
         exprs.append(expr)
 
     return list(zip(outputs, exprs))

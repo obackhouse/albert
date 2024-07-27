@@ -116,9 +116,10 @@ class Algebraic(Base):
         """Return a hashable representation of the object."""
 
         # Recursively get the hashable representation
+        args = self.without_coefficient().args
         hashable = tuple(
             arg.hashable(penalty_function=penalty_function) if isinstance(arg, Base) else arg
-            for arg in self.without_coefficient().args
+            for arg in args
         )
 
         # Add the algebraic information

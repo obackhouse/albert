@@ -9,7 +9,7 @@ from albert.qc.ghf import ERI, L1, L2, L3, T1, T2, T3, R1ip, R2ip, R3ip, R1ea, R
 from albert.qc.index import Index
 
 
-def import_from_pdaggerq(terms, index_spins=None):
+def import_from_pdaggerq(terms, index_spins=None, index_spaces=None):
     """Import terms from `pdaggerq` output into the internal format.
 
     Parameters
@@ -21,6 +21,10 @@ def import_from_pdaggerq(terms, index_spins=None):
         Dictionary mapping indices to spins. If not provided, the
         indices are not constrained to a single spin. Default value is
         `None`.
+    index_spaces : dict, optional
+        Dictionary mapping indices to spaces. If not provided, the
+        indices are assigned to the spaces based on their names. Default
+        value is `None`.
 
     Returns
     -------
@@ -28,14 +32,19 @@ def import_from_pdaggerq(terms, index_spins=None):
         Expression in the internal format.
     """
 
-    # Get the index spins
+    # Get the index spins and spaces
     if index_spins is None:
         index_spins = {}
+    if index_spaces is None:
+        index_spaces = {}
 
     contractions = []
     for term in terms:
         # Convert symbols
-        symbols = [_convert_symbol(symbol, index_spins=index_spins) for symbol in term]
+        symbols = [
+            _convert_symbol(symbol, index_spins=index_spins, index_spaces=index_spaces)
+            for symbol in term
+        ]
 
         # Remove the permutation operators
         perm_operators = [symbol for symbol in symbols if isinstance(symbol, PermutationOperator)]
@@ -57,13 +66,15 @@ def import_from_pdaggerq(terms, index_spins=None):
     return expr
 
 
-def _to_space(index):
+def _to_space(index, which="full"):
     """Convert an index to a space.
 
     Parameters
     ----------
     index : str
         Index to convert.
+    which : str, optional
+        Which space to convert to. Default value is `full`.
 
     Returns
     -------
@@ -72,11 +83,21 @@ def _to_space(index):
     """
 
     if index in "ijklmnot" or index.startswith("o"):
-        return "o"
+        if which == "full":
+            return "o"
+        elif which == "active":
+            return "O"
+        elif which == "inactive":
+            return "i"
     elif index in "abcdefgh" or index.startswith("v"):
-        return "v"
-    else:
-        raise ValueError(f"Unknown index {index}")
+        if which == "full":
+            return "v"
+        elif which == "active":
+            return "V"
+        elif which == "inactive":
+            return "a"
+
+    raise ValueError(f"Unknown index {index}")
 
 
 class PermutationOperatorSymbol:
@@ -121,7 +142,7 @@ def _is_number(symbol):
             return False
 
 
-def _convert_symbol(symbol, index_spins=None):
+def _convert_symbol(symbol, index_spins=None, index_spaces=None):
     """Convert a `pdaggerq` symbol to the internal format.
 
     Parameters
@@ -132,12 +153,20 @@ def _convert_symbol(symbol, index_spins=None):
         Dictionary mapping indices to spins. If not provided, the
         indices are not constrained to a single spin. Default value is
         `None`.
+    index_spaces : dict, optional
+        Dictionary mapping indices to spaces. If not provided, the
+        indices are assigned to the spaces based on their names. Default
+        value is `None`.
 
     Returns
     -------
     out : Tensor or Number
         Converted symbol.
     """
+
+    if re.match(r".*_[0-9]+$", symbol):
+        # Symbol has spaces
+        symbol, spaces = symbol.rsplit("_", 1)
 
     if _is_number(symbol):
         # factor
@@ -255,7 +284,12 @@ def _convert_symbol(symbol, index_spins=None):
 
     # Convert the indices to Index
     indices = tuple(
-        Index(index, spin=index_spins.get(index), space=_to_space(index)) for index in indices
+        Index(
+            index,
+            spin=index_spins.get(index),
+            space=index_spaces.get(index, _to_space(index)),
+        )
+        for index in indices
     )
 
     return tensor_symbol[indices]
