@@ -297,8 +297,7 @@ class FermionicAmplitude(UHFSymbol):
         restricted.
         """
 
-        # FIXME this is just for T/L amplitudes
-        n = tensor.rank // 2
+        n = (tensor._symbol._num_covariant, tensor._symbol._num_contravariant)
 
         # Check input
         assert all(index.spin for index in tensor.indices)
@@ -317,9 +316,9 @@ class FermionicAmplitude(UHFSymbol):
             if all(index.spin == "α" for index in tensor.indices):
                 # Get the spins of the tensors in the linear combination
                 spins = []
-                for k in range(n):
-                    spin = [("α", "β")[j % 2] for j in range(n)]
-                    spin += [("α", "β")[j == k] for j in range(n)]
+                for k in range(n[0]):
+                    spin = [("α", "β")[j % 2] for j in range(n[0])]
+                    spin += [("α", "β")[j == k] for j in range(n[1])]
                     spins.append(spin)
 
                 # Get the new tensors
