@@ -71,6 +71,7 @@ def generalised_to_unrestricted(expr, target_restricted=False):
                 # expression for the relevant indices
                 new_mul = Mul(*non_spin_args, *spin_args_perm)
                 new_exprs[new_mul.external_indices] += new_mul
+                new_exprs[new_mul.external_indices] = new_exprs[new_mul.external_indices].expand()
 
     # Partially canonicalise
     canon_exprs = defaultdict(int)
