@@ -77,7 +77,10 @@ def generalised_to_unrestricted(expr, target_restricted=False):
     canon_exprs = defaultdict(int)
     for part in tuple(new_exprs.values()):
         # FIXME we should try to avoid this canonicalisation
-        part = sum(Mul(*arg).canonicalise() for arg in part.nested_view())
+        summed_part = 0
+        for arg in part.nested_view():
+            summed_part += Mul(*arg)
+            summed_part = summed_part.expand()
         canon_exprs[part.external_indices] += part
     new_exprs = canon_exprs
 
