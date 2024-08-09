@@ -5,7 +5,7 @@ import itertools
 from collections import defaultdict
 from numbers import Number
 
-from albert.algebra import Mul
+from albert.algebra import Mul, Add
 from albert.qc.ghf import GHFTensor
 from albert.qc.rhf import RHFTensor
 from albert.qc.uhf import UHFTensor
@@ -70,8 +70,11 @@ def generalised_to_unrestricted(expr, target_restricted=False):
                 # This contribution is good, add it to the new
                 # expression for the relevant indices
                 new_mul = Mul(*non_spin_args, *spin_args_perm)
-                new_exprs[new_mul.external_indices] += new_mul
-                new_exprs[new_mul.external_indices] = new_exprs[new_mul.external_indices].expand()
+                if isinstance(new_exprs[new_mul.external_indices], Add):
+                    # avoid too much recursion
+                    new_exprs[new_mul.external_indices] = Add(*new_exprs[new_mul.external_indices].args, new_mul)
+                else:
+                    new_exprs[new_mul.external_indices] += new_mul
 
     # Partially canonicalise
     canon_exprs = defaultdict(int)
@@ -79,8 +82,10 @@ def generalised_to_unrestricted(expr, target_restricted=False):
         # FIXME we should try to avoid this canonicalisation
         summed_part = 0
         for arg in part.nested_view():
-            summed_part += Mul(*arg)
-            summed_part = summed_part.expand()
+            if isinstance(arg, Add):
+                summed_part = Add(*summed_part.args, Mul(*arg))
+            else:
+                summed_part += Mul(*arg)
         canon_exprs[part.external_indices] += part
     new_exprs = canon_exprs
 
