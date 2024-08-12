@@ -119,7 +119,7 @@ def optimise(
                 perms = [
                     drudge.Perm(list(p.permutation), {-1: drudge.NEG, 1: drudge.IDENT}[p.sign])
                     for p in tensor.symmetry.permutations
-                    if p.permutation != tuple(range(tensor.rank))
+                    if p.permutation != tuple(range(len(p.permutation)))
                 ]
                 perms = perms or [None]
                 dr.set_symm(base, *perms)
