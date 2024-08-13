@@ -100,17 +100,18 @@ def sort_exprs(returns, outputs, exprs, get_name=None):
         get_name = lambda x: x.name
 
     # Get a dictionary of the names to outputs and expressions
+    outputs, exprs = split_exprs(returns, outputs, exprs, split="all")
     names = defaultdict(list)
     for output, expr in zip(outputs, exprs):
         names[get_name(output)].append((output, expr))
-    names = dict(**names)
+    names = dict(names)
 
     # Build the graph
     graph = _build_graph(
         outputs,
         exprs,
         get_name=get_name,
-        exclude_names=set(get_name(ret) for ret in returns),
+        #exclude_names=set(get_name(ret) for ret in returns),
     )
 
     # Sort the names
@@ -120,35 +121,36 @@ def sort_exprs(returns, outputs, exprs, get_name=None):
     new_outputs = []
     new_exprs = []
     for name in sorted_names:
-        if not any(name == get_name(ret) for ret in returns) and names.get(name):
+        #if not any(name == get_name(ret) for ret in returns) and names.get(name):
+        if names.get(name):
             tmp_outputs, tmp_exprs = zip(*names[name])
             new_outputs.extend(tmp_outputs)
             new_exprs.extend(tmp_exprs)
 
-    # Insert the returns
-    for output, expr in zip(outputs, exprs):
-        if any(get_name(output) == get_name(ret) for ret in returns):
-            # Get the dependencies that are not inputs
-            deps = set()
-            for mul_args in expr.nested_view():
-                for arg in mul_args:
-                    if isinstance(arg, Tensor):
-                        name = get_name(arg)
-                        if name in names:
-                            deps.add(name)
+    ## Insert the returns
+    #for output, expr in zip(outputs, exprs):
+    #    if any(get_name(output) == get_name(ret) for ret in returns):
+    #        # Get the dependencies that are not inputs
+    #        deps = set()
+    #        for mul_args in expr.nested_view():
+    #            for arg in mul_args:
+    #                if isinstance(arg, Tensor):
+    #                    name = get_name(arg)
+    #                    if name in names:
+    #                        deps.add(name)
 
-            # Find the last assignment of the dependencies
-            last = len(new_outputs)
-            for i in range(len(new_outputs) - 1, -1, -1):
-                if get_name(new_outputs[i]) in deps:
-                    last = i + 1
-                    break
+    #        # Find the last assignment of the dependencies
+    #        last = len(new_outputs)
+    #        for i in range(len(new_outputs) - 1, -1, -1):
+    #            if get_name(new_outputs[i]) in deps:
+    #                last = i + 1
+    #                break
 
-            # Insert the return
-            new_outputs.insert(last, output)
-            new_exprs.insert(last, expr)
+    #        # Insert the return
+    #        new_outputs.insert(last, output)
+    #        new_exprs.insert(last, expr)
 
-    assert len(outputs) == len(new_outputs)
-    assert len(exprs) == len(new_exprs)
+    #assert len(outputs) == len(new_outputs)
+    #assert len(exprs) == len(new_exprs)
 
     return new_outputs, new_exprs

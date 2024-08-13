@@ -9,7 +9,7 @@ from albert.qc.ghf import ERI, L1, L2, L3, T1, T2, T3, R1ip, R2ip, R3ip, R1ea, R
 from albert.qc.index import Index
 
 
-def import_from_pdaggerq(terms, index_spins=None, index_spaces=None):
+def import_from_pdaggerq(terms, index_spins=None, index_spaces=None, l_is_lambda=True):
     """Import terms from `pdaggerq` output into the internal format.
 
     Parameters
@@ -25,6 +25,10 @@ def import_from_pdaggerq(terms, index_spins=None, index_spaces=None):
         Dictionary mapping indices to spaces. If not provided, the
         indices are assigned to the spaces based on their names. Default
         value is `None`.
+    l_is_lambda : bool, optional
+        If `True`, `l` is interpreted as the lambda operator. If `False`,
+        `l` is interpreted as the left-hand EOM vector. Default value is
+        `True`.
 
     Returns
     -------
@@ -42,7 +46,7 @@ def import_from_pdaggerq(terms, index_spins=None, index_spaces=None):
     for term in terms:
         # Convert symbols
         symbols = [
-            _convert_symbol(symbol, index_spins=index_spins, index_spaces=index_spaces)
+            _convert_symbol(symbol, index_spins=index_spins, index_spaces=index_spaces, l_is_lambda=l_is_lambda)
             for symbol in term
         ]
 
@@ -142,7 +146,7 @@ def _is_number(symbol):
             return False
 
 
-def _convert_symbol(symbol, index_spins=None, index_spaces=None):
+def _convert_symbol(symbol, index_spins=None, index_spaces=None, l_is_lambda=True):
     """Convert a `pdaggerq` symbol to the internal format.
 
     Parameters
@@ -157,6 +161,10 @@ def _convert_symbol(symbol, index_spins=None, index_spaces=None):
         Dictionary mapping indices to spaces. If not provided, the
         indices are assigned to the spaces based on their names. Default
         value is `None`.
+    l_is_lambda : bool, optional
+        If `True`, `l` is interpreted as the lambda operator. If `False`,
+        `l` is interpreted as the left-hand EOM vector. Default value is
+        `True`.
 
     Returns
     -------
@@ -205,19 +213,19 @@ def _convert_symbol(symbol, index_spins=None, index_spaces=None):
         indices = (indices[3], indices[4], indices[5], indices[0], indices[1], indices[2])
         tensor_symbol = T3
 
-    elif re.match(r"l1\([a-z],[a-z]\)", symbol):
+    elif re.match(r"l1\([a-z],[a-z]\)", symbol) and l_is_lambda:
         # l1(i,j)
         indices = tuple(symbol[3:-1].replace("t", "p").split(","))
         indices = (indices[1], indices[0])
         tensor_symbol = L1
 
-    elif re.match(r"l2\([a-z],[a-z],[a-z],[a-z]\)", symbol):
+    elif re.match(r"l2\([a-z],[a-z],[a-z],[a-z]\)", symbol) and l_is_lambda:
         # l2(i,j,k,l)
         indices = tuple(symbol[3:-1].replace("t", "p").split(","))
         indices = (indices[2], indices[3], indices[0], indices[1])
         tensor_symbol = L2
 
-    elif re.match(r"l3\([a-z],[a-z],[a-z],[a-z],[a-z],[a-z]\)", symbol):
+    elif re.match(r"l3\([a-z],[a-z],[a-z],[a-z],[a-z],[a-z]\)", symbol) and l_is_lambda:
         # l3(i,j,k,l,m,n)
         indices = tuple(symbol[3:-1].replace("t", "p").split(","))
         indices = (indices[3], indices[4], indices[5], indices[0], indices[1], indices[2])
@@ -267,6 +275,44 @@ def _convert_symbol(symbol, index_spins=None, index_spaces=None):
         # r3(a,b,c,i,j,k)
         indices = tuple(symbol[3:-1].replace("t", "p").split(","))
         indices = (indices[3], indices[4], indices[5], indices[0], indices[1], indices[2])
+        tensor_symbol = R3ee
+
+    elif re.match(r"l1\([a-z]\)", symbol) and not l_is_lambda:
+        # l1(i)
+        indices = (symbol[3],)
+        tensor_symbol = R1ip  # FIXME
+
+    elif re.match(r"l2\([a-z],[a-z],[a-z]\)", symbol):
+        # l2(i,j,a)
+        indices = tuple(symbol[3:-1].replace("t", "p").split(","))
+        if _to_space(indices[1]) == "o":
+            tensor_symbol = R2ip
+        else:
+            indices = (indices[1], indices[2], indices[0])
+            tensor_symbol = R2ip  # FIXME
+
+    elif re.match(r"l3\([a-z],[a-z],[a-z],[a-z],[a-z]\)", symbol) and not l_is_lambda:
+        # l3(i,j,k,a,b)
+        indices = tuple(symbol[3:-1].replace("t", "p").split(","))
+        if _to_space(indices[2]) == "o":
+            tensor_symbol = R3ip
+        else:
+            indices = (indices[2], indices[3], indices[4], indices[0], indices[1])
+            tensor_symbol = R3ip  # FIXME
+
+    elif re.match(r"l1\([a-z],[a-z]\)", symbol) and not l_is_lambda:
+        # l1(i,a)
+        indices = tuple(symbol[3:-1].replace("t", "p").split(","))
+        tensor_symbol = R1ee
+
+    elif re.match(r"l2\([a-z],[a-z],[a-z],[a-z]\)", symbol) and not l_is_lambda:
+        # l2(i,j,a,b)
+        indices = tuple(symbol[3:-1].replace("t", "p").split(","))
+        tensor_symbol = R2ee
+
+    elif re.match(r"l3\([a-z],[a-z],[a-z],[a-z],[a-z],[a-z]\)", symbol) and not l_is_lambda:
+        # l3(i,j,k,a,b,c)
+        indices = tuple(symbol[3:-1].replace("t", "p").split(","))
         tensor_symbol = R3ee
 
     elif re.match(r"d\([a-z],[a-z]\)", symbol):
