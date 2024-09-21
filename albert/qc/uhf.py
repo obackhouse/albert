@@ -67,6 +67,30 @@ class UHFSymbol(Symbol):
         return tensor
 
 
+class ScalarSymbol(UHFSymbol):
+    """Constructor for scalar symbols."""
+
+    DESIRED_RANK = 0
+
+    def __init__(self, name, rhf_symbol=None):
+        """Initialise the object."""
+        self.name = name
+        self.symmetry = _make_symmetry(())
+        self.rhf_symbol = rhf_symbol
+
+    @staticmethod
+    def _as_rhf(tensor):
+        """
+        Convert a `Scalar`-derived tensor object from unrestricted to
+        restricted.
+        """
+        return tensor._symbol.rhf_symbol[tuple()]
+
+
+R0 = ScalarSymbol("r0", rhf.R0)
+L0 = ScalarSymbol("l0", rhf.L0)
+
+
 class FockSymbol(UHFSymbol):
     """Constructor for one-electron Fock-like symbols."""
 

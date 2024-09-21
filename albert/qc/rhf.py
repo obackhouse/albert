@@ -34,6 +34,21 @@ def _make_symmetry(*perms):
     return Symmetry(*[Permutation(perm, 1) for perm in perms])
 
 
+class ScalarSymbol(RHFSymbol):
+    """Constructor for scalar symbols."""
+
+    DESIRED_RANK = 0
+
+    def __init__(self, name):
+        """Initialise the object."""
+        self.name = name
+        self.symmetry = _make_symmetry(())
+
+
+R0 = ScalarSymbol("r0")
+L0 = ScalarSymbol("l0")
+
+
 class FockSymbol(RHFSymbol):
     """Constructor for one-electron Fock-like symbols."""
 

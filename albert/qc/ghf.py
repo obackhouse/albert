@@ -35,6 +35,27 @@ class GHFSymbol(Symbol):
         return tensor
 
 
+class ScalarSymbol(GHFSymbol):
+    """Constructor for scalar symbols."""
+
+    DESIRED_RANK = 0
+
+    def __init__(self, name, uhf_symbol=None):
+        """Initialise the object."""
+        self.name = name
+        self.symmetry = _make_symmetry()
+        self.uhf_symbol = uhf_symbol
+
+    @staticmethod
+    def _as_uhf(tensor, target_restricted=False):
+        """Convert a scalar tensor object from generalised to unrestricted."""
+        return (tensor._symbol.uhf_symbol[tuple()],)
+
+
+R0 = ScalarSymbol("r0", uhf.R0)
+L0 = ScalarSymbol("l0", uhf.L0)
+
+
 class FockSymbol(GHFSymbol):
     """Constructor for Fock-like symbols."""
 

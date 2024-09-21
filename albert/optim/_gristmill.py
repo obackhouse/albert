@@ -8,9 +8,9 @@ from albert.tensor import Symbol, Tensor
 
 @check_dependency("pyspark", "sympy", "drudge", "gristmill")
 def optimise(
-    *outputs_and_exprs, index_groups=None, sizes=None, strategy="exhaust", **gristmill_kwargs
+    *outputs_and_exprs, index_groups=None, sizes=None, strategy="exhaust", interm_fmt="tmp{}", **gristmill_kwargs
 ):
-    """
+    r"""
     Perform common subexpression elimination on the given expression.
 
     Parameters
@@ -27,6 +27,9 @@ def optimise(
         be equal. Default value is `None`.
     strategy : str, optional
         The optimisation strategy to use. Default value is `"exhaust"`.
+    interm_fmt : str, optional
+        The format string for the intermediate tensors. Default value is
+        `"tmp{}"`.
     **gristmill_kwargs
         Additional keyword arguments to be passed to
         `gristmill.optimize`.
@@ -135,7 +138,7 @@ def optimise(
         terms,
         substs=substs,
         contr_strat=getattr(gristmill.ContrStrat, strategy.upper()),
-        interm_fmt="tmp{}",
+        interm_fmt=interm_fmt,
         **gristmill_kwargs,
     )
 

@@ -5,7 +5,7 @@ import re
 from numbers import Number
 
 from albert.algebra import Add, Mul
-from albert.qc.ghf import ERI, L1, L2, L3, T1, T2, T3, R1ip, R2ip, R3ip, R1ea, R2ea, R3ea, R1ee, R2ee, R3ee, Delta, Fock, SingleERI
+from albert.qc.ghf import ERI, L1, L2, L3, T1, T2, T3, L0, R0, R1ip, R2ip, R3ip, R1ea, R2ea, R3ea, R1ee, R2ee, R3ee, Delta, Fock, SingleERI
 from albert.qc.index import Index
 
 
@@ -179,6 +179,11 @@ def _convert_symbol(symbol, index_spins=None, index_spaces=None, l_is_lambda=Tru
     if _is_number(symbol):
         # factor
         return float(symbol)
+
+    elif symbol in ("r0", "l0"):
+        # r0 or l0
+        indices = tuple()
+        tensor_symbol = R0 if symbol == "r0" else L0
 
     elif re.match(r"f\([a-z],[a-z]\)", symbol):
         # f(i,j)
