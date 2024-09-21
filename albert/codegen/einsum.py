@@ -171,5 +171,6 @@ class EinsumCodeGen(CodeGen):
                     targ = self.transpose_func.format(arg=args[0], transpose=transpose)
                 else:
                     targ = args[0]
-                copy = ".copy()" if i == 0 and not already_declared else ""
-                self.write(f"{output_name} {operator} {targ}{copy}{factor}")
+                copy_pre = "np.copy(" if i == 0 and not already_declared else ""
+                copy_pos = ")" if i == 0 and not already_declared else ""
+                self.write(f"{output_name} {operator} {copy_pre}{targ}{copy_pos}{factor}")
