@@ -185,64 +185,64 @@ def _convert_symbol(symbol, index_spins=None, index_spaces=None, l_is_lambda=Tru
         indices = tuple()
         tensor_symbol = R0 if symbol == "r0" else L0
 
-    elif re.match(r"f\([a-z],[a-z]\)", symbol):
+    elif re.match(r"f\((?i:[a-z]),(?i:[a-z])\)", symbol):
         # f(i,j)
         indices = tuple(symbol[2:-1].replace("t", "p").split(","))
         tensor_symbol = Fock
 
-    elif re.match(r"<[a-z],[a-z]\|\|[a-z],[a-z]>", symbol):
+    elif re.match(r"<(?i:[a-z]),(?i:[a-z])\|\|(?i:[a-z]),(?i:[a-z])>", symbol):
         # <i,j||k,l>
         indices = tuple(symbol[1:-1].replace("t", "p").replace("||", ",").split(","))
         tensor_symbol = ERI
 
-    elif re.match(r"<[a-z],[a-z]\|[a-z],[a-z]>", symbol):
+    elif re.match(r"<(?i:[a-z]),(?i:[a-z])\|(?i:[a-z]),(?i:[a-z])>", symbol):
         # <i,j|k,l>
         indices = tuple(symbol[1:-1].replace("t", "p").replace("|", ",").split(","))
         tensor_symbol = SingleERI
 
-    elif re.match(r"t1\([a-z],[a-z]\)", symbol):
+    elif re.match(r"t1\((?i:[a-z]),(?i:[a-z])\)", symbol):
         # t1(i,j)
         indices = tuple(symbol[3:-1].replace("t", "p").split(","))
         indices = (indices[1], indices[0])
         tensor_symbol = T1
 
-    elif re.match(r"t2\([a-z],[a-z],[a-z],[a-z]\)", symbol):
+    elif re.match(r"t2\((?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z])\)", symbol):
         # t2(i,j,k,l)
         indices = tuple(symbol[3:-1].replace("t", "p").split(","))
         indices = (indices[2], indices[3], indices[0], indices[1])
         tensor_symbol = T2
 
-    elif re.match(r"t3\([a-z],[a-z],[a-z],[a-z],[a-z],[a-z]\)", symbol):
+    elif re.match(r"t3\((?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z])\)", symbol):
         # t3(i,j,k,l,m,n)
         indices = tuple(symbol[3:-1].replace("t", "p").split(","))
         indices = (indices[3], indices[4], indices[5], indices[0], indices[1], indices[2])
         tensor_symbol = T3
 
-    elif re.match(r"l1\([a-z],[a-z]\)", symbol) and l_is_lambda:
+    elif re.match(r"l1\((?i:[a-z]),(?i:[a-z])\)", symbol) and l_is_lambda:
         # l1(i,j)
         indices = tuple(symbol[3:-1].replace("t", "p").split(","))
         indices = (indices[1], indices[0])
         tensor_symbol = L1
 
-    elif re.match(r"l2\([a-z],[a-z],[a-z],[a-z]\)", symbol) and l_is_lambda:
+    elif re.match(r"l2\((?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z])\)", symbol) and l_is_lambda:
         # l2(i,j,k,l)
         indices = tuple(symbol[3:-1].replace("t", "p").split(","))
         indices = (indices[2], indices[3], indices[0], indices[1])
         tensor_symbol = L2
 
-    elif re.match(r"l3\([a-z],[a-z],[a-z],[a-z],[a-z],[a-z]\)", symbol) and l_is_lambda:
+    elif re.match(r"l3\((?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z])\)", symbol) and l_is_lambda:
         # l3(i,j,k,l,m,n)
         indices = tuple(symbol[3:-1].replace("t", "p").split(","))
         indices = (indices[3], indices[4], indices[5], indices[0], indices[1], indices[2])
         tensor_symbol = L3
 
-    elif re.match(r"r1\([a-z]\)", symbol):
+    elif re.match(r"r1\((?i:[a-z])\)", symbol):
         # r1(i)
         indices = (symbol[3],)
         #tensor_symbol = R1ip if _to_space(symbol[3]) == "o" else R1ea
         tensor_symbol = R1ip  # FIXME
 
-    elif re.match(r"r2\([a-z],[a-z],[a-z]\)", symbol):
+    elif re.match(r"r2\((?i:[a-z]),(?i:[a-z]),(?i:[a-z])\)", symbol):
         # r2(i,j,a)
         indices = tuple(symbol[3:-1].replace("t", "p").split(","))
         if _to_space(indices[1]) == "o":
@@ -253,7 +253,7 @@ def _convert_symbol(symbol, index_spins=None, index_spaces=None, l_is_lambda=Tru
             #tensor_symbol = R2ea
             tensor_symbol = R2ip  # FIXME
 
-    elif re.match(r"r3\([a-z],[a-z],[a-z],[a-z],[a-z]\)", symbol):
+    elif re.match(r"r3\((?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z])\)", symbol):
         # r3(i,j,k,a,b)
         indices = tuple(symbol[3:-1].replace("t", "p").split(","))
         if _to_space(indices[2]) == "o":
@@ -264,30 +264,30 @@ def _convert_symbol(symbol, index_spins=None, index_spaces=None, l_is_lambda=Tru
             #tensor_symbol = R3ea
             tensor_symbol = R3ip  # FIXME
 
-    elif re.match(r"r1\([a-z],[a-z]\)", symbol):
+    elif re.match(r"r1\((?i:[a-z]),(?i:[a-z])\)", symbol):
         # r1(a,i)
         indices = tuple(symbol[3:-1].replace("t", "p").split(","))
         indices = (indices[1], indices[0])
         tensor_symbol = R1ee
 
-    elif re.match(r"r2\([a-z],[a-z],[a-z],[a-z]\)", symbol):
+    elif re.match(r"r2\((?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z])\)", symbol):
         # r2(a,b,i,j)
         indices = tuple(symbol[3:-1].replace("t", "p").split(","))
         indices = (indices[2], indices[3], indices[0], indices[1])
         tensor_symbol = R2ee
 
-    elif re.match(r"r3\([a-z],[a-z],[a-z],[a-z],[a-z],[a-z]\)", symbol):
+    elif re.match(r"r3\((?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z])\)", symbol):
         # r3(a,b,c,i,j,k)
         indices = tuple(symbol[3:-1].replace("t", "p").split(","))
         indices = (indices[3], indices[4], indices[5], indices[0], indices[1], indices[2])
         tensor_symbol = R3ee
 
-    elif re.match(r"l1\([a-z]\)", symbol) and not l_is_lambda:
+    elif re.match(r"l1\((?i:[a-z])\)", symbol) and not l_is_lambda:
         # l1(i)
         indices = (symbol[3],)
         tensor_symbol = R1ip  # FIXME
 
-    elif re.match(r"l2\([a-z],[a-z],[a-z]\)", symbol):
+    elif re.match(r"l2\((?i:[a-z]),(?i:[a-z]),(?i:[a-z])\)", symbol):
         # l2(i,j,a)
         indices = tuple(symbol[3:-1].replace("t", "p").split(","))
         if _to_space(indices[1]) == "o":
@@ -296,7 +296,7 @@ def _convert_symbol(symbol, index_spins=None, index_spaces=None, l_is_lambda=Tru
             indices = (indices[1], indices[2], indices[0])
             tensor_symbol = R2ip  # FIXME
 
-    elif re.match(r"l3\([a-z],[a-z],[a-z],[a-z],[a-z]\)", symbol) and not l_is_lambda:
+    elif re.match(r"l3\((?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z])\)", symbol) and not l_is_lambda:
         # l3(i,j,k,a,b)
         indices = tuple(symbol[3:-1].replace("t", "p").split(","))
         if _to_space(indices[2]) == "o":
@@ -305,27 +305,27 @@ def _convert_symbol(symbol, index_spins=None, index_spaces=None, l_is_lambda=Tru
             indices = (indices[2], indices[3], indices[4], indices[0], indices[1])
             tensor_symbol = R3ip  # FIXME
 
-    elif re.match(r"l1\([a-z],[a-z]\)", symbol) and not l_is_lambda:
+    elif re.match(r"l1\((?i:[a-z]),(?i:[a-z])\)", symbol) and not l_is_lambda:
         # l1(i,a)
         indices = tuple(symbol[3:-1].replace("t", "p").split(","))
         tensor_symbol = R1ee
 
-    elif re.match(r"l2\([a-z],[a-z],[a-z],[a-z]\)", symbol) and not l_is_lambda:
+    elif re.match(r"l2\((?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z])\)", symbol) and not l_is_lambda:
         # l2(i,j,a,b)
         indices = tuple(symbol[3:-1].replace("t", "p").split(","))
         tensor_symbol = R2ee
 
-    elif re.match(r"l3\([a-z],[a-z],[a-z],[a-z],[a-z],[a-z]\)", symbol) and not l_is_lambda:
+    elif re.match(r"l3\((?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z])\)", symbol) and not l_is_lambda:
         # l3(i,j,k,a,b,c)
         indices = tuple(symbol[3:-1].replace("t", "p").split(","))
         tensor_symbol = R3ee
 
-    elif re.match(r"d\([a-z],[a-z]\)", symbol):
+    elif re.match(r"d\((?i:[a-z]),(?i:[a-z])\)", symbol):
         # d(i,j)
         indices = tuple(symbol[2:-1].replace("t", "p").split(","))
         tensor_symbol = Delta
 
-    elif re.match(r"P\([a-z],[a-z]\)", symbol):
+    elif re.match(r"P\((?i:[a-z]),(?i:[a-z])\)", symbol):
         # P(i,j)
         indices = tuple(symbol[2:-1].replace("t", "p").split(","))
         tensor_symbol = P

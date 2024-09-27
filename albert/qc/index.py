@@ -15,7 +15,12 @@ class Index(Base):
 
     def hashable(self):
         """Return a hashable representation of the object."""
-        return (self.space if self.space else "", self.spin if self.spin else "", self.name)
+        return (
+            self.space.lower() if self.space else "",
+            self.space if self.space else "",
+            self.spin if self.spin else "",
+            self.name,
+        )
 
     def as_json(self):
         """Return a JSON serialisable representation of the object."""
