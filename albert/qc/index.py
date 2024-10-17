@@ -17,8 +17,8 @@ class Index(Base):
         """Return a hashable representation of the object."""
         return (
             self.space.lower() if self.space else "",
-            self.space.islower(),
-            self.space if self.space else "",
+            self.space.isupper() if self.space else None,
+            self.space.lower() if self.space else "",
             self.spin if self.spin else "",
             self.name,
         )
