@@ -33,6 +33,7 @@ class Algebraic(Base):
             # Otherwise, create the object
             algebraic = super().__new__(cls)
             algebraic.args = args
+            algebraic._hashable = {}
             return algebraic
 
     @staticmethod
@@ -115,8 +116,12 @@ class Algebraic(Base):
     def hashable(self, coefficient=True, penalty_function=None):
         """Return a hashable representation of the object."""
 
+        # Return the cached hashable representation if available
+        if (coefficient, penalty_function) in self._hashable:
+            return self._hashable[(coefficient, penalty_function)]
+
         # Recursively get the hashable representation
-        args = self.without_coefficient().args
+        args = list(self.without_coefficient().args)
         hashable = tuple(
             arg.hashable(penalty_function=penalty_function) if isinstance(arg, Base) else arg
             for arg in args

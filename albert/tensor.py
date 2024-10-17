@@ -33,6 +33,7 @@ class Tensor(Base):
         self.name = name
         self.symmetry = symmetry
         self._symbol = None
+        self._hashable = {}
 
     def __repr__(self):
         """Return the representation of the object."""
@@ -108,6 +109,10 @@ class Tensor(Base):
 
     def hashable(self, coefficient=True, penalty_function=None):
         """Return a hashable representation of the object."""
+
+        # Return the cached hashable representation if available
+        if (coefficient, penalty_function) in self._hashable:
+            return self._hashable[(coefficient, penalty_function)]
 
         # Get the default penalty function if not given
         if penalty_function is None:
