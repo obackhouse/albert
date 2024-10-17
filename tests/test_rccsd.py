@@ -136,6 +136,7 @@ class TestRCCSD(unittest.TestCase):
         v_full = v_full + v_full.transpose(0, 1, 3, 2) + v_full.transpose(1, 0, 2, 3) + v_full.transpose(1, 0, 3, 2)
         v_full = v_full + v_full.transpose(2, 3, 0, 1)
         v.oooo = v_full[:nocc, :nocc, :nocc, :nocc]
+        v.ovoo = v_full[:nocc, nocc:, :nocc, :nocc]
         v.ovov = v_full[:nocc, nocc:, :nocc, nocc:]
         v.vvvv = v_full[nocc:, nocc:, nocc:, nocc:]
         v.oovv = v_full[:nocc, :nocc, nocc:, nocc:]
