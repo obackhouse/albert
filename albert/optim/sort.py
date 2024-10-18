@@ -5,7 +5,7 @@ from collections import defaultdict
 
 import networkx as nx
 
-from albert.algebra import Mul
+from albert.algebra import Mul, Add
 from albert.tensor import Tensor
 
 # TODO the toposort is not perfect
@@ -115,42 +115,49 @@ def sort_exprs(returns, outputs, exprs, get_name=None):
     )
 
     # Sort the names
-    sorted_names = list(nx.topological_sort(nx.DiGraph(graph)))[::-1]
-
-    # Sort the expressions
     new_outputs = []
     new_exprs = []
-    for name in sorted_names:
-        #if not any(name == get_name(ret) for ret in returns) and names.get(name):
-        if names.get(name):
-            tmp_outputs, tmp_exprs = zip(*names[name])
-            new_outputs.extend(tmp_outputs)
-            new_exprs.extend(tmp_exprs)
+    _cache = {}
+    def get_deps(name):
+        if name in _cache:
+            return _cache[name]
+        deps = set()
+        for dep in graph[name]:
+            if dep in graph:
+                deps.add(dep)
+            deps.update(get_deps(dep))
+        _cache[name] = deps
+        return deps
 
-    ## Insert the returns
-    #for output, expr in zip(outputs, exprs):
-    #    if any(get_name(output) == get_name(ret) for ret in returns):
-    #        # Get the dependencies that are not inputs
-    #        deps = set()
-    #        for mul_args in expr.nested_view():
-    #            for arg in mul_args:
-    #                if isinstance(arg, Tensor):
-    #                    name = get_name(arg)
-    #                    if name in names:
-    #                        deps.add(name)
+    def _add(name):
+        # Find the first time it's used:
+        i = None
+        for i, (output, expr) in enumerate(zip(new_outputs, new_exprs)):
+            for mul_args in expr.nested_view():
+                for arg in mul_args:
+                    if isinstance(arg, Tensor) and get_name(arg) == name:
+                        break
+                else:
+                    continue
+                break
+            else:
+                continue
+            break
+        else:
+            i = len(new_outputs)
 
-    #        # Find the last assignment of the dependencies
-    #        last = len(new_outputs)
-    #        for i in range(len(new_outputs) - 1, -1, -1):
-    #            if get_name(new_outputs[i]) in deps:
-    #                last = i + 1
-    #                break
+        # Insert the outputs and expressions
+        if name in names:
+            for output, expr in names[name]:
+                new_outputs.insert(i, output)
+                new_exprs.insert(i, expr)
+                i += 1
 
-    #        # Insert the return
-    #        new_outputs.insert(last, output)
-    #        new_exprs.insert(last, expr)
+    for group in list(nx.topological_generations(nx.DiGraph(graph))):
+        for name in sorted(group, key=lambda x: len(get_deps(x))):
+            _add(name)
 
-    #assert len(outputs) == len(new_outputs)
-    #assert len(exprs) == len(new_exprs)
+    assert len(outputs) == len(new_outputs)
+    assert len(exprs) == len(new_exprs)
 
     return new_outputs, new_exprs
