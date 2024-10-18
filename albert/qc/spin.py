@@ -76,18 +76,18 @@ def generalised_to_unrestricted(expr, target_restricted=False):
                 else:
                     new_exprs[new_mul.external_indices] += new_mul
 
-    # Partially canonicalise
-    canon_exprs = defaultdict(int)
-    for part in tuple(new_exprs.values()):
-        # FIXME we should try to avoid this canonicalisation
-        summed_part = 0
-        for arg in part.nested_view():
-            if isinstance(arg, Add):
-                summed_part = Add(*summed_part.args, Mul(*arg))
-            else:
-                summed_part += Mul(*arg)
-        canon_exprs[part.external_indices] += part
-    new_exprs = canon_exprs
+    ## Partially canonicalise
+    #canon_exprs = defaultdict(int)
+    #for part in tuple(new_exprs.values()):
+    #    # FIXME we should try to avoid this canonicalisation
+    #    summed_part = 0
+    #    for arg in part.nested_view():
+    #        if isinstance(arg, Add):
+    #            summed_part = Add(*summed_part.args, Mul(*arg))
+    #        else:
+    #            summed_part += Mul(*arg)
+    #    canon_exprs[part.external_indices] += part
+    #new_exprs = canon_exprs
 
     return tuple(new_exprs.values())
 

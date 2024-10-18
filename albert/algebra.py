@@ -139,6 +139,9 @@ class Algebraic(Base):
             )
         )
 
+        # Cache the hashable representation
+        self._hashable[(coefficient, penalty_function)] = hashable
+
         return hashable
 
     def canonicalise(self):

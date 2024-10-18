@@ -130,6 +130,9 @@ class Tensor(Base):
             self.symmetry.hashable() if self.symmetry else None,
         )
 
+        # Cache the hashable representation
+        self._hashable[(coefficient, penalty_function)] = (hashable,)
+
         return (hashable,)
 
     def canonicalise(self):
