@@ -49,7 +49,7 @@ class Fock(Tensor):
             Tensor resulting from the conversion.
         """
         indices = tuple(index.copy(spin="r") for index in self.indices)
-        return rhf.Fock(*indices)
+        return rhf.Fock(*indices, name=self.name)
 
 
 class RDM1(Fock):
@@ -85,7 +85,7 @@ class RDM1(Fock):
             Tensor resulting from the conversion.
         """
         indices = tuple(index.copy(spin="r") for index in self.indices)
-        return rhf.RDM1(*indices)
+        return rhf.RDM1(*indices, name=self.name)
 
 
 class Delta(Fock):
@@ -121,7 +121,7 @@ class Delta(Fock):
             Tensor resulting from the conversion.
         """
         indices = tuple(index.copy(spin="r") for index in self.indices)
-        return rhf.Delta(*indices)
+        return rhf.Delta(*indices, name=self.name)
 
 
 class ERI(Tensor):
@@ -166,7 +166,7 @@ class ERI(Tensor):
             Tensor resulting from the conversion.
         """
         indices = tuple(index.copy(spin="r") for index in self.indices)
-        return rhf.ERI(*indices)
+        return rhf.ERI(*indices, name=self.name)
 
 
 class CDERI(Tensor):
@@ -202,7 +202,7 @@ class CDERI(Tensor):
             Tensor resulting from the conversion.
         """
         indices = tuple(index.copy(spin="r") for index in self.indices)
-        return rhf.CDERI(*indices)
+        return rhf.CDERI(*indices, name=self.name)
 
 
 class RDM2(Tensor):
@@ -238,7 +238,7 @@ class RDM2(Tensor):
             Tensor resulting from the conversion.
         """
         indices = tuple(index.copy(spin="r") for index in self.indices)
-        return rhf.RDM2(*indices)
+        return rhf.RDM2(*indices, name=self.name)
 
 
 def _amplitude_as_rhf(
@@ -282,7 +282,9 @@ def _amplitude_as_rhf(
     # Relabel the indices
     for i, amp in enumerate(amps):
         indices = tuple(index.copy(spin="r") for index in amp.external_indices)
-        amps[i] = amp.apply(lambda tensor: tensor.copy(*indices), node_type=Tensor)  # noqa: B023
+        amps[i] = amp.apply(
+            lambda tensor: type_rhf(*indices, name=tensor.name), node_type=Tensor  # noqa: B023
+        )
 
     return sum(amps, Scalar(0.0))
 
@@ -320,7 +322,7 @@ class T1(Tensor):
             Tensor resulting from the conversion.
         """
         indices = tuple(index.copy(spin="r") for index in self.indices)
-        return rhf.T1(*indices)
+        return rhf.T1(*indices, name=self.name)
 
 
 class T2(Tensor):
@@ -435,7 +437,7 @@ class L1(T1):
             Tensor resulting from the conversion.
         """
         indices = tuple(index.copy(spin="r") for index in self.indices)
-        return rhf.L1(*indices)
+        return rhf.L1(*indices, name=self.name)
 
 
 class L2(T2):
@@ -532,7 +534,7 @@ class R0(Tensor):
         Returns:
             Tensor resulting from the conversion.
         """
-        return rhf.R0()
+        return rhf.R0(name=self.name)
 
 
 class R1ip(Tensor):

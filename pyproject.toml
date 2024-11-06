@@ -136,6 +136,10 @@ ignore_missing_imports = true
 module = "gristmill.*"
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+module = "networkx.*"
+ignore_missing_imports = true
+
 [tool.coverage.run]
 branch = true
 source = [

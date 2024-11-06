@@ -43,7 +43,6 @@ def optimise_gristmill(
     exprs: list[Base],
     sizes: Optional[dict[str | None, float]] = None,
     strategy: Literal["exhaust", "opt", "trav", "greedy"] = "exhaust",
-    interm_fmt: str = "tmp{}",
     **gristmill_kwargs: Any,
 ) -> list[tuple[Tensor, Base]]:
     """Perform common subexpression elimination on the given expression using `gristmill`.
@@ -53,7 +52,6 @@ def optimise_gristmill(
         exprs: The expressions to be optimised.
         sizes: The sizes of the indices.
         strategy: The optimisation strategy to use.
-        interm_fmt: The format string for the intermediate tensors.
 
     Returns:
         The optimised expressions, as tuples of the output tensor and the expression.
@@ -157,7 +155,7 @@ def optimise_gristmill(
         terms,
         substs=substs,
         contr_strat=getattr(gristmill.ContrStrat, strategy.upper()),
-        interm_fmt=interm_fmt,
+        interm_fmt="tmp{}",
         **gristmill_kwargs,
     )
 

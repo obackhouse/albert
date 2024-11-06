@@ -67,7 +67,7 @@ class Fock(Tensor):
 
             # Create the UHF tensor
             indices = tuple(index.copy(spin=spin) for index in self.indices)
-            tensors.append(uhf.Fock(*indices))
+            tensors.append(uhf.Fock(*indices, name=self.name))
 
         return tuple(tensors)
 
@@ -117,7 +117,7 @@ class RDM1(Fock):
 
             # Create the UHF tensor
             indices = tuple(index.copy(spin=spin) for index in self.indices)
-            tensors.append(uhf.RDM1(*indices))
+            tensors.append(uhf.RDM1(*indices, name=self.name))
 
         return tuple(tensors)
 
@@ -167,7 +167,7 @@ class Delta(Fock):
 
             # Create the UHF tensor
             indices = tuple(index.copy(spin=spin) for index in self.indices)
-            tensors.append(uhf.Delta(*indices))
+            tensors.append(uhf.Delta(*indices, name=self.name))
 
         return tuple(tensors)
 
@@ -234,9 +234,13 @@ class ERI(Tensor):
             # Create the UHF tensor
             indices = tuple(index.copy(spin=spin) for index, spin in zip(self.indices, spins))
             if direct:
-                tensors.append(uhf.ERI(indices[0], indices[2], indices[1], indices[3]))
+                tensors.append(
+                    uhf.ERI(indices[0], indices[2], indices[1], indices[3], name=self.name)
+                )
             if exchange:
-                tensors.append(-uhf.ERI(indices[0], indices[3], indices[1], indices[2]))
+                tensors.append(
+                    -uhf.ERI(indices[0], indices[3], indices[1], indices[2], name=self.name)
+                )
 
         return tuple(tensors)
 
@@ -291,7 +295,7 @@ class ERISingle(Tensor):
 
             # Create the UHF tensor
             indices = tuple(index.copy(spin=spin) for index, spin in zip(self.indices, spins))
-            tensors.append(uhf.ERI(indices[0], indices[2], indices[1], indices[3]))
+            tensors.append(uhf.ERI(indices[0], indices[2], indices[1], indices[3], name=self.name))
 
         return tuple(tensors)
 
@@ -354,9 +358,13 @@ class RDM2(Tensor):
             # Create the UHF tensor
             indices = tuple(index.copy(spin=spin) for index, spin in zip(self.indices, spins))
             if direct:
-                tensors.append(uhf.RDM2(indices[0], indices[1], indices[2], indices[3]))
+                tensors.append(
+                    uhf.RDM2(indices[0], indices[1], indices[2], indices[3], name=self.name)
+                )
             if exchange:
-                tensors.append(-uhf.RDM2(indices[0], indices[1], indices[3], indices[2]))
+                tensors.append(
+                    -uhf.RDM2(indices[0], indices[1], indices[3], indices[2], name=self.name)
+                )
 
         return tuple(tensors)
 
@@ -397,7 +405,7 @@ def _amplitude_as_uhf(
 
             # Create the UHF tensor
             indices = tuple(index.copy(spin=spin) for index, spin in zip(amp.indices, spins))
-            tensor_uhf = type_uhf(*indices)
+            tensor_uhf = type_uhf(*indices, name=amp.name)
 
             # Check for RHF tensors
             if target_rhf:
@@ -460,7 +468,7 @@ class T1(Tensor):
 
             # Create the UHF tensor
             indices = tuple(index.copy(spin=spin) for index in self.indices)
-            tensors.append(uhf.T1(*indices))
+            tensors.append(uhf.T1(*indices, name=self.name))
 
         return tuple(tensors)
 
@@ -707,7 +715,7 @@ class R0(Tensor):
         Returns:
             Tuple of tensors resulting from the conversion.
         """
-        return (uhf.R0(),)
+        return (uhf.R0(name=self.name),)
 
 
 class R1ip(Tensor):
@@ -755,7 +763,7 @@ class R1ip(Tensor):
 
             # Create the UHF tensor
             indices = tuple(index.copy(spin=spin) for index in self.indices)
-            tensors.append(uhf.R1ip(*indices))
+            tensors.append(uhf.R1ip(*indices, name=self.name))
 
         return tuple(tensors)
 
@@ -895,7 +903,7 @@ class R1ea(Tensor):
 
             # Create the UHF tensor
             indices = tuple(index.copy(spin=spin) for index in self.indices)
-            tensors.append(uhf.R1ea(*indices))
+            tensors.append(uhf.R1ea(*indices, name=self.name))
 
         return tuple(tensors)
 
