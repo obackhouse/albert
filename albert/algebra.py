@@ -128,11 +128,10 @@ class Algebraic(IAlgebraic):
         # Collect like terms
         collected: dict[tuple[Base, ...], Scalar] = defaultdict(Scalar)
         for mul in expanded._children:
-            canon = mul.canonicalise()
             parts: list[Base] = []
             factor = Scalar(1.0)
-            if canon._children:
-                for child in canon._children:
+            if mul._children:
+                for child in mul._children:
                     if isinstance(child, Scalar):
                         factor *= child
                     else:

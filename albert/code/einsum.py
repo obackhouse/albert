@@ -190,11 +190,12 @@ class EinsumCodeGenerator(BaseCodeGenerator):
         """
         pass  # no need to declare scalars in Python
 
-    def tensor_declaration(self, *args: Tensor) -> None:
+    def tensor_declaration(self, *args: Tensor, is_return: bool = False) -> None:
         """Write tensor declaration(s).
 
         Args:
             args: The tensors.
+            is_return: Whether the tensors are return tensors.
         """
         for arg in args:
             # If there are spins, declare the namespace. The declaration tracking in
@@ -226,13 +227,20 @@ class EinsumCodeGenerator(BaseCodeGenerator):
         if names:
             self.write("del " + ", ".join(names))
 
-    def tensor_expression(self, output: Tensor, expr: Base, declared: bool = False) -> None:
+    def tensor_expression(
+        self,
+        output: Tensor,
+        expr: Base,
+        declared: bool = False,
+        is_return: bool = False,
+    ) -> None:
         """Write a tensor expression.
 
         Args:
             output: The output tensor.
             expr: The expression.
             declared: Whether the output tensor has already been declared.
+            is_return: Whether the output tensor is a return tensor.
         """
         expr = expr.expand()  # guarantee Add[Mul[Tensor | Scalar]]
         for i, mul in enumerate(expr._children):
@@ -255,7 +263,7 @@ class EinsumCodeGenerator(BaseCodeGenerator):
 
             # Get the operator and LHS
             operator = "=" if i == 0 and not declared else "+="
-            output_name = self.get_name(output)
+            output_name = self.get_name(output, add_spins=not is_return, add_spaces=not is_return)
 
             # Get the factor
             factor = 1.0

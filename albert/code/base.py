@@ -199,11 +199,12 @@ class BaseCodeGenerator(ABC):
         pass
 
     @abstractmethod
-    def tensor_declaration(self, *args: Tensor) -> None:
+    def tensor_declaration(self, *args: Tensor, is_return: bool = False) -> None:
         """Write tensor declaration(s).
 
         Args:
             args: The tensors.
+            is_return: Whether the tensor is a return tensor.
         """
         pass
 
@@ -217,13 +218,20 @@ class BaseCodeGenerator(ABC):
         pass
 
     @abstractmethod
-    def tensor_expression(self, output: Tensor, expr: Base, declared: bool = False) -> None:
+    def tensor_expression(
+        self,
+        output: Tensor,
+        expr: Base,
+        declared: bool = False,
+        is_return: bool = False,
+    ) -> None:
         """Write a tensor expression.
 
         Args:
             output: The output tensor.
             expr: The expression.
             declared: Whether the output tensor has already been declared.
+            is_return: Whether the output tensor is a return tensor.
         """
         pass
 
@@ -318,22 +326,24 @@ class BaseCodeGenerator(ABC):
         # Get the tensors to clean up at each step
         to_cleanup: dict[int, list[Tensor]] = defaultdict(list)
         for info, i in last_appearance.items():
-            if not any(info == tensor for tensor in args + rets):
+            if not any(info == _tensor_info(tensor) for tensor in args + rets):
                 to_cleanup[i].append(info_tensor_map[info])
 
         # Write the tensor contractions
         for i, (output, expr) in enumerate(output_expr):
             # Write the tensor declaration
-            already_declared = _tensor_info(output) in self._tensor_declared
+            info = _tensor_info(output)
+            already_declared = info in self._tensor_declared
+            is_return = any(info == _tensor_info(ret) for ret in returns)
             if not already_declared:
-                self.tensor_declaration(output)
-                self._tensor_declared.add(_tensor_info(output))
+                self.tensor_declaration(output, is_return=is_return)
+                self._tensor_declared.add(info)
 
             # Write the tensor expression
-            self.tensor_expression(output, expr, declared=already_declared)
+            self.tensor_expression(output, expr, declared=already_declared, is_return=is_return)
 
             # Write the tensor cleanup
-            already_cleaned = _tensor_info(output) in self._tensor_cleaned
+            already_cleaned = info in self._tensor_cleaned
             if not already_cleaned:
                 _to_cleanup = to_cleanup.get(i, [])
                 self.tensor_cleanup(*_to_cleanup)

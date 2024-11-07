@@ -6,6 +6,7 @@ from collections import defaultdict
 from typing import TYPE_CHECKING
 
 from albert.base import Base, IMul
+from albert.index import Index
 
 if TYPE_CHECKING:
     pass
@@ -46,7 +47,16 @@ def canonicalise_indices(expr: Base) -> Base:
 
         # Find the canonical internal indices for each term
         for index in node.internal_indices:
-            index_map_node[index] = index_lists_node[(index.spin, index.space)].pop(0)
+            if len(index_lists_node[(index.spin, index.space)]):
+                index_map_node[index] = index_lists_node[(index.spin, index.space)].pop(0)
+            else:
+                # Somehow we ran out of indices? Didn't think this was possible, but we can
+                # just make a new one
+                index_map_node[index] = Index(
+                    f"idx{len(index_map_node)}",
+                    space=index.space,
+                    spin=index.spin,
+                )
 
             # If the spin-flipped index exists, remove it to avoid repeat indices with the same name
             index_flip = index_map_node[index].spin_flip()

@@ -308,7 +308,7 @@ class T1(Tensor):
         if len(indices) != 2:
             raise ValueError("T1 amplitude tensor must have two indices.")
         if name is None:
-            name = "t"
+            name = "t1"
         if symmetry is None:
             symmetry = symmetric_group((0, 1))
         Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
@@ -344,7 +344,7 @@ class T2(Tensor):
         if len(indices) != 4:
             raise ValueError("T2 amplitude tensor must have four indices.")
         if name is None:
-            name = "t"
+            name = "t2"
         if symmetry is None:
             symmetry = Symmetry(
                 Permutation((0, 1, 2, 3), +1),
@@ -384,7 +384,7 @@ class T3(Tensor):
         if len(indices) != 6:
             raise ValueError("T3 amplitude tensor must have six indices.")
         if name is None:
-            name = "t"
+            name = "t3"
         if symmetry is None:
             symmetry = Symmetry(
                 *(
@@ -425,7 +425,7 @@ class L1(T1):
         if len(indices) != 2:
             raise ValueError("L1 amplitude tensor must have two indices.")
         if name is None:
-            name = "l"
+            name = "l1"
         T1.__init__(self, *indices, name=name, symmetry=symmetry)
 
     def as_rhf(self) -> Base:
@@ -459,7 +459,7 @@ class L2(T2):
         if len(indices) != 4:
             raise ValueError("L2 amplitude tensor must have four indices.")
         if name is None:
-            name = "l"
+            name = "l2"
         T2.__init__(self, *indices, name=name, symmetry=symmetry)
 
     def as_rhf(self) -> Base:
@@ -492,7 +492,7 @@ class L3(T3):
         if len(indices) != 6:
             raise ValueError("L3 amplitude tensor must have six indices.")
         if name is None:
-            name = "l"
+            name = "l3"
         T3.__init__(self, *indices, name=name, symmetry=symmetry)
 
     def as_rhf(self) -> Base:
@@ -525,7 +525,7 @@ class R0(Tensor):
         if len(indices) != 0:
             raise ValueError("R0 amplitude tensor must have zero indices.")
         if name is None:
-            name = "r"
+            name = "r0"
         Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
 
     def as_rhf(self) -> Base:
@@ -556,7 +556,7 @@ class R1ip(Tensor):
         if len(indices) != 1:
             raise ValueError("R1ip amplitude tensor must have two indices.")
         if name is None:
-            name = "r"
+            name = "r1"
         if symmetry is None:
             symmetry = symmetric_group((0,))
         Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
@@ -591,7 +591,7 @@ class R2ip(Tensor):
         if len(indices) != 3:
             raise ValueError("R2ip amplitude tensor must have two indices.")
         if name is None:
-            name = "r"
+            name = "r2"
         if symmetry is None:
             symmetry = Symmetry(
                 *(
@@ -632,7 +632,7 @@ class R3ip(Tensor):
         if len(indices) != 5:
             raise ValueError("R3ip amplitude tensor must have two indices.")
         if name is None:
-            name = "r"
+            name = "r3"
         if symmetry is None:
             symmetry = Symmetry(
                 *(
@@ -673,7 +673,7 @@ class R1ea(Tensor):
         if len(indices) != 1:
             raise ValueError("R1ea amplitude tensor must have two indices.")
         if name is None:
-            name = "r"
+            name = "r1"
         if symmetry is None:
             symmetry = symmetric_group((0,))
         Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
@@ -708,7 +708,7 @@ class R2ea(Tensor):
         if len(indices) != 3:
             raise ValueError("R2ea amplitude tensor must have two indices.")
         if name is None:
-            name = "r"
+            name = "r2"
         if symmetry is None:
             symmetry = Symmetry(
                 *(
@@ -749,7 +749,7 @@ class R3ea(Tensor):
         if len(indices) != 5:
             raise ValueError("R3ea amplitude tensor must have two indices.")
         if name is None:
-            name = "r"
+            name = "r3"
         if symmetry is None:
             symmetry = Symmetry(
                 *(
@@ -790,7 +790,7 @@ class R1ee(T1):
         if len(indices) != 2:
             raise ValueError("R1ee amplitude tensor must have two indices.")
         if name is None:
-            name = "r"
+            name = "r1"
         T1.__init__(self, *indices, name=name, symmetry=symmetry)
 
     def as_rhf(self) -> Base:
@@ -823,7 +823,7 @@ class R2ee(T2):
         if len(indices) != 4:
             raise ValueError("R2ee amplitude tensor must have four indices.")
         if name is None:
-            name = "r"
+            name = "r2"
         T2.__init__(self, *indices, name=name, symmetry=symmetry)
 
     def as_rhf(self) -> Base:
@@ -856,7 +856,7 @@ class R3ee(T3):
         if len(indices) != 6:
             raise ValueError("R3ee amplitude tensor must have six indices.")
         if name is None:
-            name = "r"
+            name = "r3"
         T3.__init__(self, *indices, name=name, symmetry=symmetry)
 
     def as_rhf(self) -> Base:

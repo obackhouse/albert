@@ -25,14 +25,14 @@ def test_ccsd_energy():
     terms = pq.fully_contracted_strings()
     expr_ghf = import_from_pdaggerq(terms)
     expr_ghf = expr_ghf.canonicalise()
-    assert repr(expr_ghf) == "(-0.5 * v(j,i,j,i)) + f(i,i) + (0.25 * t(i,j,a,b) * v(i,j,a,b)) + (f(i,a) * t(i,a)) + (0.5 * t(i,a) * t(j,b) * v(i,j,a,b))"
+    assert repr(expr_ghf) == "(-0.5 * v(j,i,j,i)) + f(i,i) + (0.25 * t2(i,j,a,b) * v(i,j,a,b)) + (f(i,a) * t1(i,a)) + (0.5 * t1(i,a) * t1(j,b) * v(i,j,a,b))"
     assert all(i.spin == None for i in expr_ghf.external_indices)
     assert all(i.spin == None for i in expr_ghf.internal_indices)
 
     terms = remove_reference_energy(terms)
     expr_ghf = import_from_pdaggerq(terms)
     expr_ghf = expr_ghf.canonicalise()
-    assert repr(expr_ghf) == "(0.25 * t(i,j,a,b) * v(i,j,a,b)) + (f(i,a) * t(i,a)) + (0.5 * t(i,a) * t(j,b) * v(i,j,a,b))"
+    assert repr(expr_ghf) == "(0.25 * t2(i,j,a,b) * v(i,j,a,b)) + (f(i,a) * t1(i,a)) + (0.5 * t1(i,a) * t1(j,b) * v(i,j,a,b))"
 
     def _filter_fock_terms(mul: Mul) -> Mul | Scalar:
         """Filter out off-diagonal Fock terms."""
@@ -44,7 +44,7 @@ def test_ccsd_energy():
     expr_ghf = expr_ghf.expand()
     expr_ghf = expr_ghf.apply(_filter_fock_terms, Mul)
     expr_ghf = expr_ghf.canonicalise()
-    assert repr(expr_ghf) == "(0.25 * t(i,j,a,b) * v(i,j,a,b)) + (0.5 * t(i,a) * t(j,b) * v(i,j,a,b))"
+    assert repr(expr_ghf) == "(0.25 * t2(i,j,a,b) * v(i,j,a,b)) + (0.5 * t1(i,a) * t1(j,b) * v(i,j,a,b))"
 
     def _project_onto_indices(indices: tuple[Index, ...]) -> Callable[[Base], Base]:
         """Get a function to project onto the indices."""
@@ -73,7 +73,7 @@ def test_ccsd_energy():
         Mul,
     )
     expr_uhf_aaaa = expr_uhf_aaaa.canonicalise()
-    assert repr(expr_uhf_aaaa) == "(0.5 * t(iα,aα) * t(jα,bα) * v(iα,aα,jα,bα)) + (-0.5 * t(iα,aα) * t(jα,bα) * v(iα,bα,jα,aα))"
+    assert repr(expr_uhf_aaaa) == "(0.5 * t1(iα,aα) * t1(jα,bα) * v(iα,aα,jα,bα)) + (-0.5 * t1(iα,aα) * t1(jα,bα) * v(iα,bα,jα,aα))"
 
     expr_uhf_abab = expr_uhf.apply(
         _project_onto_indices(
@@ -87,4 +87,4 @@ def test_ccsd_energy():
         Mul,
     )
     expr_uhf_abab = expr_uhf_abab.canonicalise()
-    assert repr(expr_uhf_abab) == "(0.25 * t(iα,jβ,aα,bβ) * v(iα,aα,jβ,bβ)) + (0.5 * t(iα,aα) * t(jβ,bβ) * v(iα,aα,jβ,bβ))"
+    assert repr(expr_uhf_abab) == "(0.25 * t2(iα,jβ,aα,bβ) * v(iα,aα,jβ,bβ)) + (0.5 * t1(iα,aα) * t1(jβ,bβ) * v(iα,aα,jβ,bβ))"

@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Container
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Hashable
 
 if TYPE_CHECKING:
-    from typing import Any, Hashable, Iterable, Optional
+    from typing import Any, Iterable, Optional
 
 
 class ExclusionSet(Container[Hashable]):
