@@ -1,0 +1,85 @@
+"""Example of generating RCCSD code using `albert` and `pdaggerq`."""
+
+import sys
+import warnings
+
+from pdaggerq import pq_helper
+
+from albert.tensor import Tensor
+from albert.code.einsum import EinsumCodeGenerator
+from albert.opt._gristmill import optimise_gristmill
+from albert.opt.tools import count_flops
+from albert.qc.spin import ghf_to_rhf
+from albert.qc._pdaggerq import import_from_pdaggerq, remove_reference_energy
+
+# Suppress warnings since we're outputting the code to stdout
+warnings.filterwarnings("ignore")
+
+# Get the pq_helper
+pq = pq_helper("fermi")
+
+# Get the code generator
+codegen = EinsumCodeGenerator(stdout=sys.stdout)
+codegen.preamble()
+
+# Find the energy expression
+pq.clear()
+pq.set_left_operators([["1"]])
+pq.add_st_operator(1.0, ["f"], ["t1", "t2"])
+pq.add_st_operator(1.0, ["v"], ["t1", "t2"])
+pq.simplify()
+expr = pq.fully_contracted_strings()
+expr = remove_reference_energy(expr)
+expr = import_from_pdaggerq(expr)
+expr = ghf_to_rhf(expr).collect()
+output = Tensor(name="e_cc")
+
+# Optimise the energy expression
+output_expr = optimise_gristmill(
+    [output],
+    [expr],
+    strategy="exhaust",
+)
+
+# Generate the code for the energy expression
+codegen("energy", [output], output_expr)
+
+# Find the T1 expression
+pq.clear()
+pq.set_left_operators([["e1(i,a)"]])
+pq.add_st_operator(1.0, ["f"], ["t1", "t2"])
+pq.add_st_operator(1.0, ["v"], ["t1", "t2"])
+pq.simplify()
+expr_t1 = pq.fully_contracted_strings()
+expr_t1 = import_from_pdaggerq(expr_t1)
+expr_t1 = ghf_to_rhf(expr_t1).collect()
+output_t1 = Tensor(*expr_t1.external_indices, name="t1new")
+
+# Find the T2 expression
+pq.clear()
+pq.set_left_operators([["e2(i,j,b,a)"]])
+pq.add_st_operator(1.0, ["f"], ["t1", "t2"])
+pq.add_st_operator(1.0, ["v"], ["t1", "t2"])
+pq.simplify()
+expr_t2 = pq.fully_contracted_strings()
+expr_t2 = import_from_pdaggerq(expr_t2)
+expr_t2 = ghf_to_rhf(expr_t2).collect()
+output_t2 = Tensor(*expr_t2.external_indices, name="t2new")
+
+# Optimise the T1 and T2 expressions
+output_expr = optimise_gristmill(
+    [output_t1, output_t2],
+    [expr_t1, expr_t2],
+    strategy="trav",
+)
+
+# Generate the code for the T1 and T2 expressions
+codegen(
+    "update_amplitudes",
+    [output_t1, output_t2],
+    output_expr,
+    as_dict=True,
+)
+
+# Write the postamble (nothing for Python)
+codegen.postamble()
