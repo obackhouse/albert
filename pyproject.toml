@@ -67,6 +67,7 @@ exclude = """
 /(
     | __pycache__
     | .git
+    | tests
 )/
 """
 
@@ -76,6 +77,7 @@ profile = "black"
 line_length = 100
 src_paths = [
     "albert",
+    "tests",
 ]
 skip_glob = [
     "*/__pycache__/*",
@@ -106,6 +108,7 @@ exclude = """
 /(
     | __pycache__
     | .git
+    | tests
 )/
 """
 
@@ -115,6 +118,7 @@ exclude = """
 /(
     | __pycache__
     | .git
+    | tests
 )/
 """
 

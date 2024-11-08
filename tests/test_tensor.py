@@ -1,10 +1,10 @@
-import pytest
-from albert.index import Index
-from albert.scalar import Scalar
-from albert.tensor import Tensor
-from albert.symmetry import Permutation, Symmetry
+
 from albert.algebra import Add, Mul
 from albert.base import Base
+from albert.index import Index
+from albert.scalar import Scalar
+from albert.symmetry import Permutation, Symmetry
+from albert.tensor import Tensor
 
 
 def test_tensor():

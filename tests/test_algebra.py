@@ -1,9 +1,9 @@
 import pytest
+
+from albert.algebra import Add, Mul
 from albert.index import Index
 from albert.scalar import Scalar
 from albert.tensor import Tensor
-from albert.symmetry import Permutation, Symmetry
-from albert.algebra import Add, Mul
 
 
 def test_add():
@@ -115,9 +115,15 @@ def test_nested():
     assert expr == Mul(Add(tensor1, tensor2), tensor3, tensor4)
     assert expr != (tensor2 + tensor1) * tensor4 * tensor3
     assert expr == ((tensor2 + tensor1) * tensor4 * tensor3).canonicalise(indices=False)
-    assert repr(((tensor2 + tensor1) * tensor4 * tensor3).canonicalise(indices=False)) == "(t1(i,j) + t2(i,j)) * t3(j,k) * t4(k,l)"
+    assert (
+        repr(((tensor2 + tensor1) * tensor4 * tensor3).canonicalise(indices=False))
+        == "(t1(i,j) + t2(i,j)) * t3(j,k) * t4(k,l)"
+    )
     assert expr != ((tensor2 + tensor1) * tensor4 * tensor3).canonicalise()
-    assert repr(((tensor2 + tensor1) * tensor4 * tensor3).canonicalise()) == "(t1(i,k) + t2(i,k)) * t3(k,l) * t4(l,j)"
+    assert (
+        repr(((tensor2 + tensor1) * tensor4 * tensor3).canonicalise())
+        == "(t1(i,k) + t2(i,k)) * t3(k,l) * t4(l,j)"
+    )
 
     expanded = expr.expand()
     assert isinstance(expanded, Add)

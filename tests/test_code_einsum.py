@@ -2,16 +2,15 @@ import importlib
 import inspect
 import os
 from types import SimpleNamespace
-import pytest
+
 import numpy as np
-from albert.index import Index
-from albert.scalar import Scalar
-from albert.tensor import Tensor
-from albert.opt._gristmill import optimise_gristmill
-from albert.opt.tools import substitute_expressions
+
 from albert.code.einsum import EinsumCodeGenerator
-from albert.qc.spin import ghf_to_uhf
+from albert.index import Index
+from albert.opt._gristmill import optimise_gristmill
 from albert.qc.ghf import Fock
+from albert.qc.spin import ghf_to_uhf
+from albert.tensor import Tensor
 
 
 def _test_einsum(
@@ -42,6 +41,7 @@ def _test_einsum(
     output_data = _test_function(**kwargs)
 
     try:
+
         def _compare(data, ref):
             if isinstance(ref, SimpleNamespace):
                 for key in ref.__dict__.keys():
@@ -74,7 +74,7 @@ def test_einsum_code_simple(helper):
     size = 4
     x1_data = helper.random((size, size))
     y1_data = helper.random((size, size))
-    output_data_ref = np.einsum("ab,bc->ac", x1_data, y1_data),
+    output_data_ref = (np.einsum("ab,bc->ac", x1_data, y1_data),)
 
     _test_einsum(
         helper,

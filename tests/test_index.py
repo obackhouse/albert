@@ -1,4 +1,4 @@
-import pytest
+
 from albert.index import Index
 
 

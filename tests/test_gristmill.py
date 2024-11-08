@@ -1,9 +1,9 @@
-import pytest
+
 from albert.index import Index
-from albert.tensor import Tensor
-from albert.symmetry import Permutation, Symmetry
 from albert.opt._gristmill import optimise_gristmill
 from albert.opt.tools import substitute_expressions
+from albert.symmetry import Permutation, Symmetry
+from albert.tensor import Tensor
 
 
 def test_gristmill():
@@ -27,7 +27,10 @@ def test_gristmill():
     expr = (tensor1a + tensor1b * 2) * (tensor2c + tensor2d * 0.5)
     expr = expr.expand()
     assert repr(output) == "output(i,l)"
-    assert repr(expr) == "(a(i,j,k) * c(j,k,l)) + (0.5 * a(i,j,k) * d(j,k,l)) + (2 * b(i,j,k) * c(j,k,l)) + (b(i,j,k) * d(j,k,l))"
+    assert (
+        repr(expr)
+        == "(a(i,j,k) * c(j,k,l)) + (0.5 * a(i,j,k) * d(j,k,l)) + (2 * b(i,j,k) * c(j,k,l)) + (b(i,j,k) * d(j,k,l))"
+    )
 
     output_expr_opt = optimise_gristmill([output], [expr], strategy="exhaust")
     output_opt, expr_opt = zip(*sorted(output_expr_opt))

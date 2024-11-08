@@ -1,11 +1,9 @@
-import pytest
-from albert.index import Index
-from albert.scalar import Scalar
-from albert.tensor import Tensor
-from albert.symmetry import Permutation, Symmetry
-from albert.algebra import Add, Mul
-from albert.qc.ghf import ERI
+
+from albert.algebra import Mul
 from albert.canon import canonicalise_indices
+from albert.index import Index
+from albert.qc.ghf import ERI
+from albert.scalar import Scalar
 
 
 def test_ghf_to_rhf():
