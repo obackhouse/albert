@@ -5,9 +5,12 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import TYPE_CHECKING
 
+from albert import _default_sizes
 from albert.tensor import Tensor
 
 if TYPE_CHECKING:
+    from typing import Optional
+
     from albert.base import Base
 
     TensorInfo = tuple[str, tuple[str | None, ...], tuple[str | None, ...]]
@@ -79,7 +82,7 @@ def _tensor_info(tensor: Tensor) -> TensorInfo:
     return (
         tensor.name,
         tuple(i.spin for i in tensor.external_indices),
-        tuple(i.space for i in tensor.internal_indices),
+        tuple(i.space for i in tensor.external_indices),
     )
 
 
@@ -188,3 +191,32 @@ def sort_expressions(output_expr: list[tuple[Tensor, Base]]) -> list[tuple[Tenso
     assert len(outputs) == len(exprs) == len(output_expr)
 
     return list(zip(outputs, exprs))
+
+
+def count_flops(expr: Base, sizes: Optional[dict[str | None, float]] = None) -> float:
+    """Count the number of FLOPs required to evaluate an expression.
+
+    Args:
+        expr: The expression to count the FLOPs of.
+        sizes: The sizes of the spaces in the expression.
+
+    Returns:
+        The number of FLOPs required to evaluate the expression.
+    """
+    if sizes is None:
+        sizes = _default_sizes
+
+    # Find the FLOPs of the current expression
+    flops = 1.0
+    for index in expr.external_indices:
+        flops *= sizes[index.space]
+    for index in expr.internal_indices:
+        flops *= sizes[index.space]
+
+    # Add the FLOPs of the children recursively
+    if expr._children:
+        for child in expr._children:
+            if isinstance(child, Tensor):
+                flops += count_flops(child, sizes)
+
+    return flops

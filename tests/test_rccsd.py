@@ -4,6 +4,7 @@ import os
 
 import numpy as np
 import pdaggerq
+import pytest
 
 from albert.code.einsum import EinsumCodeGenerator
 from albert.misc import ExclusionSet
@@ -13,17 +14,29 @@ from albert.qc.spin import ghf_to_rhf
 from albert.tensor import Tensor
 
 
-def test_rccsd_einsum(helper):
+@pytest.mark.parametrize(
+    "optimise, strategy, transposes, greedy_cutoff, drop_cutoff",
+    [
+        (False, None, None, None, None),
+        (True, "trav", "natural", -1, -1),
+        (True, "opt", "natural", -1, -1),
+        (True, "greedy", "ignore", -1, 2),
+        (True, "greedy", "ignore", 2, 2),
+    ],
+)
+def test_rccsd_einsum(helper, optimise, strategy, transposes, greedy_cutoff, drop_cutoff):
     with open(f"{os.path.dirname(__file__)}/_test_rccsd.py", "w") as file:
         try:
-            _test_rccsd_einsum(helper, file)
+            _test_rccsd_einsum(
+                helper, file, optimise, strategy, transposes, greedy_cutoff, drop_cutoff
+            )
         except Exception as e:
             raise e
         finally:
             os.remove(f"{os.path.dirname(__file__)}/_test_rccsd.py")
 
 
-def _test_rccsd_einsum(helper, file):
+def _test_rccsd_einsum(helper, file, optimise, strategy, transposes, greedy_cutoff, drop_cutoff):
     class _EinsumCodeGenerator(EinsumCodeGenerator):
         _add_spaces = ExclusionSet(("t1", "t2"))
 
@@ -71,7 +84,17 @@ def _test_rccsd_einsum(helper, file):
     output_t2 = Tensor(*t2.external_indices, name="t2new")
 
     outputs = [output_t1, output_t2]
-    output_expr = optimise_gristmill(outputs, [t1, t2], strategy="exhaust")
+    if optimise:
+        output_expr = optimise_gristmill(
+            outputs,
+            [t1, t2],
+            strategy=strategy,
+            transposes=transposes,
+            greedy_cutoff=greedy_cutoff,
+            drop_cutoff=drop_cutoff,
+        )
+    else:
+        output_expr = [(output_t1, t1), (output_t2, t2)]
 
     codegen(
         "update_amplitudes",

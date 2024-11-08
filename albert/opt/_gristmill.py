@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from albert import _default_sizes
 from albert.algebra import _compose_mul
 from albert.index import Index
 from albert.scalar import Scalar
@@ -43,6 +44,9 @@ def optimise_gristmill(
     exprs: list[Base],
     sizes: Optional[dict[str | None, float]] = None,
     strategy: Literal["exhaust", "opt", "trav", "greedy"] = "exhaust",
+    transposes: Literal["skip", "natural", "ignore"] = "natural",
+    greedy_cutoff: int = -1,
+    drop_cutoff: int = -1,
     **gristmill_kwargs: Any,
 ) -> list[tuple[Tensor, Base]]:
     """Perform common subexpression elimination on the given expression using `gristmill`.
@@ -52,6 +56,12 @@ def optimise_gristmill(
         exprs: The expressions to be optimised.
         sizes: The sizes of the indices.
         strategy: The optimisation strategy to use.
+        transpose: The handling of transposed intermediate terms.
+        greedy_cutoff: The depth cutoff for the greedy strategy. Negative values mean full
+            Bron-Kerbosch backtracking.
+        drop_cutoff: The depth cutoff for picking a saving in the greedy strategy. Negative
+            values delegate to `greedy_cutoff`. Gives a better acceleration than `greedy_cutoff`,
+            a value of `2` is recommended for very large expressions.
 
     Returns:
         The optimised expressions, as tuples of the output tensor and the expression.
@@ -62,8 +72,6 @@ def optimise_gristmill(
 
     # Get the sizes
     if sizes is None:
-        from albert import _default_sizes
-
         sizes = _default_sizes
 
     # Get the drudge
@@ -155,7 +163,10 @@ def optimise_gristmill(
         terms,
         substs=substs,
         contr_strat=getattr(gristmill.ContrStrat, strategy.upper()),
+        repeated_terms_strat=getattr(gristmill.RepeatedTermsStrat, transposes.upper()),
         interm_fmt="tmp{}",
+        greedy_cutoff=greedy_cutoff,
+        drop_cutoff=drop_cutoff,
         **gristmill_kwargs,
     )
 

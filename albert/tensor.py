@@ -186,7 +186,10 @@ class Tensor(Base):
         name = self._name
         indices = [index.as_sympy() for index in self._indices]
 
-        return sympy.IndexedBase(name)[tuple(indices)]
+        if len(indices) == 0:
+            return sympy.Symbol(name)
+        else:
+            return sympy.IndexedBase(name)[tuple(indices)]
 
     @classmethod
     def from_sympy(cls, data: Any) -> Tensor:

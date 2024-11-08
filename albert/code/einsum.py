@@ -263,7 +263,7 @@ class EinsumCodeGenerator(BaseCodeGenerator):
 
             # Get the operator and LHS
             operator = "=" if i == 0 and not declared else "+="
-            output_name = self.get_name(output, add_spins=not is_return, add_spaces=not is_return)
+            output_name = self.get_name(output, add_spaces=False)
 
             # Get the factor
             factor = 1.0

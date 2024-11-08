@@ -4,6 +4,7 @@ import os
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 
 from albert.code.einsum import EinsumCodeGenerator
 from albert.index import Index
@@ -156,6 +157,7 @@ def test_einsum_code_simple_spins_spaces(helper):
         dict(x=x1_data, y=y1_data),
         output_data_ref,
         codegen=_EinsumCodeGenerator,
+        debug=True,
     )
 
 
@@ -209,7 +211,17 @@ def test_einsum_code_opt(helper):
     )
 
 
-def test_einsum_code_opt_spins(helper):
+@pytest.mark.parametrize(
+    "strategy, transposes, greedy_cutoff, drop_cutoff",
+    [
+        ("exhaust", "natural", -1, -1),
+        ("trav", "natural", -1, -1),
+        ("opt", "natural", -1, -1),
+        ("greedy", "ignore", -1, 2),
+        ("greedy", "skip", 2, 2),
+    ],
+)
+def test_einsum_code_opt_spins(helper, strategy, transposes, greedy_cutoff, drop_cutoff):
     a = Index("a", space=None)
     b = Index("b", space=None)
     c = Index("c", space=None)
@@ -220,9 +232,14 @@ def test_einsum_code_opt_spins(helper):
     expr = expr.expand()
     expr = tuple(ghf_to_uhf(expr))
     output = tuple(Fock(*e.external_indices, name="output") for e in expr)
-    for o, e in zip(output, expr):
-        print(o, "=", e)
-    output_expr = optimise_gristmill(output, expr, strategy="exhaust")
+    output_expr = optimise_gristmill(
+        output,
+        expr,
+        strategy=strategy,
+        transposes=transposes,
+        greedy_cutoff=greedy_cutoff,
+        drop_cutoff=drop_cutoff,
+    )
 
     size = 4
     x = SimpleNamespace(
