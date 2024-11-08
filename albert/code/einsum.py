@@ -287,8 +287,8 @@ class EinsumCodeGenerator(BaseCodeGenerator):
                     transpose_string = f"np.transpose({args[0]}, {transpose})"
                 else:
                     transpose_string = args[0]
-                copy_pre = "np.copy(" if i == 0 else ""
-                copy_pos = ")" if i == 0 else ""
+                copy_pre = "np.copy(" if operator == "=" else ""
+                copy_pos = ")" if operator == "=" else ""
                 self.write(
                     f"{output_name} {operator} "
                     f"{copy_pre}{transpose_string}{copy_pos}{factor_string}"
