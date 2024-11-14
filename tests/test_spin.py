@@ -1,4 +1,3 @@
-
 from albert.algebra import Mul
 from albert.canon import canonicalise_indices
 from albert.index import Index

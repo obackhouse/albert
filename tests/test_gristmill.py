@@ -1,4 +1,3 @@
-
 from albert.index import Index
 from albert.opt._gristmill import optimise_gristmill
 from albert.opt.tools import substitute_expressions

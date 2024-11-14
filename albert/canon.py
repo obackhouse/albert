@@ -28,6 +28,8 @@ def canonicalise_indices(expr: Base) -> Base:
     for leaf in expr.search_leaves(Tensor):  # type: ignore[type-abstract]
         for index in leaf.external_indices:
             index_groups[(index.spin, index.space)].add(index)
+            if index.spin in ("a", "b"):
+                index_groups[(index.spin_flip().spin, index.space)].add(index.spin_flip())
     index_lists = {key: sorted(indices) for key, indices in index_groups.items()}
 
     # Find the canonical external indices globally
@@ -36,9 +38,10 @@ def canonicalise_indices(expr: Base) -> Base:
         index_map[index] = index_lists[(index.spin, index.space)].pop(0)
 
         # If the spin-flipped index exists, remove it to avoid repeat indices with the same name
-        index_flip = index_map[index].spin_flip()
-        if index_flip in index_lists.get((index_flip.spin, index_flip.space), []):
-            index_lists[(index_flip.spin, index_flip.space)].remove(index_flip)
+        if index.spin in ("a", "b"):
+            index_flip = index_map[index].spin_flip()
+            if index_flip in index_lists.get((index_flip.spin, index_flip.space), []):
+                index_lists[(index_flip.spin, index_flip.space)].remove(index_flip)
 
     def _canonicalise_node(node: IMul) -> Base:
         """Canonicalise a node."""
@@ -67,6 +70,7 @@ def canonicalise_indices(expr: Base) -> Base:
         return node.map_indices(index_map_node)
 
     # Find the canonical internal indices for each term
-    expr = expr.apply(_canonicalise_node, IMul)  # TODO: Do we need to expand?
+    expr = expr.expand()
+    expr = expr.apply(_canonicalise_node, IMul)
 
     return expr

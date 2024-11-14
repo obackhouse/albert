@@ -10,9 +10,27 @@ if TYPE_CHECKING:
 
     from albert.algebra import ExpandedAddLayer
     from albert.index import Index
-    from albert.symmetry import Symmetry
+    from albert.symmetry import Permutation, Symmetry
 
     T = TypeVar("T", bound="Base")
+
+
+def _spin_penalty(indices: tuple[Index, ...]) -> int:
+    """Return a penalty for the configuration of spins in a set of indices.
+
+    Args:
+        indices: Indices to check.
+
+    Returns:
+        Penalty for the configuration of spins.
+    """
+    spins = tuple(index.spin if index.spin else "" for index in indices)
+    penalty = 0
+    for i in range(len(spins) - 1):
+        penalty += int(spins[i] == spins[i + 1]) * 2
+    if spins and spins[0] != min(spins):
+        penalty += 1
+    return penalty
 
 
 class Comparable(Protocol):
@@ -183,7 +201,7 @@ class Base(Serialisable):
         """
         pass
 
-    def permute_indices(self, permutation: tuple[int, ...]) -> Base:
+    def permute_indices(self, permutation: tuple[int, ...] | Permutation) -> Base:
         """Return a copy of the object with the indices permuted according to some permutation.
 
         Args:
@@ -192,9 +210,15 @@ class Base(Serialisable):
         Returns:
             Object with permuted indices.
         """
+        if isinstance(permutation, tuple):
+            perm = permutation
+            sign = 1
+        else:
+            perm = permutation.permutation
+            sign = permutation.sign
         indices = self.external_indices
-        mapping = dict(zip(indices, (indices[i] for i in permutation)))
-        return self.map_indices(mapping)
+        mapping = dict(zip(indices, (indices[i] for i in perm)))
+        return sign * self.map_indices(mapping)
 
     @abstractmethod
     def apply(
@@ -214,13 +238,13 @@ class Base(Serialisable):
         pass
 
     @abstractmethod
-    def canonicalise(self, indices: bool = True) -> Base:
+    def canonicalise(self, indices: bool = False) -> Base:
         """Canonicalise the object.
 
         The results of this function for equivalent representations should be equal.
 
         Args:
-            indices: Whether to canonicalise the indices of the object. By default, this is
+            indices: Whether to canonicalise the indices of the object. When `True`, this is
                 performed for the outermost call in recursive calls.
 
         Returns:
@@ -296,6 +320,7 @@ class Base(Serialisable):
     def _hashable_fields(self) -> Iterable[SerialisedField]:
         """Yield fields of the hashable representation."""
         yield self.rank
+        yield _spin_penalty(self.external_indices)
         yield self.external_indices
         yield self.internal_indices
         yield _SCORES[self._interface]

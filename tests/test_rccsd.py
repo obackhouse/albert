@@ -1,10 +1,12 @@
 import importlib
 import itertools
 import os
+from types import SimpleNamespace
 
 import numpy as np
 import pdaggerq
 import pytest
+from pyscf import ao2mo, cc, gto, scf
 
 from albert.code.einsum import EinsumCodeGenerator
 from albert.misc import ExclusionSet
@@ -15,20 +17,35 @@ from albert.tensor import Tensor
 
 
 @pytest.mark.parametrize(
-    "optimise, strategy, transposes, greedy_cutoff, drop_cutoff",
+    "optimise, strategy, transposes, greedy_cutoff, drop_cutoff, canonicalise",
     [
-        (False, None, None, None, None),
-        (True, "trav", "natural", -1, -1),
-        (True, "opt", "natural", -1, -1),
-        (True, "greedy", "ignore", -1, 2),
-        (True, "greedy", "ignore", 2, 2),
+        (False, None, None, None, None, False),
+        (True, "trav", "natural", -1, -1, True),
+        (True, "opt", "natural", -1, -1, True),
+        (True, "greedy", "ignore", -1, 2, False),
+        (True, "greedy", "ignore", 2, 2, True),
     ],
 )
-def test_rccsd_einsum(helper, optimise, strategy, transposes, greedy_cutoff, drop_cutoff):
+def test_rccsd_einsum(
+    helper,
+    optimise,
+    strategy,
+    transposes,
+    greedy_cutoff,
+    drop_cutoff,
+    canonicalise,
+):
     with open(f"{os.path.dirname(__file__)}/_test_rccsd.py", "w") as file:
         try:
             _test_rccsd_einsum(
-                helper, file, optimise, strategy, transposes, greedy_cutoff, drop_cutoff
+                helper,
+                file,
+                optimise,
+                strategy,
+                transposes,
+                greedy_cutoff,
+                drop_cutoff,
+                canonicalise,
             )
         except Exception as e:
             raise e
@@ -36,7 +53,9 @@ def test_rccsd_einsum(helper, optimise, strategy, transposes, greedy_cutoff, dro
             os.remove(f"{os.path.dirname(__file__)}/_test_rccsd.py")
 
 
-def _test_rccsd_einsum(helper, file, optimise, strategy, transposes, greedy_cutoff, drop_cutoff):
+def _test_rccsd_einsum(
+    helper, file, optimise, strategy, transposes, greedy_cutoff, drop_cutoff, canonicalise
+):
     class _EinsumCodeGenerator(EinsumCodeGenerator):
         _add_spaces = ExclusionSet(("t1", "t2"))
 
@@ -53,9 +72,22 @@ def _test_rccsd_einsum(helper, file, optimise, strategy, transposes, greedy_cuto
     energy = pq.fully_contracted_strings()
     energy = remove_reference_energy(energy)
     energy = import_from_pdaggerq(energy)
-    energy = ghf_to_rhf(energy).collect()
+    energy = ghf_to_rhf(energy)
+    if canonicalise:
+        energy = energy.canonicalise(indices=True).collect()
     output = Tensor(name="e_cc")
-    output_expr = [(output, energy)]
+
+    if optimise:
+        output_expr = optimise_gristmill(
+            [output],
+            [energy],
+            strategy=strategy,
+            transposes=transposes,
+            greedy_cutoff=greedy_cutoff,
+            drop_cutoff=drop_cutoff,
+        )
+    else:
+        output_expr = [(output, energy)]
 
     codegen(
         "energy",
@@ -69,9 +101,13 @@ def _test_rccsd_einsum(helper, file, optimise, strategy, transposes, greedy_cuto
     pq.add_st_operator(1.0, ["v"], ["t1", "t2"])
     pq.simplify()
     t1 = pq.fully_contracted_strings()
-    t1 = import_from_pdaggerq(t1)
-    t1 = ghf_to_rhf(t1).collect()
-    output_t1 = Tensor(*t1.external_indices, name="t1new")
+    t1 = import_from_pdaggerq(t1, index_spins=dict(i="a", a="a"))
+    t1 = ghf_to_rhf(t1)
+    if canonicalise:
+        t1 = t1.canonicalise(indices=True).collect()
+    output_t1 = Tensor(
+        *sorted(t1.external_indices, key=lambda i: "ijab".index(i.name)), name="t1new"
+    )
 
     pq.clear()
     pq.set_left_operators([["e2(i,j,b,a)"]])
@@ -79,9 +115,13 @@ def _test_rccsd_einsum(helper, file, optimise, strategy, transposes, greedy_cuto
     pq.add_st_operator(1.0, ["v"], ["t1", "t2"])
     pq.simplify()
     t2 = pq.fully_contracted_strings()
-    t2 = import_from_pdaggerq(t2)
-    t2 = ghf_to_rhf(t2).collect()
-    output_t2 = Tensor(*t2.external_indices, name="t2new")
+    t2 = import_from_pdaggerq(t2, index_spins=dict(i="a", j="b", a="a", b="b"))
+    t2 = ghf_to_rhf(t2)
+    if canonicalise:
+        t2 = t2.canonicalise(indices=True).collect()
+    output_t2 = Tensor(
+        *sorted(t2.external_indices, key=lambda i: "ijab".index(i.name)), name="t2new"
+    )
 
     outputs = [output_t1, output_t2]
     if optimise:
@@ -107,28 +147,41 @@ def _test_rccsd_einsum(helper, file, optimise, strategy, transposes, greedy_cuto
     energy = module.energy
     update_amplitudes = module.update_amplitudes
 
-    nocc = 4
-    nvir = 16
+    mol = gto.M(atom="H 0 0 0; Li 0 0 1.64", basis="cc-pvdz", verbose=0)
+    mf = scf.RHF(mol).run()
+    ccsd = cc.CCSD(mf)
+    ccsd.max_cycle = 3
+    ccsd.diis = False
+    ccsd.kernel()
 
-    f = lambda: None
-    f.oo = np.diag(helper.random((nocc,), seed=123))
-    f.ov = np.zeros((nocc, nvir))
-    f.vo = np.zeros((nvir, nocc))
-    f.vv = np.diag(helper.random((nvir,), seed=234))
+    eo = mf.mo_energy[mf.mo_occ > 0]
+    ev = mf.mo_energy[mf.mo_occ == 0]
+    f = SimpleNamespace()
+    f.oo = np.diag(eo)
+    f.vv = np.diag(ev)
+    f.ov = np.zeros((eo.size, ev.size))
+    f.vo = np.zeros((ev.size, eo.size))
 
-    v = lambda: None
-    v_full = helper.random((nocc + nvir,) * 4, seed=345)
-    v_full = 0.5 * (v_full + v_full.transpose(1, 0, 2, 3))
-    v_full = 0.5 * (v_full + v_full.transpose(0, 1, 3, 2))
-    v_full = 0.5 * (v_full + v_full.transpose(2, 3, 0, 1))
+    co = mf.mo_coeff[:, mf.mo_occ > 0]
+    cv = mf.mo_coeff[:, mf.mo_occ == 0]
+    v = SimpleNamespace()
     for key in itertools.product("ov", repeat=4):
-        slices = tuple(slice(None, nocc) if k == "o" else slice(nocc, None) for k in key)
-        setattr(v, "".join(key), v_full[slices])
+        coeffs = tuple(co if k == "o" else cv for k in key)
+        shape = tuple(c.shape[-1] for c in coeffs)
+        v_key = ao2mo.kernel(mol, coeffs, compact=False).reshape(shape)
+        setattr(v, "".join(key), v_key)
 
-    t1 = helper.random((nocc, nvir), seed=456)
-    t2 = v.oovv.copy()
+    t1 = ccsd.t1
+    t2 = ccsd.t2
 
+    e1 = np.ravel(energy(f=f, v=v, t1=t1, t2=t2)).item()
+    e2 = ccsd.energy(t1=t1, t2=t2)
+    assert np.allclose(e1, e2)
+
+    d = eo[:, None] - ev[None, :]
     amps = update_amplitudes(f=f, v=v, t1=t1, t2=t2)
-    e_cc = energy(f=f, v=v, t1=amps["t1new"], t2=amps["t2new"])
-
-    assert np.allclose(e_cc, 32450.175915553173)
+    amps["t1new"] = amps["t1new"] / d + t1
+    amps["t2new"] = amps["t2new"] / (d[:, None, :, None] + d[None, :, None, :]) + t2
+    e1 = np.ravel(ccsd.energy(t1=amps["t1new"], t2=amps["t2new"])).item()
+    e2 = ccsd.energy(t1=amps["t1new"], t2=amps["t2new"])
+    assert np.allclose(e1, e2)

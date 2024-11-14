@@ -356,13 +356,13 @@ class Add(IAdd, Algebraic):
             children.extend(child.expand()._children)
         return ExpandedAddLayer(*children)
 
-    def canonicalise(self, indices: bool = True) -> Base:
+    def canonicalise(self, indices: bool = False) -> Base:
         """Canonicalise the object.
 
         The results of this function for equivalent representations should be equal.
 
         Args:
-            indices: Whether to canonicalise the indices of the object. By default, this is
+            indices: Whether to canonicalise the indices of the object. When `True`, this is
                 performed for the outermost call in recursive calls.
 
         Returns:
@@ -466,13 +466,13 @@ class Mul(IMul, Algebraic):
                 ]
         return ExpandedAddLayer(*children)
 
-    def canonicalise(self, indices: bool = True) -> Base:
+    def canonicalise(self, indices: bool = False) -> Base:
         """Canonicalise the object.
 
         The results of this function for equivalent representations should be equal.
 
         Args:
-            indices: Whether to canonicalise the indices of the object. By default, this is
+            indices: Whether to canonicalise the indices of the object. When `True`, this is
                 performed for the outermost call in recursive calls.
 
         Returns:

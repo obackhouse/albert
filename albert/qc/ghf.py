@@ -392,7 +392,7 @@ def _amplitude_as_uhf(
     # Loop over spins
     tensors: list[Base] = []
     for spin_major in itertools.product("ab", repeat=max(covariant, contravariant)):
-        for spin_minor in set(itertools.permutations("ab", covariant)):
+        for spin_minor in set(itertools.permutations(spin_major)):
             # Get the spin ordering
             if covariant > contravariant:
                 spins = spin_major[:covariant] + spin_minor[:contravariant]
@@ -420,7 +420,7 @@ def _amplitude_as_uhf(
                     perm = Permutation(tuple(range(covariant)), 1) + perm_major
                 spins_perm = tuple(spins[i] for i in perm.permutation)
                 if spins == spins_perm:
-                    tensors.append(tensor_uhf.permute_indices(perm.permutation))
+                    tensors.append(tensor_uhf.permute_indices(perm))
 
     return tuple(tensors)
 

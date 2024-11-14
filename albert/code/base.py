@@ -43,6 +43,11 @@ class BaseCodeGenerator(ABC):
         """Dedent the code."""
         self._indent -= 1
 
+    def reset(self) -> None:
+        """Reset the caches."""
+        self._tensor_declared.clear()
+        self._tensor_cleaned.clear()
+
     @abstractmethod
     def get_name(
         self,
@@ -257,6 +262,7 @@ class BaseCodeGenerator(ABC):
         function_description: Optional[str] = None,
         preamble: Optional[Callable[[], None]] = None,
         postamble: Optional[Callable[[], None]] = None,
+        reset_cache: bool = True,
     ) -> None:
         """Generate code for a function.
 
@@ -272,7 +278,12 @@ class BaseCodeGenerator(ABC):
             function_description: The description of the function.
             preamble: A callable to call to handle the function preamble.
             postamble: A callable to call to handle the function postamble.
+            reset_cache: Whether to reset the caches before generating the code.
         """
+        # Reset the caches
+        if reset_cache:
+            self.reset()
+
         # Get the arguments
         done = set()
         args = []
@@ -326,7 +337,7 @@ class BaseCodeGenerator(ABC):
         # Get the tensors to clean up at each step
         to_cleanup: dict[int, list[Tensor]] = defaultdict(list)
         for info, i in last_appearance.items():
-            if not any(info == _tensor_info(tensor) for tensor in args + rets):
+            if not any(info[0] == tensor.name for tensor in args + rets):
                 to_cleanup[i].append(info_tensor_map[info])
 
         # Write the tensor contractions
@@ -334,7 +345,7 @@ class BaseCodeGenerator(ABC):
             # Write the tensor declaration
             info = _tensor_info(output)
             already_declared = info in self._tensor_declared
-            is_return = any(info == _tensor_info(ret) for ret in returns)
+            is_return = any(info[0] == ret.name for ret in returns)
             if not already_declared:
                 self.tensor_declaration(output, is_return=is_return)
                 self._tensor_declared.add(info)

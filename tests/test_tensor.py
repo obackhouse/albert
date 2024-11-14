@@ -1,4 +1,3 @@
-
 from albert.algebra import Add, Mul
 from albert.base import Base
 from albert.index import Index

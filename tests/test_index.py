@@ -1,4 +1,3 @@
-
 from albert.index import Index
 
 

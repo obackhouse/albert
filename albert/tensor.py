@@ -137,13 +137,13 @@ class Tensor(Base):
             return function(cast(T, self))
         return self
 
-    def canonicalise(self, indices: bool = True) -> Base:
+    def canonicalise(self, indices: bool = False) -> Base:
         """Canonicalise the object.
 
         The results of this function for equivalent representations should be equal.
 
         Args:
-            indices: Whether to canonicalise the indices of the object. By default, this is
+            indices: Whether to canonicalise the indices of the object. When `True`, this is
                 performed for the outermost call in recursive calls.
 
         Returns:
@@ -153,7 +153,9 @@ class Tensor(Base):
             best = min(self._symmetry(self))
         else:
             best = self
-        return canonicalise_indices(best)
+        if indices:
+            best = canonicalise_indices(best)
+        return best
 
     def expand(self) -> ExpandedAddLayer:
         """Expand the object into the minimally nested format.

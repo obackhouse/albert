@@ -94,8 +94,8 @@ def test_mul():
     assert mul2 != tensor4 * tensor1
     assert mul2 == (tensor4 * tensor1).canonicalise(indices=False)
     assert repr((tensor4 * tensor1).canonicalise(indices=False)) == "m(i,j) * p(j,k)"
-    assert mul2 != (tensor4 * tensor1).canonicalise()
-    assert repr((tensor4 * tensor1).canonicalise()) == "m(i,k) * p(k,j)"
+    assert mul2 != (tensor4 * tensor1).canonicalise(indices=True)
+    assert repr((tensor4 * tensor1).canonicalise(indices=True)) == "m(i,k) * p(k,j)"
 
 
 def test_nested():
@@ -119,9 +119,9 @@ def test_nested():
         repr(((tensor2 + tensor1) * tensor4 * tensor3).canonicalise(indices=False))
         == "(t1(i,j) + t2(i,j)) * t3(j,k) * t4(k,l)"
     )
-    assert expr != ((tensor2 + tensor1) * tensor4 * tensor3).canonicalise()
+    assert expr != ((tensor2 + tensor1) * tensor4 * tensor3).canonicalise(indices=True)
     assert (
-        repr(((tensor2 + tensor1) * tensor4 * tensor3).canonicalise())
+        repr(((tensor2 + tensor1) * tensor4 * tensor3).canonicalise(indices=True))
         == "(t1(i,k) + t2(i,k)) * t3(k,l) * t4(l,j)"
     )
 

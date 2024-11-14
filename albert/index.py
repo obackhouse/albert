@@ -25,6 +25,32 @@ class _IndexJSON(TypedDict):
     space: Optional[str]
 
 
+def from_list(
+    names: list[str],
+    spins: list[Optional[str]] | Optional[str] = None,
+    spaces: list[Optional[str]] | Optional[str] = None,
+) -> list[Index]:
+    """Construct a list of indices from lists of names, spins, and spaces.
+
+    Args:
+        names: List of names.
+        spins: List of spins. Can be a single value for all indices.
+        spaces: List of spaces. Can be a single value for all indices.
+
+    Returns:
+        List of indices.
+    """
+    if spins is None:
+        spins = [None] * len(names)
+    elif isinstance(spins, str):
+        spins = [spins] * len(names)
+    if spaces is None:
+        spaces = [None] * len(names)
+    elif isinstance(spaces, str):
+        spaces = [spaces] * len(names)
+    return [Index(name, spin=spin, space=space) for name, spin, space in zip(names, spins, spaces)]
+
+
 class Index(Serialisable):
     """Class for indices.
 
@@ -137,7 +163,8 @@ class Index(Serialisable):
     def _hashable_fields(self) -> Iterable[SerialisedField]:
         """Yield fields of the hashable representation."""
         yield self.__class__.__name__
-        yield self._space if self._space is not None else ""
+        yield self._space.lower() if self._space else ""
+        yield self._space.isupper() if self._space else False
         yield self._spin if self._spin is not None else ""
         yield self._name
 

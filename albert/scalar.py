@@ -111,13 +111,13 @@ class Scalar(Base):
             return function(cast(T, self))
         return self
 
-    def canonicalise(self, indices: bool = True) -> Scalar:
+    def canonicalise(self, indices: bool = False) -> Scalar:
         """Canonicalise the object.
 
         The results of this function for equivalent representations should be equal.
 
         Args:
-            indices: Whether to canonicalise the indices of the object. By default, this is
+            indices: Whether to canonicalise the indices of the object. When `True`, this is
                 performed for the outermost call in recursive calls.
 
         Returns:
