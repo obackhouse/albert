@@ -62,7 +62,7 @@ line-length = 100
 target-version = [
     "py39",
 ]
-include = "albert"
+include = '\.pyi?$'
 exclude = """
 /(
     | __pycache__
