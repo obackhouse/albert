@@ -48,6 +48,8 @@ dev = [
     "pytest>=6.2.4",
     "pytest-cov>=4.0.0",
     "mypy>=1.8.0",
+    "numpy>=2.0.0",  # For testing
+    "pyscf>=1.7.0",  # For testing
     "pdaggerq@git+https://github.com/edeprince3/pdaggerq.git@master",  # For testing
 ]
 drudge = [
