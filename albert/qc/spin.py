@@ -40,7 +40,6 @@ def ghf_to_uhf(
         scalars = []
         tensors = []
         for leaf in mul._children:
-            leaf_spins = [index.spin for index in leaf.external_indices]
             if isinstance(leaf, Scalar):
                 scalars.append(leaf)
             else:
@@ -88,7 +87,6 @@ def uhf_to_rhf(expr: Base, canonicalise: bool = True) -> Base:
     for mul in expr._children:
         leaves: list[Base] = []
         for leaf in mul._children:
-            leaf_spins = [index.spin for index in leaf.external_indices]
             if isinstance(leaf, Scalar):
                 leaves.append(leaf)
             else:
