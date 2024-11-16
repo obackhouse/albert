@@ -1,4 +1,4 @@
-from albert.index import Index
+from albert.index import Index, from_list
 
 
 def test_index():
@@ -15,7 +15,7 @@ def test_index():
     assert index == index_flip
     assert hash(index) == hash(index_flip)
     assert hash(index) == index._hash
-    assert index._hashable() == (Index.__name__, "", "", "i")
+    assert index._hashable() == (Index.__name__, "", False, "", "i")
     assert repr(index) == "i"
 
     json = index.as_json()
@@ -23,6 +23,9 @@ def test_index():
     assert index == index_from_json
     assert hash(index) == hash(index_from_json)
     assert hash(index) == index_from_json._hash
+
+    index_list = from_list(["i"], None, None)
+    assert index == index_list[0]
 
 
 def test_index_spin():
@@ -42,7 +45,7 @@ def test_index_spin():
     assert hash(index) != hash(index_flip)
     assert index._hash is not None
     assert hash(index) == index._hash
-    assert index._hashable() == (Index.__name__, "", "a", "i")
+    assert index._hashable() == (Index.__name__, "", False, "a", "i")
     assert repr(index) == "iα"
 
     json = index.as_json()
@@ -50,6 +53,11 @@ def test_index_spin():
     assert index == index_from_json
     assert hash(index) == hash(index_from_json)
     assert hash(index) == index_from_json._hash
+
+    index_list = from_list(["i"], "a", None)
+    assert index == index_list[0]
+    index_list = from_list(["i"], ["a"], None)
+    assert index == index_list[0]
 
 
 def test_index_space():
@@ -68,7 +76,7 @@ def test_index_space():
     assert hash(index) == hash(index_flip)
     assert index._hash is not None
     assert hash(index) == index._hash
-    assert index._hashable() == (Index.__name__, "o", "", "i")
+    assert index._hashable() == (Index.__name__, "o", False, "", "i")
     assert repr(index) == "i"
 
     json = index.as_json()
@@ -95,7 +103,7 @@ def test_index_spin_space():
     assert hash(index) != hash(index_flip)
     assert index._hash is not None
     assert hash(index) == index._hash
-    assert index._hashable() == (Index.__name__, "o", "a", "i")
+    assert index._hashable() == (Index.__name__, "o", False, "a", "i")
     assert repr(index) == "iα"
 
     json = index.as_json()
@@ -103,3 +111,17 @@ def test_index_spin_space():
     assert index == index_from_json
     assert hash(index) == hash(index_from_json)
     assert hash(index) == index_from_json._hash
+
+    other_index = Index("j", spin="a", space="o")
+    index_list = from_list(["i", "j"], "a", "o")
+    assert index == index_list[0]
+    assert other_index == index_list[1]
+    index_list = from_list(["i", "j"], ["a", "a"], "o")
+    assert index == index_list[0]
+    assert other_index == index_list[1]
+    index_list = from_list(["i", "j"], "a", ["o", "o"])
+    assert index == index_list[0]
+    assert other_index == index_list[1]
+    index_list = from_list(["i", "j"], ["a", "a"], ["o", "o"])
+    assert index == index_list[0]
+    assert other_index == index_list[1]

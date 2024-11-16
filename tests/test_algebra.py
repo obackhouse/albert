@@ -122,8 +122,8 @@ def test_nested():
     assert expr != ((tensor2 + tensor1) * tensor4 * tensor3).canonicalise(indices=True)
     assert (
         repr(((tensor2 + tensor1) * tensor4 * tensor3).canonicalise(indices=True))
-        == "(t1(i,k) + t2(i,k)) * t3(k,l) * t4(l,j)"
-    )
+        == "(t1(i,k) * t3(k,l) * t4(l,j)) + (t2(i,k) * t3(k,l) * t4(l,j))"
+    )  # index canonicalisation expands the expression
 
     expanded = expr.expand()
     assert isinstance(expanded, Add)

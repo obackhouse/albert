@@ -5,11 +5,11 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import TYPE_CHECKING
 
-from albert.base import Base, IMul
+from albert.base import IMul
 from albert.index import Index
 
 if TYPE_CHECKING:
-    pass
+    from albert.base import Base
 
 
 def canonicalise_indices(expr: Base) -> Base:

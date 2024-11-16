@@ -10,52 +10,42 @@ from pyscf import ao2mo, cc, gto, scf
 
 from albert.code.einsum import EinsumCodeGenerator
 from albert.misc import ExclusionSet
-from albert.opt._gristmill import optimise_gristmill
+from albert.opt import optimise as _optimise
 from albert.qc._pdaggerq import import_from_pdaggerq, remove_reference_energy
 from albert.qc.spin import ghf_to_rhf
 from albert.tensor import Tensor
 
 
+def _kwargs(strategy, transposes, greedy_cutoff, drop_cutoff):
+    return {
+        "strategy": strategy,
+        "transposes": transposes,
+        "greedy_cutoff": greedy_cutoff,
+        "drop_cutoff": drop_cutoff,
+    }
+
+
 @pytest.mark.parametrize(
-    "optimise, strategy, transposes, greedy_cutoff, drop_cutoff, canonicalise",
+    "optimise, method, canonicalise, kwargs",
     [
-        (False, None, None, None, None, False),
-        (True, "trav", "natural", -1, -1, True),
-        (True, "opt", "natural", -1, -1, True),
-        (True, "greedy", "ignore", -1, 2, False),
-        (True, "greedy", "ignore", 2, 2, True),
+        (False, None, False, _kwargs(None, None, None, None)),
+        (True, "gristmill", True, _kwargs("trav", "natural", -1, -1)),
+        (True, "gristmill", True, _kwargs("opt", "natural", -1, -1)),
+        (True, "gristmill", False, _kwargs("greedy", "ignore", -1, 2)),
+        (True, "gristmill", True, _kwargs("greedy", "ignore", 2, 2)),
     ],
 )
-def test_rccsd_einsum(
-    helper,
-    optimise,
-    strategy,
-    transposes,
-    greedy_cutoff,
-    drop_cutoff,
-    canonicalise,
-):
+def test_rccsd_einsum(helper, optimise, method, canonicalise, kwargs):
     with open(f"{os.path.dirname(__file__)}/_test_rccsd.py", "w") as file:
         try:
-            _test_rccsd_einsum(
-                helper,
-                file,
-                optimise,
-                strategy,
-                transposes,
-                greedy_cutoff,
-                drop_cutoff,
-                canonicalise,
-            )
+            _test_rccsd_einsum(helper, file, optimise, method, canonicalise, kwargs)
         except Exception as e:
             raise e
         finally:
             os.remove(f"{os.path.dirname(__file__)}/_test_rccsd.py")
 
 
-def _test_rccsd_einsum(
-    helper, file, optimise, strategy, transposes, greedy_cutoff, drop_cutoff, canonicalise
-):
+def _test_rccsd_einsum(helper, file, optimise, method, canonicalise, kwargs):
     class _EinsumCodeGenerator(EinsumCodeGenerator):
         _add_spaces = ExclusionSet(("t1", "t2"))
 
@@ -78,14 +68,7 @@ def _test_rccsd_einsum(
     output = Tensor(name="e_cc")
 
     if optimise:
-        output_expr = optimise_gristmill(
-            [output],
-            [energy],
-            strategy=strategy,
-            transposes=transposes,
-            greedy_cutoff=greedy_cutoff,
-            drop_cutoff=drop_cutoff,
-        )
+        output_expr = _optimise([output], [energy], method=method, **kwargs)
     else:
         output_expr = [(output, energy)]
 
@@ -125,13 +108,11 @@ def _test_rccsd_einsum(
 
     outputs = [output_t1, output_t2]
     if optimise:
-        output_expr = optimise_gristmill(
+        output_expr = _optimise(
             outputs,
             [t1, t2],
-            strategy=strategy,
-            transposes=transposes,
-            greedy_cutoff=greedy_cutoff,
-            drop_cutoff=drop_cutoff,
+            method=method,
+            **kwargs,
         )
     else:
         output_expr = [(output_t1, t1), (output_t2, t2)]

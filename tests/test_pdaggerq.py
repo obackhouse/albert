@@ -28,7 +28,7 @@ def test_ccsd_energy():
     expr_ghf = expr_ghf.canonicalise()
     assert (
         repr(expr_ghf)
-        == "(-0.5 * v(j,i,j,i)) + f(i,i) + (0.25 * t2(i,j,a,b) * v(i,j,a,b)) + (f(i,a) * t1(i,a)) + (0.5 * t1(i,a) * t1(j,b) * v(i,j,a,b))"
+        == "(0.5 * v(j,i,j,i)) + f(i,i) + (0.25 * t2(i,j,a,b) * v(i,j,a,b)) + (f(i,a) * t1(i,a)) + (0.5 * t1(i,a) * t1(j,b) * v(i,j,a,b))"
     )
     assert all(i.spin == None for i in expr_ghf.external_indices)
     assert all(i.spin == None for i in expr_ghf.internal_indices)
@@ -89,7 +89,7 @@ def test_ccsd_energy():
     expr_uhf_aaaa = expr_uhf_aaaa.canonicalise()
     assert (
         repr(expr_uhf_aaaa)
-        == "(0.5 * t1(iα,aα) * t1(jα,bα) * v(iα,aα,jα,bα)) + (-0.5 * t1(iα,aα) * t1(jα,bα) * v(iα,bα,jα,aα))"
+        == "(0.5 * t2(iα,jα,aα,bα) * v(iα,aα,jα,bα)) + (-0.5 * t2(iα,jα,aα,bα) * v(iα,bα,jα,aα)) + (0.5 * t1(iα,aα) * t1(jα,bα) * v(iα,aα,jα,bα)) + (-0.5 * t1(iα,aα) * t1(jα,bα) * v(iα,bα,jα,aα))"
     )
 
     expr_uhf_abab = expr_uhf.apply(
