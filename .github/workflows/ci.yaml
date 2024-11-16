@@ -30,7 +30,7 @@ jobs:
       - name: Install albert
         run: |
           python -m pip install wheel
-          python -m pip install .[dev,cse]
+          python -m pip install .[dev,drudge]
       - name: Linting
         run: |
           python -m unimport . --diff --check

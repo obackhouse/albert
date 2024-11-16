@@ -51,6 +51,10 @@ dev = [
     "numpy>=2.0.0",  # For testing
     "pyscf>=1.7.0",  # For testing
     "pdaggerq@git+https://github.com/edeprince3/pdaggerq.git@master",  # For testing
+    "sympy>=1.9",  # For [drudge]
+    "drudge@git+https://github.com/obackhouse/drudge.git@master",  # For [drudge]
+    "gristmill@git+https://github.com/obackhouse/gristmill.git@master",  # For [drudge]
+    "dummyrdd@git+https://github.com/tschijnmo/DummyRDD.git@master",  # For [drudge]
 ]
 drudge = [
     "sympy>=1.9",
