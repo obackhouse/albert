@@ -5,12 +5,11 @@ import warnings
 
 from pdaggerq import pq_helper
 
-from albert.tensor import Tensor
 from albert.code.einsum import EinsumCodeGenerator
 from albert.opt._gristmill import optimise_gristmill
-from albert.opt.tools import count_flops
-from albert.qc.spin import ghf_to_rhf
 from albert.qc._pdaggerq import import_from_pdaggerq, remove_reference_energy
+from albert.qc.spin import ghf_to_rhf
+from albert.tensor import Tensor
 
 # Suppress warnings since we're outputting the code to stdout
 warnings.filterwarnings("ignore")
