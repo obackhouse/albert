@@ -150,6 +150,10 @@ ignore_missing_imports = true
 module = "networkx.*"
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+module = "pyspark.*"
+ignore_missing_imports = true
+
 [tool.coverage.run]
 branch = true
 source = [
