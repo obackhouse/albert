@@ -20,6 +20,7 @@ def test_add():
     assert add.internal_indices == ()
     assert not add.disjoint
     assert repr(add) == "m(i,j) + n(i,j)"
+    assert add == Tensor.from_string(repr(add))
 
     add_copy = add.copy()
     assert add == add_copy
@@ -61,6 +62,7 @@ def test_mul():
     assert mul.internal_indices == (i, j)
     assert not mul.disjoint
     assert repr(mul) == "m(i,j) * n(i,j)"
+    assert mul == Tensor.from_string(repr(mul))
 
     mul_copy = mul.copy()
     assert mul == mul_copy
@@ -90,6 +92,7 @@ def test_mul():
     assert mul2.external_indices == (i, k)
     assert mul2.internal_indices == (j,)
     assert repr(mul2) == "m(i,j) * p(j,k)"
+    assert mul2 == Tensor.from_string(repr(mul2))
     assert mul2 == tensor1 * tensor4
     assert mul2 != tensor4 * tensor1
     assert mul2 == (tensor4 * tensor1).canonicalise(indices=False)

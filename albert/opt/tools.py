@@ -7,74 +7,89 @@ from typing import TYPE_CHECKING
 
 from albert import _default_sizes
 from albert.tensor import Tensor
+from albert.qc import ghf, uhf, rhf
+from albert.index import Index
+from albert.symmetry import Symmetry, Permutation
+from albert.opt import optimise
+from albert.canon import canonicalise_indices
 
 if TYPE_CHECKING:
-    from typing import Optional
+    from typing import Optional, Any
 
     from albert.base import Base
 
     TensorInfo = tuple[str, tuple[str | None, ...], tuple[str | None, ...]]
 
 
-def substitute_expressions(output_expr: list[tuple[Tensor, Base]]) -> Base:
+def substitute_expressions(output_expr: list[tuple[Tensor, Base]]) -> list[tuple[Tensor, Base]]:
     """Substitute expressions resulting from common subexpression elimination.
 
-    The outputs and expressions given should represent the result of the CSE on a single
-    original expression, and therefore allow a complete substitution returning a single
-    expression.
+    The return value is a list of tuples, where the first element is the output tensor and the
+    second element is the expression, for each distinct output tensor.
 
     Args:
         output_expr: The output tensors and their expressions.
 
     Returns:
-        The total expression with the substituted tensors.
-
-    Raises:
-        ValueError: If a complete substitution is not possible.
+        The total expression with the substituted tensors, for each distinct output tensor.
     """
     output = [out for out, _ in output_expr]
-    expr = [exp for _, exp in output_expr]
+    expr = [exp.expand() for _, exp in output_expr]
 
-    idx_counter = 0
+    # Find original set of indices for canonicalisation
+    extra_indices: set[Index] = set()
+    for e in expr:
+        for tensor in e.search_leaves(Tensor):
+            extra_indices.update(tensor.external_indices)
+            extra_indices.update(tensor.internal_indices)
+    extra_indices = sorted(extra_indices)
+
+    memo = dict(found=False, counter=0)
     while True:
         # Find a valid substitution
-        found = False
-        for i, e_dst in enumerate(expr):
-            for j, (o_src, e_src) in enumerate(zip(output, expr)):
+        memo["found"] = False
+        for j, (o_src, e_src) in enumerate(zip(output, expr)):
+            for i, e_dst in enumerate(expr):
                 if i == j:
                     continue
 
-                for t_dst in e_dst.search_leaves(Tensor):
-                    if o_src.name == t_dst.name:
-                        found = True
+                def _substitute(tensor: Tensor) -> Base:  # noqa: B023
+                    """Perform the substitution."""
+                    if o_src.name == tensor.name:
+                        memo["found"] = True
 
                         # Find the index substitution
-                        index_map = dict(zip(o_src.external_indices, t_dst.external_indices))
-                        for index in {*e_src.external_indices, *e_src.internal_indices}:
-                            if index not in index_map:
-                                index_map[index] = index.copy(name=f"tmp{idx_counter}")
-                                idx_counter += 1
-
-                        def _substitute(tensor: Tensor) -> Base:
-                            """Perform the substitution."""
-                            if tensor.name == o_src.name:  # noqa: B023
-                                return e_src.map_indices(index_map)  # noqa: B023
-                            return tensor
+                        index_map = dict(zip(o_src.external_indices, tensor.external_indices))
+                        for tensor in e_src.search_leaves(Tensor):
+                            for index in tensor.external_indices:
+                                if index not in index_map:
+                                    index_map[index] = index.copy(name=f"z{memo['counter']}_")
+                                    memo["counter"] += 1
 
                         # Substitute the expression
-                        expr[i] = e_dst.apply(_substitute, Tensor)
-                        output.pop(j)
-                        expr.pop(j)
-                        break
+                        return e_src.map_indices(index_map)
 
-            if found:
+                    return tensor
+
+                expr[i] = e_dst.apply(_substitute, Tensor)
+
+            # Check if we found a substitution
+            if memo["found"]:
+                output.pop(j)
+                expr.pop(j)
                 break
 
         # Check if we are done
-        if not found:
-            if len(output) == 1:
-                return expr[0]
-            raise ValueError("Complete substitution not possible")
+        if not memo["found"]:
+            break
+
+    # Canonicalise the indices
+    for i, (o, e) in enumerate(zip(output, expr)):
+        perm = [e.external_indices.index(index) for index in o.external_indices]
+        expr[i] = canonicalise_indices(e, extra_indices=extra_indices)
+        output[i] = o.copy(*[expr[i].external_indices[p] for p in perm])
+
+    return list(zip(output, expr))
 
 
 def _tensor_info(tensor: Tensor) -> TensorInfo:
@@ -220,3 +235,125 @@ def count_flops(expr: Base, sizes: Optional[dict[str | None, float]] = None) -> 
                 flops += count_flops(child, sizes)
 
     return flops
+
+
+def optimise_eom(
+    returns: list[Tensor],
+    outputs: list[Tensor],
+    exprs: list[Base],
+    method: str = "auto",
+    **kwargs: Any,
+) -> tuple[tuple[list[Tensor], list[tuple[Tensor, Base]]], tuple[list[Tensor], list[tuple[Tensor, Base]]]]:
+    """Perform common subexpression elimination for EOM expressions.
+
+    This function optimises out expressions that are independent of the EOM vectors.
+
+    Args:
+        outputs: The output tensors for each expression.
+        exprs: The expressions to be optimised.
+        method: The optimisation method to use. Options are `"auto"`, `"gristmill"`.
+
+    Returns:
+        The optimised expressions, as tuples of the output tensor and the expression.
+    """
+
+    def _is_eom_vector(tensor: Tensor) -> bool:
+        """Check if a tensor is an EOM vector."""
+        return tensor.name.startswith("r") or tensor.name.startswith("l")
+
+    # Track the classes
+    classes: dict[str, type[Tensor]] = {}
+
+    def _add_dummy_index(tensor: Tensor) -> Tensor:
+        """Add a dummy index to EOM vector tensors."""
+        if tensor.name not in classes:
+            classes[tensor.name] = tensor.__class__
+        indices = tensor.external_indices
+        symmetry = tensor.symmetry
+        if _is_eom_vector(tensor):
+            indices = (Index("DUMMY", space="d"), *indices)
+            symmetry = Symmetry(*[Permutation((0,), 1) + perm for perm in symmetry.permutations]) if symmetry else None
+        return Tensor(*indices, name=tensor.name, symmetry=symmetry)
+
+    def _replace_types(tensor: Tensor) -> Tensor:
+        """Replace the tensor types."""
+        cls = classes.get(tensor.name, Tensor)
+        return cls(*tensor.external_indices, symmetry=tensor.symmetry, name=tensor.name)
+
+    def _remove_dummy_index(tensor: Tensor) -> Tensor:
+        """Remove the dummy index from EOM vector tensors."""
+        remove = [ind.space == "d" for ind in tensor.external_indices]
+        indices = tuple(ind for ind, rem in zip(tensor.external_indices, remove) if not rem)
+        symmetry = Symmetry(
+            *[
+                Permutation(
+                    tuple(i - sum(remove) for j, i in enumerate(perm.permutation) if not remove[j]),
+                    perm.sign,
+                )
+                for perm in tensor.symmetry.permutations
+            ]
+        ) if tensor.symmetry else None
+        return tensor.copy(*indices, symmetry=symmetry)
+
+    # Make the optimiser more likely to optimise out constant intermediate tensors
+    for i, (output, expr) in enumerate(zip(outputs, exprs)):
+        outputs[i] = _add_dummy_index(output)
+        exprs[i] = expr.apply(_add_dummy_index, Tensor)
+
+    # Optimise with the dummy indices
+    output_expr = optimise(outputs, exprs, method, **kwargs)
+
+    # Remove the dummy indices
+    for i, (output, expr) in enumerate(output_expr):
+        output_expr[i] = (_remove_dummy_index(output), expr.apply(_remove_dummy_index, Tensor))
+
+    # Extract the intermediates that don't depend on the EOM vectors
+    output_expr_dep: list[tuple[Tensor, Base]] = []
+    output_expr_indep: list[tuple[Tensor, Base]] = []
+    cache: set[str] = set()
+    for output, expr in output_expr:
+        depends = _is_eom_vector(output)
+        if not depends:
+            for tensor in expr.search_leaves(Tensor):
+                if _is_eom_vector(tensor) or tensor.name in cache:
+                    depends = True
+                    break
+        if depends:
+            output_expr_dep.append((output, expr))
+            cache.add(output.name)
+        else:
+            output_expr_indep.append((output, expr))
+
+    # Get the intermediates needed to return
+    returns_dep = returns
+    returns_indep: list[Tensor] = []
+    initialised: set[str] = set()
+    for output, expr in output_expr_dep:
+        if output.name.startswith("tmp"):
+            initialised.add(output.name)
+        for tensor in expr.search_leaves(Tensor):
+            if tensor.name.startswith("tmp") and tensor.name not in initialised:
+                returns_indep.append(tensor)
+
+    # Transform the names of the intermediates
+    for i, (output, expr) in enumerate(output_expr_dep):
+        expr = expr.apply(
+            lambda t: (t.copy(name=f"ints.{t.name}") if t.name.startswith("tmp") and t.name not in initialised else t),
+            Tensor,
+        )
+        output_expr_dep[i] = (output, expr)
+
+    # Re-optimise the output
+    output_expr_dep = [(output, expr.expand()) for output, expr in output_expr_dep]
+    output_expr_dep = substitute_expressions(output_expr_dep)
+    output_expr_dep = optimise(*zip(*output_expr_dep), method, **kwargs)
+
+    # Replace the tensor types
+    for i, (output, expr) in enumerate(output_expr_dep):
+        output_expr_dep[i] = (_replace_types(output), expr.apply(_replace_types, Tensor))
+    for i, (output, expr) in enumerate(output_expr_indep):
+        output_expr_indep[i] = (_replace_types(output), expr.apply(_replace_types, Tensor))
+    returns_dep = [_replace_types(tensor) for tensor in returns_dep]
+    returns_indep = [_replace_types(tensor) for tensor in returns_indep]
+
+    return (returns_indep, output_expr_indep), (returns_dep, output_expr_dep)

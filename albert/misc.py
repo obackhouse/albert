@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Container
+import re
+import time
 from typing import TYPE_CHECKING, Hashable
 
 if TYPE_CHECKING:
@@ -65,3 +67,80 @@ class ExclusionSet(Container[Hashable]):
     def __repr__(self) -> str:
         """Return a string representation of the object."""
         return f"{self.__class__.__name__}({self._exclusions})"
+
+
+class Stopwatch:
+    """A simple stopwatch for timing code execution."""
+
+    def __init__(self, name: Optional[str] = None):
+        """Initialise the object."""
+        self._name = name
+        self._start: Optional[float] = None
+        self._end: Optional[float] = None
+
+    def __enter__(self) -> Stopwatch:
+        """Start the stopwatch."""
+        self._start = time.time()
+        return self
+
+    def __exit__(self, *args: Any) -> None:
+        """Stop the stopwatch."""
+        self._end = time.time()
+        if self._name is not None:
+            print(f"{self._name}: {self.elapsed:.3f} s")
+
+    @property
+    def elapsed(self) -> float:
+        """Return the elapsed time in seconds."""
+        if self._start is None:
+            raise RuntimeError("Stopwatch has not been started")
+        start = self._start
+        if self._end is None:
+            end = time.time()
+        else:
+            end = self._end
+        return end - start
+
+
+def from_string(string: str) -> Any:
+    """Convert an object from a string representation to the algebraic object.
+
+    Args:
+        string: The string representation of the object.
+
+    Returns:
+        The algebraic object.
+
+    Notes:
+        This function is intended for convenience when debugging and testing. It lacks many
+        features offered by directly instantiating the object. One pitfall in particular is that
+        tensor names cannot contain numbers.
+    """
+    from albert.scalar import Scalar
+    from albert.tensor import Tensor
+    from albert.index import from_list
+
+    # Find all distinct indices
+    tensors = [(name, inds.split(",")) for name, inds in re.findall(r"(\w+)\(([^)]+)\)", string)]
+    indices = set(index for _, inds in tensors for index in inds)
+
+    def _format_scalar(m: re.Match) -> str:
+        """Format a scalar statement from a matched regular expression."""
+        value = m.group(1)
+        return f"Scalar({value})"
+
+    def _format_tensor(m: re.Match) -> str:
+        """Format a tensor statement from a matched regular expression."""
+        name = m.group(1)
+        inds = m.group(2).split(",")
+        inds_string = ", ".join(f"\"{x.strip()}\"" for x in inds)
+        return f"Tensor(*from_list([{inds_string}]), name=\"{name}\")"
+
+    # Make the substitutions
+    string = re.sub(r"(\w+)\(([^)]+)\)", _format_tensor, string)
+    string = re.sub(r"(\d+\.\d+|\d+)", _format_scalar, string)
+
+    # Evaluate the string
+    expr = eval(string)
+
+    return expr

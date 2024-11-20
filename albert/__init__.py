@@ -25,5 +25,6 @@ _default_sizes: dict[str | None, float] = {
     "V": 20,
     "a": 780,
     "x": 3000,
+    "d": 100000,
     None: 10,
 }

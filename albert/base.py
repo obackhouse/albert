@@ -291,6 +291,17 @@ class Base(Serialisable):
         """
         pass
 
+    @classmethod
+    def from_string(cls, string: str) -> Base:
+        """Return an object loaded from a string representation.
+
+        Returns:
+            Object loaded from string representation.
+        """
+        from albert.misc import from_string
+
+        return from_string(string)
+
     def __hash__(self) -> int:
         """Return the hash of the object.
 

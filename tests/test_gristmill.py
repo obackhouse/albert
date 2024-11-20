@@ -33,5 +33,6 @@ def test_gristmill():
 
     output_expr_opt = optimise_gristmill([output], [expr], strategy="exhaust")
     output_opt, expr_opt = zip(*sorted(output_expr_opt))
-    expr_sub = substitute_expressions(output_expr_opt).expand()
+    output_expr_sub = substitute_expressions(output_expr_opt).expand()
+    output_sub, expr_sub = output_expr_sub[0]
     assert expr.canonicalise(indices=True) == expr_sub.canonicalise(indices=True)

@@ -9,10 +9,12 @@ from albert.base import IMul
 from albert.index import Index
 
 if TYPE_CHECKING:
+    from typing import Optional
+
     from albert.base import Base
 
 
-def canonicalise_indices(expr: Base) -> Base:
+def canonicalise_indices(expr: Base, extra_indices: Optional[list[Index]] = None) -> Base:
     """Canonicalise the indices of a tensor expression.
 
     Args:
@@ -30,6 +32,10 @@ def canonicalise_indices(expr: Base) -> Base:
             index_groups[(index.spin, index.space)].add(index)
             if index.spin in ("a", "b"):
                 index_groups[(index.spin_flip().spin, index.space)].add(index.spin_flip())
+    for index in extra_indices or []:
+        index_groups[(index.spin, index.space)].add(index)
+        if index.spin in ("a", "b"):
+            index_groups[(index.spin_flip().spin, index.space)].add(index.spin_flip())
     index_lists = {key: sorted(indices) for key, indices in index_groups.items()}
 
     # Find the canonical external indices globally

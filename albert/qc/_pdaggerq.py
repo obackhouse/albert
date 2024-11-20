@@ -191,6 +191,10 @@ def _convert_symbol(
         # <i,j||k,l>
         index_strs = tuple(symbol[1:-1].replace("||", ",").split(","))
         tensor_symbol = ghf.ERI
+    elif re.match(r"<(?i:[a-z]),(?i:[a-z])\|(?i:[a-z]),(?i:[a-z])>", symbol):
+        # <i,j|k,l>
+        index_strs = tuple(symbol[1:-1].replace("|", ",").split(","))
+        tensor_symbol = ghf.ERISingle
     elif re.match(r"t1\((?i:[a-z]),(?i:[a-z])\)", symbol):
         # t1(i,j)
         index_strs = tuple(symbol[3:-1].split(","))
@@ -362,4 +366,58 @@ def remove_reference_energy(terms: list[list[str]]) -> list[list[str]]:
         if term[0].startswith("-0.5") and term[1] == "<j,i||j,i>":
             continue
         terms_new.append(term)
+    return terms_new
+
+
+def remove_reference_energy_eom(terms: list[list[str]]) -> list[list[str]]:
+    """Remove the reference energy from the terms for EOM.
+
+    Args:
+        terms: The terms.
+
+    Returns:
+        The terms with the reference energy removed.
+    """
+    terms_new: list[list[str]] = []
+    for term in terms:
+        # Find if the term is disconnected
+        r = None
+        rest = []
+        for t in term[1:]:
+            if t.startswith("r") or t.startswith("l"):
+                r = t
+            elif not t.startswith("P("):
+                rest.append(t)
+        r_inds = set(r.split("(")[1].split(")")[0].split(","))
+        rest_inds = set()
+        for r in rest:
+            if "<" in r:
+                r = r.replace("<", "(").replace(">", ")").replace("||", ",")
+            rest_inds.update(r.split("(")[1].split(")")[0].split(","))
+        connected = r_inds & rest_inds
+        if connected:
+            terms_new.append(term)
+            continue
+
+        # We only want to remove the E0 terms:
+        #  f(i,i) r
+        #  f(i,a) t(a,i) r
+        #  <i,j||i,j> r
+        #  <i,a||j,b> t2(a,b,i,j) r
+        #  <i,a||j,b> t1(a,i) t1(b,j) r
+        if len(term) == 3:
+            tensor = [t for t in term[1:] if not (t.startswith("r") or t.startswith("l"))][0]
+            if tensor.startswith("f") and tensor[2] == tensor[4]:
+                continue
+            if tensor.startswith("<") and tensor[1] == tensor[6] and tensor[3] == tensor[8]:
+                continue
+        else:
+            tensors = sorted([t for t in term[1:] if not (t.startswith("r") or t.startswith("l"))])
+            if tensors[0].startswith("f") and tensors[1].startswith("t"):
+                continue
+            if tensors[0].startswith("<") and all(t.startswith("t") for t in tensors[1:]):
+                continue
+
+        terms_new.append(term)
+
     return terms_new

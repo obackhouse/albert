@@ -103,6 +103,28 @@ class BaseCodeGenerator(ABC):
             "albert_version": __version__,
         }
 
+    def get_argument(self, arg: Tensor) -> str:
+        """Get the argument string.
+
+        Args:
+            arg: The tensor.
+
+        Returns:
+            The argument string.
+        """
+        return self.get_name(arg, add_spins=False, add_spaces=False)
+
+    def get_return(self, ret: Tensor) -> str:
+        """Get the return string.
+
+        Args:
+            ret: The tensor.
+
+        Returns:
+            The return string.
+        """
+        return self.get_name(ret, add_spins=False, add_spaces=False)
+
     def ignore_argument(self, arg: Tensor) -> bool:
         """Check if a tensor should be ignored in the function arguments.
 
@@ -112,7 +134,7 @@ class BaseCodeGenerator(ABC):
         Returns:
             Whether the tensor should be ignored.
         """
-        return "tmp" in self.get_name(arg, add_spins=False, add_spaces=False)
+        return self.get_name(arg, add_spins=False, add_spaces=False).startswith("tmp")
 
     # Module methods:
 
@@ -204,12 +226,22 @@ class BaseCodeGenerator(ABC):
         pass
 
     @abstractmethod
-    def tensor_declaration(self, *args: Tensor, is_return: bool = False) -> None:
+    def tensor_declaration(
+        self,
+        *args: Tensor,
+        is_return: bool = False,
+        is_identity: bool = False,
+        shape_source: Optional[Tensor] = None,
+        shape_source_index: Optional[int] = None,
+    ) -> None:
         """Write tensor declaration(s).
 
         Args:
             args: The tensors.
             is_return: Whether the tensor is a return tensor.
+            is_identity: Whether the tensor is an identity matrix.
+            shape_source: The tensor to get the shape from.
+            shape_source_index: The index of the tensor `shape_source` to get the shape from.
         """
         pass
 
@@ -292,7 +324,7 @@ class BaseCodeGenerator(ABC):
                 if not self.ignore_argument(tensor) and tensor.name not in done:
                     args.append(tensor)
                     done.add(tensor.name)
-        args = sorted(args, key=lambda tensor: tensor.name)
+        args = sorted(args, key=self.get_argument)
 
         # Get the returns
         done = set()
@@ -301,7 +333,7 @@ class BaseCodeGenerator(ABC):
             if ret.name not in done:
                 rets.append(ret)
                 done.add(ret.name)
-        rets = sorted(rets, key=lambda tensor: tensor.name)
+        rets = sorted(rets, key=self.get_return)
 
         # Write the function declaration
         self.function_declaration(function_name, args)

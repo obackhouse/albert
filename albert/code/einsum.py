@@ -8,6 +8,7 @@ from albert.code.base import BaseCodeGenerator
 from albert.misc import ExclusionSet
 from albert.scalar import Scalar
 from albert.tensor import Tensor
+from albert.opt.tools import _tensor_info
 
 if TYPE_CHECKING:
     from typing import Optional
@@ -38,6 +39,9 @@ class EinsumCodeGenerator(BaseCodeGenerator):
     }
     _add_spins = ExclusionSet()
     _add_spaces = ExclusionSet()
+
+    _einsum = "np.einsum"
+    _namespace = "SimpleNamespace"
 
     def get_name(
         self,
@@ -119,7 +123,7 @@ class EinsumCodeGenerator(BaseCodeGenerator):
             name: The function name.
             args: The function arguments.
         """
-        names = sorted(set(self.get_name(arg, add_spins=False, add_spaces=False) for arg in args))
+        names = sorted(set(self.get_argument(arg) for arg in args))
         kwargs = [f"{name}=None" for name in names]
         self.write(f"def {name}({', '.join(kwargs)}, **kwargs):")
 
@@ -148,12 +152,20 @@ class EinsumCodeGenerator(BaseCodeGenerator):
         self.write(f'"""{desc}')
         self.blank()
         self.write("Args:")
+        done: set[str] = set()
         for arg, desc in args.items():
-            self.write(f"    {self.get_name(arg, add_spins=False, add_spaces=False)}: {desc}")
+            name = self.get_argument(arg)
+            if name not in done:
+                self.write(f"    {name}: {desc}")
+                done.add(name)
         self.blank()
         self.write("Returns:")
+        done: set[str] = set()
         for ret, desc in rets.items():
-            self.write(f"    {self.get_name(ret, add_spins=False, add_spaces=False)}: {desc}")
+            name = self.get_return(ret)
+            if name not in done:
+                self.write(f"    {name}: {desc}")
+                done.add(name)
         self.write('"""')
 
     def function_postamble(self, string: str) -> None:
@@ -173,7 +185,7 @@ class EinsumCodeGenerator(BaseCodeGenerator):
             args: The function arguments.
             as_dict: Whether to return as a dictionary. Otherwise, return as a tuple.
         """
-        names = sorted(set(self.get_name(arg, add_spins=False, add_spaces=False) for arg in args))
+        names = sorted(set(self.get_return(arg) for arg in args))
         if as_dict:
             string = "{" + ", ".join(f'"{name}": {name}' for name in names) + "}"
         else:
@@ -190,24 +202,59 @@ class EinsumCodeGenerator(BaseCodeGenerator):
         """
         pass  # no need to declare scalars in Python
 
-    def tensor_declaration(self, *args: Tensor, is_return: bool = False) -> None:
+    def tensor_declaration(
+        self,
+        *args: Tensor,
+        is_return: bool = False,
+        is_identity: bool = False,
+        shape_source: Optional[Tensor] = None,
+        shape_source_index: Optional[int] = None,
+    ) -> None:
         """Write tensor declaration(s).
 
         Args:
             args: The tensors.
             is_return: Whether the tensors are return tensors.
+            is_identity: Whether the tensors are identity tensors.
+            shape_source: The tensor to get the shape from.
+            shape_source_index: The index of the tensor `shape_source` to get the shape from.
         """
         for arg in args:
             # If there are spins, declare the namespace. The declaration tracking in
-            # `BaseCodeGenerator.__call__` doesn't suffice here because it would declare the
+            # `BaseCodeGenerator.__call__` doesn't suffice here because it would re-declare the
             # namespace for each spin case.
             spins = tuple(i.spin for i in arg.external_indices if i.spin in ("a", "b"))
-            if spins:
-                if not any(arg.name == name for name, _, _ in self._tensor_declared):
+            if spins and arg.name in self._add_spins:
+                if not any(_tensor_info(arg)[:1] == info[:1] for info in self._tensor_declared):
+                    # We haven't yet declared the namespace for this spin case
                     name = self.get_name(arg, add_spins=False, add_spaces=False)
                     if name.startswith("tmp"):
+                        # tmp tensors only ever have a single spin
                         continue
-                    self.write(f"{name} = SimpleNamespace()")
+                    self.write(f"{name} = {self._namespace}()")
+
+            # If there are spaces, declare the namespaces. The declaration tracking in
+            # `BaseCodeGenerator.__call__` doesn't suffice here because it would re-declare the
+            # namespace for each space case.
+            spaces = tuple(i.space for i in arg.external_indices if i.space)
+            if spaces and arg.name in self._add_spaces:
+                if not any(_tensor_info(arg)[:2] == info[:2] for info in self._tensor_declared):
+                    # We haven't yet declared the namespace for this spin + space case
+                    name = self.get_name(arg, add_spins=True, add_spaces=False)
+                    if name.startswith("tmp"):
+                        # tmp tensors only ever have a single space
+                        continue
+                    self.write(f"{name} = {self._namespace}()")
+
+            # Declare the tensor
+            if is_identity:
+                if shape_source is None or shape_source_index is None:
+                    raise ValueError(
+                        "The `shape_source` and `shape_source_index` must be provided for identity "
+                        "tensors."
+                    )
+                source = f"{self.get_name(shape_source)}.shape[{shape_source_index}]"
+                self.write(f"{self.get_name(arg)} = np.eye({source})")
             else:
                 pass  # no need to declare tensors in Python
 
@@ -263,7 +310,7 @@ class EinsumCodeGenerator(BaseCodeGenerator):
 
             # Get the operator and LHS
             operator = "=" if i == 0 and not declared else "+="
-            output_name = self.get_name(output, add_spaces=False)
+            output_name = self.get_name(output)
 
             # Get the factor
             factor = 1.0
@@ -277,9 +324,10 @@ class EinsumCodeGenerator(BaseCodeGenerator):
             if len(tensors) > 1:
                 args_string = ", ".join(args)
                 kwargs_string = ", ".join(f"{k}={v}" for k, v in self._einsum_kwargs.items())
+                kwargs_string = ", " + kwargs_string if kwargs_string else ""
                 self.write(
                     f"{output_name} {operator} "
-                    f"np.einsum({args_string}, {kwargs_string}){factor_string}"
+                    f"{self._einsum}({args_string}{kwargs_string}){factor_string}"
                 )
             else:
                 transpose = tuple(indices[0].index(i) for i in indices[1])

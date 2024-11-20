@@ -107,7 +107,7 @@ class Delta(Fock):
         if len(indices) != 2:
             raise ValueError("Kronecker delta must have two indices.")
         if name is None:
-            name = "d"
+            name = "δ"
         if symmetry is None:
             symmetry = symmetric_group((0, 1), (1, 0))
         Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
@@ -185,12 +185,14 @@ class CDERI(Tensor):
         symmetry: Optional[Symmetry] = None,
     ):
         """Initialise the tensor."""
-        if len(indices) != 4:
+        if len(indices) != 3:
             raise ValueError("CDERI tensor must have four indices.")
         if name is None:
             name = "v"
         if symmetry is None:
             symmetry = symmetric_group((0, 1, 2), (0, 2, 1))
+        if indices[0].space != "x":
+            raise ValueError("First index of CDERI must be in auxiliary (x) space.")
         Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
 
     def as_rhf(self) -> Base:

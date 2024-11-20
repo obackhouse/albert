@@ -91,7 +91,8 @@ def optimise_gristmill(
         # Prepare the sympy and drudge objects
         spc = sympy.Symbol(f"N{space}{spin}", integer=True)
         rng = drudge.Range(f"{space}{spin}", 0, sizes[space])
-        inds = [i.as_sympy() for i in sorted(indices) if i.space == space and i.spin == spin]
+        inds_orig = sorted([i for i in indices if i.space == space and i.spin == spin])
+        inds = [i.as_sympy() for i in inds_orig]
         inds += [Index(f"idx{i}", space=space, spin=spin).as_sympy() for i in range(10)]
 
         # Set the dummy indices
@@ -100,8 +101,8 @@ def optimise_gristmill(
         # Set the substitutions
         substs[spc] = sizes[space]
         ranges[f"{space}{spin}"] = rng
-        for i in inds:
-            index_reference[i] = (i.name, space, spin)
+        for index, index_sympy in zip(inds_orig, inds):
+            index_reference[index_sympy] = (index.name, index.space, index.spin)
 
     # Add the resolver
     dr.add_resolver_for_dumms()
