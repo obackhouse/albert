@@ -6,15 +6,14 @@ from collections import defaultdict
 from typing import TYPE_CHECKING
 
 from albert import _default_sizes
-from albert.tensor import Tensor
-from albert.qc import ghf, uhf, rhf
-from albert.index import Index
-from albert.symmetry import Symmetry, Permutation
-from albert.opt import optimise
 from albert.canon import canonicalise_indices
+from albert.index import Index
+from albert.opt import optimise
+from albert.symmetry import Permutation, Symmetry
+from albert.tensor import Tensor
 
 if TYPE_CHECKING:
-    from typing import Optional, Any
+    from typing import Any, Optional
 
     from albert.base import Base
 
@@ -34,7 +33,7 @@ def substitute_expressions(output_expr: list[tuple[Tensor, Base]]) -> list[tuple
         The total expression with the substituted tensors, for each distinct output tensor.
     """
     output = [out for out, _ in output_expr]
-    expr = [exp.expand() for _, exp in output_expr]
+    expr: list[Base] = [exp.expand() for _, exp in output_expr]
 
     # Find original set of indices for canonicalisation
     extra_indices: set[Index] = set()
@@ -243,7 +242,9 @@ def optimise_eom(
     exprs: list[Base],
     method: str = "auto",
     **kwargs: Any,
-) -> tuple[tuple[list[Tensor], list[tuple[Tensor, Base]]], tuple[list[Tensor], list[tuple[Tensor, Base]]]]:
+) -> tuple[
+    tuple[list[Tensor], list[tuple[Tensor, Base]]], tuple[list[Tensor], list[tuple[Tensor, Base]]]
+]:
     """Perform common subexpression elimination for EOM expressions.
 
     This function optimises out expressions that are independent of the EOM vectors.
@@ -272,7 +273,11 @@ def optimise_eom(
         symmetry = tensor.symmetry
         if _is_eom_vector(tensor):
             indices = (Index("DUMMY", space="d"), *indices)
-            symmetry = Symmetry(*[Permutation((0,), 1) + perm for perm in symmetry.permutations]) if symmetry else None
+            symmetry = (
+                Symmetry(*[Permutation((0,), 1) + perm for perm in symmetry.permutations])
+                if symmetry
+                else None
+            )
         return Tensor(*indices, name=tensor.name, symmetry=symmetry)
 
     def _replace_types(tensor: Tensor) -> Tensor:
@@ -284,15 +289,21 @@ def optimise_eom(
         """Remove the dummy index from EOM vector tensors."""
         remove = [ind.space == "d" for ind in tensor.external_indices]
         indices = tuple(ind for ind, rem in zip(tensor.external_indices, remove) if not rem)
-        symmetry = Symmetry(
-            *[
-                Permutation(
-                    tuple(i - sum(remove) for j, i in enumerate(perm.permutation) if not remove[j]),
-                    perm.sign,
-                )
-                for perm in tensor.symmetry.permutations
-            ]
-        ) if tensor.symmetry else None
+        symmetry = (
+            Symmetry(
+                *[
+                    Permutation(
+                        tuple(
+                            i - sum(remove) for j, i in enumerate(perm.permutation) if not remove[j]
+                        ),
+                        perm.sign,
+                    )
+                    for perm in tensor.symmetry.permutations
+                ]
+            )
+            if tensor.symmetry
+            else None
+        )
         return tensor.copy(*indices, symmetry=symmetry)
 
     # Make the optimiser more likely to optimise out constant intermediate tensors
@@ -338,15 +349,26 @@ def optimise_eom(
     # Transform the names of the intermediates
     for i, (output, expr) in enumerate(output_expr_dep):
         expr = expr.apply(
-            lambda t: (t.copy(name=f"ints.{t.name}") if t.name.startswith("tmp") and t.name not in initialised else t),
+            lambda t: (
+                t.copy(name=f"ints.{t.name}")
+                if t.name.startswith("tmp") and t.name not in initialised
+                else t
+            ),
             Tensor,
         )
         output_expr_dep[i] = (output, expr)
 
     # Re-optimise the output
-    output_expr_dep = [(output, expr.expand()) for output, expr in output_expr_dep]
+    output_expr_dep: list[tuple[Tensor, Base]] = [
+        (output, expr.expand()) for output, expr in output_expr_dep
+    ]
     output_expr_dep = substitute_expressions(output_expr_dep)
-    output_expr_dep = optimise(*zip(*output_expr_dep), method, **kwargs)
+    output_expr_dep = optimise(
+        [output for output, _ in output_expr_dep],
+        [expr for _, expr in output_expr_dep],
+        method,
+        **kwargs,
+    )
 
     # Replace the tensor types
     for i, (output, expr) in enumerate(output_expr_dep):

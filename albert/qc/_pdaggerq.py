@@ -388,6 +388,7 @@ def remove_reference_energy_eom(terms: list[list[str]]) -> list[list[str]]:
                 r = t
             elif not t.startswith("P("):
                 rest.append(t)
+        assert r is not None
         r_inds = set(r.split("(")[1].split(")")[0].split(","))
         rest_inds = set()
         for r in rest:

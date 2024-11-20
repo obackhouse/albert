@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-from collections.abc import Container
 import re
 import time
+from collections.abc import Container
 from typing import TYPE_CHECKING, Hashable
 
 if TYPE_CHECKING:
     from typing import Any, Iterable, Optional
+
+    from albert.base import Base
 
 
 class ExclusionSet(Container[Hashable]):
@@ -102,7 +104,7 @@ class Stopwatch:
         return end - start
 
 
-def from_string(string: str) -> Any:
+def from_string(string: str) -> Base:
     """Convert an object from a string representation to the algebraic object.
 
     Args:
@@ -116,31 +118,28 @@ def from_string(string: str) -> Any:
         features offered by directly instantiating the object. One pitfall in particular is that
         tensor names cannot contain numbers.
     """
-    from albert.scalar import Scalar
-    from albert.tensor import Tensor
-    from albert.index import from_list
 
     # Find all distinct indices
     tensors = [(name, inds.split(",")) for name, inds in re.findall(r"(\w+)\(([^)]+)\)", string)]
     indices = set(index for _, inds in tensors for index in inds)
 
-    def _format_scalar(m: re.Match) -> str:
+    def _format_scalar(m: re.Match[str]) -> str:
         """Format a scalar statement from a matched regular expression."""
         value = m.group(1)
         return f"Scalar({value})"
 
-    def _format_tensor(m: re.Match) -> str:
+    def _format_tensor(m: re.Match[str]) -> str:
         """Format a tensor statement from a matched regular expression."""
         name = m.group(1)
         inds = m.group(2).split(",")
-        inds_string = ", ".join(f"\"{x.strip()}\"" for x in inds)
-        return f"Tensor(*from_list([{inds_string}]), name=\"{name}\")"
+        inds_string = ", ".join(f'"{x.strip()}"' for x in inds)
+        return f'Tensor(*from_list([{inds_string}]), name="{name}")'
 
     # Make the substitutions
     string = re.sub(r"(\w+)\(([^)]+)\)", _format_tensor, string)
     string = re.sub(r"(\d+\.\d+|\d+)", _format_scalar, string)
 
     # Evaluate the string
-    expr = eval(string)
+    expr: Base = eval(string)
 
     return expr

@@ -6,9 +6,9 @@ from typing import TYPE_CHECKING, cast
 
 from albert.code.base import BaseCodeGenerator
 from albert.misc import ExclusionSet
+from albert.opt.tools import _tensor_info
 from albert.scalar import Scalar
 from albert.tensor import Tensor
-from albert.opt.tools import _tensor_info
 
 if TYPE_CHECKING:
     from typing import Optional

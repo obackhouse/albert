@@ -127,8 +127,10 @@ def ghf_to_rhf(expr: Base, canonicalise: bool = True) -> Base:
 
 
 def get_amplitude_spins(
-    occ_indices: list[Index | str], vir_indices: list[Index | str], spin_type: str,
-) -> list[dict[str, str]]:
+    occ_indices: list[Index | str],
+    vir_indices: list[Index | str],
+    spin_type: str,
+) -> list[dict[str, Optional[str]]]:
     """Get the spins cases required for amplitudes in the given spin type.
 
     Args:
@@ -151,11 +153,11 @@ def get_amplitude_spins(
             return index
         return index.name
 
-    cases: list[dict[str, str]] = []
+    cases: list[dict[str, Optional[str]]] = []
 
     if spin_type == "rhf":
         # RHF
-        case: dict[str, str] = {}
+        case: dict[str, Optional[str]] = {}
         for i, index in enumerate(occ_indices):
             case[_get_name(index)] = ["a", "b"][i % 2]
         for i, index in enumerate(vir_indices):
@@ -165,13 +167,13 @@ def get_amplitude_spins(
     elif spin_type == "uhf":
         # UHF
         if no == nv:
-            it = itertools.combinations_with_replacement(["a", "b"], no)
+            it = list(itertools.combinations_with_replacement(["a", "b"], no))
         else:
-            it = itertools.product(["a", "b"], repeat=max(no, nv))
+            it = list(itertools.product(["a", "b"], repeat=max(no, nv)))
         for spins in it:
             if no == nv:
                 # Canonicalise the spin order
-                best = ("", 1e10)
+                best: tuple[tuple[str, ...], int] = (("",), int(1e10))
                 for s in itertools.permutations(spins):
                     penalty = 0
                     for i in range(len(s) - 1):
@@ -181,17 +183,17 @@ def get_amplitude_spins(
                     if penalty < best[1]:
                         best = (s, penalty)
                 spins = best[0]
-            case: dict[str, str] = {}
-            for i, s in enumerate(spins):
+            case = {}
+            for i, spin in enumerate(spins):
                 if i < no:
-                    case[_get_name(occ_indices[i])] = s
+                    case[_get_name(occ_indices[i])] = spin
                 if i < nv:
-                    case[_get_name(vir_indices[i])] = s
+                    case[_get_name(vir_indices[i])] = spin
             cases.append(case)
 
     elif spin_type == "ghf":
         # GHF
-        case: dict[str, str] = {}
+        case = {}
         for i in range(no):
             case[_get_name(occ_indices[i])] = None
         for i in range(nv):
@@ -201,7 +203,7 @@ def get_amplitude_spins(
     return cases
 
 
-def get_density_spins(indices: list[Index | str], spin_type: str) -> list[dict[str, str]]:
+def get_density_spins(indices: list[Index | str], spin_type: str) -> list[dict[str, Optional[str]]]:
     """Get the spins cases required for density matrices in the given spin type.
 
     Args:
@@ -214,6 +216,12 @@ def get_density_spins(indices: list[Index | str], spin_type: str) -> list[dict[s
     if len(indices) not in {2, 4}:
         raise ValueError("Density matrices must have 2 or 4 indices.")
     order = len(indices) // 2
+
+    def _get_name(index: Index | str) -> str:
+        """Get the name of the index."""
+        if isinstance(index, str):
+            return index
+        return index.name
 
     cases: list[tuple[Optional[str], ...]]
 
@@ -247,4 +255,4 @@ def get_density_spins(indices: list[Index | str], spin_type: str) -> list[dict[s
         else:
             cases = [(None, None, None, None)]
 
-    return [dict(zip(indices, case)) for case in cases]
+    return [dict(zip(map(_get_name, indices), case)) for case in cases]

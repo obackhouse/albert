@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from albert.qc.uhf import ERI as UERI, CDERI as UCDERI
-from albert.qc.rhf import ERI as RERI, CDERI as RCDERI
 from albert.index import Index
+from albert.qc.rhf import CDERI as RCDERI
+from albert.qc.rhf import ERI as RERI
+from albert.qc.uhf import CDERI as UCDERI
+from albert.qc.uhf import ERI as UERI
 from albert.tensor import Tensor
 
 if TYPE_CHECKING:
