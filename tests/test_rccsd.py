@@ -1,157 +1,164 @@
-"""Test the generation of RCCSD.
-"""
-
+import importlib
+import itertools
 import os
-import unittest
-import warnings
-from io import StringIO
+from types import SimpleNamespace
 
-import pdaggerq
 import numpy as np
+import pdaggerq
+import pytest
+from pyscf import ao2mo, cc, gto, scf
 
-from albert.codegen.einsum import EinsumCodeGen
-from albert.qc._pdaggerq import import_from_pdaggerq
-from albert.canon import canonicalise_indices
+from albert.code.einsum import EinsumCodeGenerator
+from albert.opt import optimise as _optimise
+from albert.qc._pdaggerq import import_from_pdaggerq, remove_reference_energy
+from albert.qc.spin import ghf_to_rhf
 from albert.tensor import Tensor
-from albert.qc.spin import generalised_to_restricted
-from albert.qc.index import Index
-from albert.optim._gristmill import optimise
-
-np.random.seed(1)
 
 
-def name_generator(tensor, add_spaces=True):
-    if tensor.name in ("f", "v"):
-        if add_spaces:
-            spaces = [index.space for index in tensor.indices]
-            return f"{tensor.name}.{''.join(spaces)}"
-        else:
-            return tensor.name
+def _kwargs(strategy, transposes, greedy_cutoff, drop_cutoff):
+    return {
+        "strategy": strategy,
+        "transposes": transposes,
+        "greedy_cutoff": greedy_cutoff,
+        "drop_cutoff": drop_cutoff,
+    }
+
+
+@pytest.mark.parametrize(
+    "optimise, method, canonicalise, kwargs",
+    [
+        (False, None, False, _kwargs(None, None, None, None)),
+        (True, "gristmill", True, _kwargs("trav", "natural", -1, -1)),
+        (True, "gristmill", True, _kwargs("opt", "natural", -1, -1)),
+        (True, "gristmill", False, _kwargs("greedy", "ignore", -1, 2)),
+        (True, "gristmill", True, _kwargs("greedy", "ignore", 2, 2)),
+    ],
+)
+def test_rccsd_einsum(helper, optimise, method, canonicalise, kwargs):
+    with open(f"{os.path.dirname(__file__)}/_test_rccsd.py", "w") as file:
+        try:
+            _test_rccsd_einsum(helper, file, optimise, method, canonicalise, kwargs)
+        except Exception as e:
+            raise e
+        finally:
+            os.remove(f"{os.path.dirname(__file__)}/_test_rccsd.py")
+
+
+def _test_rccsd_einsum(helper, file, optimise, method, canonicalise, kwargs):
+    codegen = EinsumCodeGenerator(stdout=file)
+    codegen.preamble()
+
+    pq = pdaggerq.pq_helper("fermi")
+
+    pq.clear()
+    pq.set_left_operators([["1"]])
+    pq.add_st_operator(1.0, ["f"], ["t1", "t2"])
+    pq.add_st_operator(1.0, ["v"], ["t1", "t2"])
+    pq.simplify()
+    energy = pq.fully_contracted_strings()
+    energy = remove_reference_energy(energy)
+    energy = import_from_pdaggerq(energy)
+    energy = ghf_to_rhf(energy)
+    if canonicalise:
+        energy = energy.canonicalise(indices=True).collect()
+    output = Tensor(name="e_cc")
+
+    if optimise:
+        output_expr = _optimise([output], [energy], method=method, **kwargs)
     else:
-        return tensor.name
+        output_expr = [(output, energy)]
 
+    codegen(
+        "energy",
+        [output],
+        output_expr,
+    )
 
-class TestRCCSD(unittest.TestCase):
-    def generate_code_pdaggerq(self):
-        stdout = StringIO()
-        codegen = EinsumCodeGen(
-            stdout=stdout,
-            name_generator=name_generator,
-        )
+    pq.clear()
+    pq.set_left_operators([["e1(i,a)"]])
+    pq.add_st_operator(1.0, ["f"], ["t1", "t2"])
+    pq.add_st_operator(1.0, ["v"], ["t1", "t2"])
+    pq.simplify()
+    t1 = pq.fully_contracted_strings()
+    t1 = import_from_pdaggerq(t1, index_spins=dict(i="a", a="a"))
+    t1 = ghf_to_rhf(t1)
+    if canonicalise:
+        t1 = t1.canonicalise(indices=True).collect()
+    output_t1 = Tensor(
+        *sorted(t1.external_indices, key=lambda i: "ijab".index(i.name)), name="t1new"
+    )
 
-        pq = pdaggerq.pq_helper("fermi")
+    pq.clear()
+    pq.set_left_operators([["e2(i,j,b,a)"]])
+    pq.add_st_operator(1.0, ["f"], ["t1", "t2"])
+    pq.add_st_operator(1.0, ["v"], ["t1", "t2"])
+    pq.simplify()
+    t2 = pq.fully_contracted_strings()
+    t2 = import_from_pdaggerq(t2, index_spins=dict(i="a", j="b", a="a", b="b"))
+    t2 = ghf_to_rhf(t2)
+    if canonicalise:
+        t2 = t2.canonicalise(indices=True).collect()
+    output_t2 = Tensor(
+        *sorted(t2.external_indices, key=lambda i: "ijab".index(i.name)), name="t2new"
+    )
 
-        pq.clear()
-        pq.set_left_operators([["1"]])
-        pq.add_st_operator(1.0, ["f"], ["t1", "t2"])
-        pq.add_st_operator(1.0, ["v"], ["t1", "t2"])
-        pq.simplify()
-        energy = pq.fully_contracted_strings()
-        energy = [e for e in energy if e[-1] not in ("f(i,i)", "<j,i||j,i>")]
-        output_energy = Tensor(name="e_cc")
-
-        codegen(
-            "energy",
-            [output_energy],
-            [output_energy],
-            [generalised_to_restricted(
-                canonicalise_indices(
-                    import_from_pdaggerq(energy),
-                    "ijklmn",
-                    "abcdef",
-                ),
-            )],
-        )
-
-        pq.clear()
-        pq.set_left_operators([["e1(i,a)"]])
-        pq.add_st_operator(1.0, ["f"], ["t1", "t2"])
-        pq.add_st_operator(1.0, ["v"], ["t1", "t2"])
-        pq.simplify()
-        t1 = pq.fully_contracted_strings()
-
-        pq.clear()
-        pq.set_left_operators([["e2(i,j,b,a)"]])
-        pq.add_st_operator(1.0, ["f"], ["t1", "t2"])
-        pq.add_st_operator(1.0, ["v"], ["t1", "t2"])
-        pq.simplify()
-        t2 = pq.fully_contracted_strings()
-
-        expr_t1 = import_from_pdaggerq(t1, index_spins={"i": "α", "a": "α"})
-        expr_t1 = canonicalise_indices(expr_t1, "ijklmn", "abcdef")
-        expr_t1 = generalised_to_restricted(expr_t1)
-        output_t1 = Tensor(Index("i"), Index("a"), name="t1new")
-
-        expr_t2 = import_from_pdaggerq(t2, index_spins={"i": "α", "j": "β", "a": "α", "b": "β"})
-        expr_t2 = canonicalise_indices(expr_t2, "ijklmn", "abcdef")
-        expr_t2 = generalised_to_restricted(expr_t2)
-        output_t2 = Tensor(Index("i"), Index("j"), Index("a"), Index("b"), name="t2new")
-
-        returns = (
-            output_t1,
-            output_t2,
-        )
-
-        opt = optimise(
-            (output_t1, expr_t1),
-            (output_t2, expr_t2),
-            index_groups=[
-                [Index(i, space="o") for i in "ijklmn"],
-                [Index(i, space="v") for i in "abcdef"],
-            ],
-            sizes={
-                **{Index(i, space="o"): 4 for i in "ijklmn"},
-                **{Index(i, space="v"): 20 for i in "abcdef"},
-            },
-            strategy="greedy",
-        )
-        outputs, exprs = zip(*opt)
-
-        codegen(
-            "update_amps",
-            returns,
+    outputs = [output_t1, output_t2]
+    if optimise:
+        output_expr = _optimise(
             outputs,
-            exprs,
-            as_dict=True,
+            [t1, t2],
+            method=method,
+            **kwargs,
         )
+    else:
+        output_expr = [(output_t1, t1), (output_t2, t2)]
 
-        return stdout
+    codegen(
+        "update_amplitudes",
+        outputs,
+        output_expr,
+        as_dict=True,
+    )
 
-    def test_rccsd(self):
-        stdout = self.generate_code_pdaggerq()
-        exec(stdout.getvalue(), globals())
-        stdout.close()
+    module = importlib.import_module(f"_test_rccsd")
+    energy = module.energy
+    update_amplitudes = module.update_amplitudes
 
-        nocc = 4
-        nvir = 20
+    mol = gto.M(atom="H 0 0 0; Li 0 0 1.64", basis="cc-pvdz", verbose=0)
+    mf = scf.RHF(mol).run()
+    ccsd = cc.CCSD(mf)
+    ccsd.max_cycle = 3
+    ccsd.diis = False
+    ccsd.kernel()
 
-        f = lambda: None
-        f.oo = np.diag(np.random.random(nocc))
-        f.ov = np.zeros((nocc, nvir))
-        f.vo = np.zeros((nvir, nocc))
-        f.vv = np.diag(np.random.random(nvir))
+    eo = mf.mo_energy[mf.mo_occ > 0]
+    ev = mf.mo_energy[mf.mo_occ == 0]
+    f = SimpleNamespace()
+    f.oo = np.diag(eo)
+    f.vv = np.diag(ev)
+    f.ov = np.zeros((eo.size, ev.size))
+    f.vo = np.zeros((ev.size, eo.size))
 
-        v = lambda: None
-        v_full = np.random.random((nocc + nvir,) * 4)
-        v_full = v_full + v_full.transpose(0, 1, 3, 2) + v_full.transpose(1, 0, 2, 3) + v_full.transpose(1, 0, 3, 2)
-        v_full = v_full + v_full.transpose(2, 3, 0, 1)
-        v.oooo = v_full[:nocc, :nocc, :nocc, :nocc]
-        v.ovoo = v_full[:nocc, nocc:, :nocc, :nocc]
-        v.ovov = v_full[:nocc, nocc:, :nocc, nocc:]
-        v.vvvv = v_full[nocc:, nocc:, nocc:, nocc:]
-        v.oovv = v_full[:nocc, :nocc, nocc:, nocc:]
-        v.ooov = v_full[:nocc, :nocc, :nocc, nocc:]
-        v.ovvv = v_full[:nocc, nocc:, nocc:, nocc:]
-        v.vovo = v_full[nocc:, :nocc, nocc:, :nocc]
+    co = mf.mo_coeff[:, mf.mo_occ > 0]
+    cv = mf.mo_coeff[:, mf.mo_occ == 0]
+    v = SimpleNamespace()
+    for key in itertools.product("ov", repeat=4):
+        coeffs = tuple(co if k == "o" else cv for k in key)
+        shape = tuple(c.shape[-1] for c in coeffs)
+        v_key = ao2mo.kernel(mol, coeffs, compact=False).reshape(shape)
+        setattr(v, "".join(key), v_key)
 
-        t1 = np.random.random((nocc, nvir))
-        t2 = v.oovv
+    t1 = ccsd.t1
+    t2 = ccsd.t2
 
-        amps = update_amps(f=f, v=v, t1=t1, t2=t2)
-        e_cc = energy(f=f, v=v, t1=amps["t1new"], t2=amps["t2new"])
+    e1 = np.ravel(energy(f=f, v=v, t1=SimpleNamespace(ov=t1), t2=SimpleNamespace(oovv=t2))).item()
+    e2 = ccsd.energy(t1=t1, t2=t2)
+    assert np.allclose(e1, e2)
 
-        self.assertAlmostEqual(e_cc, 23956467724253, places=-1)
-
-
-if __name__ == "__main__":
-    unittest.main()
+    d = eo[:, None] - ev[None, :]
+    amps = update_amplitudes(f=f, v=v, t1=SimpleNamespace(ov=t1), t2=SimpleNamespace(oovv=t2))
+    amps["t1new"].ov = amps["t1new"].ov / d + t1
+    amps["t2new"].oovv = amps["t2new"].oovv / (d[:, None, :, None] + d[None, :, None, :]) + t2
+    e1 = ccsd.energy(*ccsd.update_amps(t1, t2, ccsd.ao2mo()))
+    e2 = ccsd.energy(t1=amps["t1new"].ov, t2=amps["t2new"].oovv)
+    assert np.allclose(e1, e2)

@@ -1,568 +1,1103 @@
-"""Expressions for generalised bases.
-"""
+"""Classes for GHF tensors."""
+
+from __future__ import annotations
 
 import itertools
+from typing import TYPE_CHECKING
 
 from albert.qc import uhf
-from albert.qc.rhf import _make_symmetry
-from albert.symmetry import Permutation, Symmetry, antisymmetric_permutations
-from albert.tensor import Symbol, Tensor
+from albert.symmetry import Permutation, Symmetry, fully_antisymmetric_group, symmetric_group
+from albert.tensor import Tensor
+
+if TYPE_CHECKING:
+    from typing import Optional
+
+    from albert.base import Base
+    from albert.index import Index
 
 
-class GHFTensor(Tensor):
-    """Tensor subclass for generalised bases."""
-
-    def as_uhf(self, target_restricted=False):
-        """Return an unrestricted representation of the object."""
-        return self._symbol._as_uhf(self, target_restricted=target_restricted)
-
-    def as_rhf(self):
-        """Return a restricted representation of the object."""
-        raise NotImplementedError(
-            "Direct conversion of generalised to restricted is not implemented."
-        )
+# Developer notes:
+# * There is a lot of code repetition and subclasses could easily be used, but I felt like this
+#   prevented optimisations and makes the code more complicated when new tensors don't conform
+#   to the same pattern.
 
 
-class GHFSymbol(Symbol):
-    """Symbol subclass for generalised bases."""
+class Fock(Tensor):
+    """Class for the Fock matrix.
 
-    Tensor = GHFTensor
+    Args:
+        indices: Indices of the tensor.
+        name: Name of the tensor.
+        symmetry: Symmetry of the tensor.
+    """
 
-    def __getitem__(self, indices):
-        """Return a tensor."""
-        tensor = super().__getitem__(indices)
-        tensor._symbol = self
-        return tensor
+    def __init__(
+        self,
+        *indices: Index,
+        name: Optional[str] = None,
+        symmetry: Optional[Symmetry] = None,
+    ):
+        """Initialise the tensor."""
+        if len(indices) != 2:
+            raise ValueError("Fock matrix must have two indices.")
+        if name is None:
+            name = "f"
+        if symmetry is None:
+            symmetry = symmetric_group((0, 1), (1, 0))
+        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
 
+    def as_uhf(self, target_rhf: bool = False) -> tuple[Base, ...]:
+        """Convert the indices without spin to indices with spin.
 
-class ScalarSymbol(GHFSymbol):
-    """Constructor for scalar symbols."""
+        Indices that start without spin are assumed to be spin orbitals.
 
-    DESIRED_RANK = 0
+        Args:
+            target_rhf: Whether the target is RHF. For some tensors, the intermediate conversion
+                to UHF is different depending on the target.
 
-    def __init__(self, name, uhf_symbol=None):
-        """Initialise the object."""
-        self.name = name
-        self.symmetry = _make_symmetry()
-        self.uhf_symbol = uhf_symbol
-
-    @staticmethod
-    def _as_uhf(tensor, target_restricted=False):
-        """Convert a scalar tensor object from generalised to unrestricted."""
-        return (tensor._symbol.uhf_symbol[tuple()],)
-
-
-R0 = ScalarSymbol("r0", uhf.R0)
-L0 = ScalarSymbol("l0", uhf.L0)
-
-
-class FockSymbol(GHFSymbol):
-    """Constructor for Fock-like symbols."""
-
-    DESIRED_RANK = 2
-    uhf_symbol = uhf.Fock
-
-    def __init__(self, name):
-        """Initialise the object."""
-        self.name = name
-        self.symmetry = _make_symmetry(
-            (0, 1),
-            (1, 0),
-        )
-
-    @staticmethod
-    def _as_uhf(tensor, target_restricted=False):
+        Returns:
+            Tuple of tensors resulting from the conversion.
         """
-        Convert a `Fock`-derived tensor object from generalised to
-        unrestricted.
-        """
-
         # Loop over spins
         tensors = []
-        for spin in ("α", "β"):
-            # Check if first index has fixed spin
-            if tensor.indices[0].spin and tensor.indices[0].spin != spin:
+        for spin in ("a", "b"):
+            # Check for fixed spins
+            if any(index.spin and index.spin != spin for index in self.indices):
                 continue
 
-            # Check if second index has fixed spin
-            if tensor.indices[1].spin and tensor.indices[1].spin != spin:
-                continue
-
-            # Get the UHF tensor part
-            indices = tuple(index.to_spin(spin) for index in tensor.indices)
-            tensors.append(tensor._symbol.uhf_symbol[indices])
+            # Create the UHF tensor
+            indices = tuple(index.copy(spin=spin) for index in self.indices)
+            tensors.append(uhf.Fock(*indices, name=self.name))
 
         return tuple(tensors)
 
 
-Fock = FockSymbol("f")
+class RDM1(Fock):
+    """Class for the one-particle reduced density matrix.
 
+    Args:
+        indices: Indices of the tensor.
+        name: Name of the tensor.
+        symmetry: Symmetry of the tensor.
+    """
 
-class BosonicHamiltonianSymbol(GHFSymbol):
-    """Constructor for bosonic Hamiltonian symbols."""
+    def __init__(
+        self,
+        *indices: Index,
+        name: Optional[str] = None,
+        symmetry: Optional[Symmetry] = None,
+    ):
+        """Initialise the tensor."""
+        if len(indices) != 2:
+            raise ValueError("One-particle reduced density matrix must have two indices.")
+        if name is None:
+            name = "d"
+        if symmetry is None:
+            symmetry = symmetric_group((0, 1), (1, 0))
+        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
 
-    DESIRED_RANK = 1
-    uhf_symbol = uhf.BosonicHamiltonian
+    def as_uhf(self, target_rhf: bool = False) -> tuple[Base, ...]:
+        """Convert the indices without spin to indices with spin.
 
-    def __init__(self, name):
-        """Initialise the object."""
-        self.name = name
-        self.symmetry = _make_symmetry((0,))
+        Indices that start without spin are assumed to be spin orbitals.
 
-    @staticmethod
-    def _as_uhf(tensor, target_restricted=False):
+        Args:
+            target_rhf: Whether the target is RHF. For some tensors, the intermediate conversion
+                to UHF is different depending on the target.
+
+        Returns:
+            Tuple of tensors resulting from the conversion.
         """
-        Convert a `BosonicHamiltonian`-derived tensor object from
-        generalised to unrestricted.
-        """
-        return (tensor._symbol.uhf_symbol[tensor.indices],)
-
-
-BosonicHamiltonian = BosonicHamiltonianSymbol("G")
-
-
-class BosonicInteractionHamiltonianSymbol(GHFSymbol):
-    """Constructor for bosonic interaction Hamiltonian symbols."""
-
-    DESIRED_RANK = 2
-    uhf_symbol = uhf.BosonicInteractionHamiltonian
-
-    def __init__(self, name):
-        """Initialise the object."""
-        self.name = name
-        self.symmetry = _make_symmetry((0, 1), (1, 0))
-
-    @staticmethod
-    def _as_uhf(tensor, target_restricted=False):
-        """
-        Convert a `BosonicInteractionHamiltonian`-derived tensor object
-        from generalised to unrestricted.
-        """
-        return (tensor._symbol.uhf_symbol[tensor.indices],)
-
-
-BosonicInteractionHamiltonian = BosonicInteractionHamiltonianSymbol("w")
-
-
-class ElectronBosonHamiltonianSymbol(GHFSymbol):
-    """Constructor for electron-boson Hamiltonian symbols."""
-
-    DESIRED_RANK = 3
-
-    def __init__(self, name, uhf_symbol):
-        """Initialise the object."""
-        self.name = name
-        self.symmetry = _make_symmetry(
-            (0, 1, 2),
-            (0, 2, 1),
-        )
-        self.uhf_symbol = uhf_symbol
-
-    @staticmethod
-    def _as_uhf(tensor, target_restricted=False):
-        """
-        Convert a `ElectronBosonHamiltonian`-derived tensor object from
-        generalised to unrestricted.
-        """
-
         # Loop over spins
         tensors = []
-        for spin in ("α", "β"):
-            # Check if first index has fixed spin
-            if tensor.indices[1].spin and tensor.indices[1].spin != spin:
+        for spin in ("a", "b"):
+            # Check for fixed spins
+            if any(index.spin and index.spin != spin for index in self.indices):
                 continue
 
-            # Check if second index has fixed spin
-            if tensor.indices[2].spin and tensor.indices[2].spin != spin:
-                continue
-
-            # Get the UHF tensor part
-            indices = tuple(index.to_spin(spin) for index in tensor.indices[1:])
-            indices = (tensor.indices[0],) + indices
-            tensors.append(tensor._symbol.uhf_symbol[indices])
+            # Create the UHF tensor
+            indices = tuple(index.copy(spin=spin) for index in self.indices)
+            tensors.append(uhf.RDM1(*indices, name=self.name))
 
         return tuple(tensors)
 
 
-ElectronBosonHamiltonian = ElectronBosonHamiltonianSymbol("g", uhf.ElectronBosonHamiltonian)
-ElectronBosonConjHamiltonian = ElectronBosonHamiltonianSymbol(
-    "gc", uhf.ElectronBosonConjHamiltonian
-)
+class Delta(Fock):
+    """Class for the Kronecker delta.
 
-
-class RDM1Symbol(FockSymbol):
-    """Constructor for one-electron reduced density matrix symbols."""
-
-    uhf_symbol = uhf.RDM1
-
-
-RDM1 = RDM1Symbol("d")
-
-
-class DeltaSymbol(FockSymbol):
-    """Constructor for the Kronecker delta symbol."""
-
-    uhf_symbol = uhf.Delta
-
-
-Delta = DeltaSymbol("δ")
-
-
-class ERISymbol(GHFSymbol):
-    """
-    Constructor for antisymmetric two-electron integral symbols.
+    Args:
+        indices: Indices of the tensor.
+        name: Name of the tensor.
+        symmetry: Symmetry of the tensor.
     """
 
-    DESIRED_RANK = 4
-    uhf_symbol = uhf.ERI
+    def __init__(
+        self,
+        *indices: Index,
+        name: Optional[str] = None,
+        symmetry: Optional[Symmetry] = None,
+    ):
+        """Initialise the tensor."""
+        if len(indices) != 2:
+            raise ValueError("Kronecker delta must have two indices.")
+        if name is None:
+            name = "δ"
+        if symmetry is None:
+            symmetry = symmetric_group((0, 1), (1, 0))
+        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
 
-    def __init__(self, name):
-        """Initialise the object."""
-        self.name = name
-        # FIXME this is for real orbitals only
-        self.symmetry = Symmetry(
-            (Permutation((0, 1, 2, 3), +1)),
-            (Permutation((0, 1, 3, 2), -1)),
-            (Permutation((1, 0, 2, 3), -1)),
-            (Permutation((1, 0, 3, 2), +1)),
-            (Permutation((2, 3, 0, 1), +1)),
-            (Permutation((3, 2, 0, 1), -1)),
-            (Permutation((2, 3, 1, 0), -1)),
-            (Permutation((3, 2, 1, 0), +1)),
-        )
+    def as_uhf(self, target_rhf: bool = False) -> tuple[Base, ...]:
+        """Convert the indices without spin to indices with spin.
 
-    @staticmethod
-    def _as_uhf(tensor, target_restricted=False):
+        Indices that start without spin are assumed to be spin orbitals.
+
+        Args:
+            target_rhf: Whether the target is RHF. For some tensors, the intermediate conversion
+                to UHF is different depending on the target.
+
+        Returns:
+            Tuple of tensors resulting from the conversion.
         """
-        Convert a `ERI`-derived tensor object from generalised to
-        unrestricted.
-
-        Note: The result is in the chemist's notation.
-        """
-
         # Loop over spins
-        uhf_tensor = []
-        indices_bare = tensor.indices
+        tensors = []
+        for spin in ("a", "b"):
+            # Check for fixed spins
+            if any(index.spin and index.spin != spin for index in self.indices):
+                continue
+
+            # Create the UHF tensor
+            indices = tuple(index.copy(spin=spin) for index in self.indices)
+            tensors.append(uhf.Delta(*indices, name=self.name))
+
+        return tuple(tensors)
+
+
+class ERI(Tensor):
+    """Class for the electron repulsion integral tensor.
+
+    Args:
+        indices: Indices of the tensor.
+        name: Name of the tensor.
+        symmetry: Symmetry of the tensor.
+    """
+
+    def __init__(
+        self,
+        *indices: Index,
+        name: Optional[str] = None,
+        symmetry: Optional[Symmetry] = None,
+    ):
+        """Initialise the tensor."""
+        if len(indices) != 4:
+            raise ValueError("ERI tensor must have four indices.")
+        if name is None:
+            name = "v"
+        if symmetry is None:
+            symmetry = Symmetry(
+                Permutation((0, 1, 2, 3), +1),
+                Permutation((0, 1, 3, 2), -1),
+                Permutation((1, 0, 2, 3), -1),
+                Permutation((1, 0, 3, 2), +1),
+                Permutation((2, 3, 0, 1), +1),
+                Permutation((3, 2, 0, 1), -1),
+                Permutation((2, 3, 1, 0), -1),
+                Permutation((3, 2, 1, 0), +1),
+            )
+        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
+
+    def as_uhf(self, target_rhf: bool = False) -> tuple[Base, ...]:
+        """Convert the indices without spin to indices with spin.
+
+        Indices that start without spin are assumed to be spin orbitals.
+
+        Args:
+            target_rhf: Whether the target is RHF. For some tensors, the intermediate conversion
+                to UHF is different depending on the target.
+
+        Returns:
+            Tuple of tensors resulting from the conversion.
+        """
+        # Loop over spins
+        tensors: list[Base] = []
         for spins, direct, exchange in [
-            ("αααα", True, True),
-            ("ββββ", True, True),
-            ("αβαβ", True, False),
-            ("βαβα", True, False),
-            ("αββα", False, True),
-            ("βααβ", False, True),
+            ("aaaa", True, True),
+            ("bbbb", True, True),
+            ("abab", True, False),
+            ("baba", True, False),
+            ("abba", False, True),
+            ("baab", False, True),
         ]:
-            # Check if indices have fixed spins
-            if any(index.spin and index.spin != spin for index, spin in zip(indices_bare, spins)):
+            # Check for fixed spins
+            if any(index.spin and index.spin != spin for index, spin in zip(self.indices, spins)):
                 continue
 
-            # Get the indices
-            indices = tuple(index.to_spin(spin) for index, spin in zip(indices_bare, spins))
-
-            # Get the UHF symbol
-            uhf_symbol = tensor._symbol.uhf_symbol
-
+            # Create the UHF tensor
+            indices = tuple(index.copy(spin=spin) for index, spin in zip(self.indices, spins))
             if direct:
-                # Get the direct contribution
-                uhf_tensor.append(uhf_symbol[indices[0], indices[2], indices[1], indices[3]])
-
-            if exchange:
-                # Get the exchange contribution
-                uhf_tensor.append(-uhf_symbol[indices[0], indices[3], indices[1], indices[2]])
-
-        return tuple(uhf_tensor)
-
-
-ERI = ERISymbol("v")
-
-
-class SingleERISymbol(GHFSymbol):
-    """
-    Constructor for non-antisymmetric two-electron integral symbols.
-    """
-
-    DESIRED_RANK = 4
-    uhf_symbol = uhf.ERI
-
-    def __init__(self, name):
-        """Initialise the object."""
-        self.name = name
-        # FIXME this is for real orbitals only
-        self.symmetry = Symmetry(
-            (Permutation((0, 1, 2, 3), +1)),
-            (Permutation((1, 0, 3, 2), +1)),
-            (Permutation((2, 3, 0, 1), +1)),
-            (Permutation((3, 2, 1, 0), +1)),
-        )
-
-    @staticmethod
-    def _as_uhf(tensor, target_restricted=False):
-        """
-        Convert a `ERI`-derived tensor object from generalised to
-        unrestricted.
-
-        Note: The result is in the chemist's notation.
-        """
-
-        # Loop over spins
-        uhf_tensor = []
-        indices_bare = tensor.indices
-        for spins in [
-            ("αααα"),
-            ("ββββ"),
-            ("αβαβ"),
-            ("βαβα"),
-        ]:
-            # Check if indices have fixed spins
-            if any(index.spin and index.spin != spin for index, spin in zip(indices_bare, spins)):
-                continue
-
-            # Get the indices
-            indices = tuple(index.to_spin(spin) for index, spin in zip(indices_bare, spins))
-
-            # Get the UHF symbol
-            uhf_symbol = tensor._symbol.uhf_symbol
-
-            # Get the tensor
-            uhf_tensor.append(uhf_symbol[indices[0], indices[2], indices[1], indices[3]])
-
-        return tuple(uhf_tensor)
-
-
-SingleERI = SingleERISymbol("vs")
-
-
-class RDM2Symbol(GHFSymbol):
-    """Constructor for two-electron reduced density matrix symbols."""
-
-    DESIRED_RANK = 4
-    uhf_symbol = uhf.RDM2
-
-    def __init__(self, name):
-        """Initialise the object."""
-        self.name = name
-        self.symmetry = Symmetry(
-            (Permutation((0, 1, 2, 3), +1)),
-            (Permutation((0, 1, 3, 2), -1)),
-            (Permutation((1, 0, 2, 3), -1)),
-            (Permutation((1, 0, 3, 2), +1)),
-        )
-
-    @staticmethod
-    def _as_uhf(tensor, target_restricted=False):
-        """
-        Convert a `RDM2`-derived tensor object from generalised to
-        unrestricted.
-        """
-
-        # Loop over spins
-        uhf_tensor = []
-        indices_bare = tensor.indices
-        for spins, direct, exchange in [
-            ("αααα", True, True),
-            ("ββββ", True, True),
-            ("αβαβ", True, False),
-            ("βαβα", True, False),
-            ("αββα", False, True),
-            ("βααβ", False, True),
-        ]:
-            # Check if indices have fixed spins
-            if any(index.spin and index.spin != spin for index, spin in zip(indices_bare, spins)):
-                continue
-
-            # Get the indices
-            indices = tuple(index.to_spin(spin) for index, spin in zip(indices_bare, spins))
-
-            # Get the UHF symbol
-            uhf_symbol = tensor._symbol.uhf_symbol
-
-            if direct:
-                # Get the direct contribution
-                uhf_tensor.append(uhf_symbol[indices[0], indices[1], indices[2], indices[3]])
-
-            if exchange:
-                # Get the exchange contribution
-                uhf_tensor.append(-uhf_symbol[indices[0], indices[1], indices[3], indices[2]])
-
-        return tuple(uhf_tensor)
-
-
-RDM2 = RDM2Symbol("Γ")
-
-
-class FermionicAmplitude(GHFSymbol):
-    """Constructor for fermionic amplitude symbols."""
-
-    uhf_symbol = None
-
-    def __init__(self, name, num_covariant, num_contravariant, uhf_symbol=None):
-        """Initialise the object."""
-        self.name = name
-        self.DESIRED_RANK = num_covariant + num_contravariant
-        self._num_covariant = num_covariant
-        self._num_contravariant = num_contravariant
-        perms = []
-        for perm_covariant in antisymmetric_permutations(num_covariant):
-            for perm_contravariant in antisymmetric_permutations(num_contravariant):
-                perms.append(perm_covariant + perm_contravariant)
-        self.symmetry = Symmetry(*perms)
-        self.uhf_symbol = uhf_symbol
-
-    @staticmethod
-    def _as_uhf(tensor, target_restricted=False):
-        """
-        Convert a `Tn`-derived tensor object from generalised to
-        unrestricted.
-        """
-
-        n = (tensor._symbol._num_covariant, tensor._symbol._num_contravariant)
-
-        # Loop over spins
-        uhf_tensor = []
-        for covariant in itertools.product("αβ", repeat=max(n)):
-            for contravariant in set(itertools.permutations(covariant)):
-                if n[0] > n[1]:
-                    spins = covariant[:n[0]] + contravariant[:n[1]]
-                else:
-                    spins = contravariant[:n[1]] + covariant[:n[0]]
-
-                # Check if indices have fixed spins
-                if any(
-                    index.spin and index.spin != spin
-                    for index, spin in zip(tensor.indices, spins)
-                ):
-                    continue
-
-                # Get the UHF tensor part
-                indices = tuple(index.to_spin(spin) for index, spin in zip(tensor.indices, spins))
-                uhf_tensor_part = tensor._symbol.uhf_symbol[indices]
-
-                if not target_restricted:
-                    # Expand antisymmetry where spin allows
-                    for perm in antisymmetric_permutations(max(n)):
-                        if n[0] > n[1]:
-                            full_perm = perm + Permutation(tuple(range(n[1])), 1)
-                        else:
-                            full_perm = Permutation(tuple(range(n[0])), 1) + perm
-                        spins_perm = tuple(spins[i] for i in full_perm.permutation)
-                        if spins == spins_perm:
-                            uhf_tensor.append(uhf_tensor_part.permute_indices(full_perm))
-                else:
-                    uhf_tensor.append(uhf_tensor_part)
-
-        return tuple(uhf_tensor)
-
-
-T1 = FermionicAmplitude("t1", 1, 1, uhf_symbol=uhf.T1)
-T2 = FermionicAmplitude("t2", 2, 2, uhf_symbol=uhf.T2)
-T3 = FermionicAmplitude("t3", 3, 3, uhf_symbol=uhf.T3)
-L1 = FermionicAmplitude("l1", 1, 1, uhf_symbol=uhf.L1)
-L2 = FermionicAmplitude("l2", 2, 2, uhf_symbol=uhf.L2)
-L3 = FermionicAmplitude("l3", 3, 3, uhf_symbol=uhf.L3)
-
-R1ip = FermionicAmplitude("r1", 1, 0, uhf_symbol=uhf.R1ip)
-R2ip = FermionicAmplitude("r2", 2, 1, uhf_symbol=uhf.R2ip)
-R3ip = FermionicAmplitude("r3", 3, 2, uhf_symbol=uhf.R3ip)
-R1ea = FermionicAmplitude("r1", 0, 1, uhf_symbol=uhf.R1ea)
-R2ea = FermionicAmplitude("r2", 1, 2, uhf_symbol=uhf.R2ea)
-R3ea = FermionicAmplitude("r3", 2, 3, uhf_symbol=uhf.R3ea)
-R1ee = FermionicAmplitude("r1", 1, 1, uhf_symbol=uhf.R1ee)
-R2ee = FermionicAmplitude("r2", 2, 2, uhf_symbol=uhf.R2ee)
-R3ee = FermionicAmplitude("r3", 3, 3, uhf_symbol=uhf.R3ee)
-
-
-class BosonicAmplitude(GHFSymbol):
-    """Constructor for bosonic amplitude symbols."""
-
-    uhf_symbol = None
-
-    def __init__(self, name, num_bosons, uhf_symbol=None):
-        """Initialise the object."""
-        self.name = name
-        self.DESIRED_RANK = num_bosons
-        perms = []
-        for perm in antisymmetric_permutations(num_bosons):
-            perms.append(Permutation(perm.permutation, 1))
-        self.symmetry = Symmetry(*perms)
-        self.uhf_symbol = uhf_symbol
-
-    @staticmethod
-    def _as_uhf(tensor, target_restricted=False):
-        """
-        Convert a `Sn`-derived tensor object from generalised to
-        unrestricted.
-        """
-        return (tensor._symbol.uhf_symbol[tensor.indices],)
-
-
-S1 = BosonicAmplitude("s1", 1, uhf_symbol=uhf.S1)
-S2 = BosonicAmplitude("s2", 2, uhf_symbol=uhf.S2)
-LS1 = BosonicAmplitude("ls1", 1, uhf_symbol=uhf.LS1)
-LS2 = BosonicAmplitude("ls2", 2, uhf_symbol=uhf.LS2)
-
-
-class MixedAmplitude(GHFSymbol):
-    """Constructor for mixed amplitude symbols."""
-
-    uhf_symbol = None
-
-    def __init__(self, name, num_bosons, num_covariant, num_contravariant, uhf_symbol=None):
-        """Initialise the object."""
-        self.name = name
-        self.DESIRED_RANK = num_bosons + num_covariant + num_contravariant
-        self.NUM_BOSONS = num_bosons
-        perms = []
-        for perm_boson in antisymmetric_permutations(num_bosons):
-            perm_boson = Permutation(perm_boson.permutation, 1)
-            for perm_covariant in antisymmetric_permutations(num_covariant):
-                for perm_contravariant in antisymmetric_permutations(num_contravariant):
-                    perms.append(perm_boson + perm_covariant + perm_contravariant)
-        self.symmetry = Symmetry(*perms)
-        self.uhf_symbol = uhf_symbol
-
-    @staticmethod
-    def _as_uhf(tensor, target_restricted=False):
-        """
-        Convert a `Unm`-derived tensor object from generalised to
-        unrestricted.
-        """
-
-        # FIXME this is just for U/LU amplitudes
-        nb = tensor._symbol.NUM_BOSONS
-        nf = (tensor.rank - tensor._symbol.NUM_BOSONS) // 2
-
-        # Loop over spins
-        uhf_tensor = []
-        for covariant in itertools.product("αβ", repeat=nf):
-            for contravariant in set(itertools.permutations(covariant)):
-                # Check if indices have fixed spins
-                if any(
-                    index.spin and index.spin != spin
-                    for index, spin in zip(tensor.indices[nb:], covariant + contravariant)
-                ):
-                    continue
-
-                # Get the UHF tensor part
-                spins = tuple(covariant) + tuple(contravariant)
-                indices = tuple(
-                    index.to_spin(spin) for index, spin in zip(tensor.indices[nb:], spins)
+                tensors.append(
+                    uhf.ERI(indices[0], indices[2], indices[1], indices[3], name=self.name)
                 )
-                indices = tensor.indices[:nb] + indices
-                uhf_tensor_part = tensor._symbol.uhf_symbol[indices]
+            if exchange:
+                tensors.append(
+                    -uhf.ERI(indices[0], indices[3], indices[1], indices[2], name=self.name)
+                )
 
-                if not target_restricted:
-                    # Expand antisymmetry where spin allows
-                    for perm in antisymmetric_permutations(nf):
-                        full_perm = Permutation(tuple(range(nb + nf)), 1) + perm
-                        spins_perm = tuple(spins[i] for i in full_perm.permutation)
-                        if spins == spins_perm:
-                            uhf_tensor.append(uhf_tensor_part.permute_indices(full_perm))
+        return tuple(tensors)
+
+
+class ERISingle(Tensor):
+    """Class for the non-antisymmetric electron repulsion integral tensor.
+
+    Args:
+        indices: Indices of the tensor.
+        name: Name of the tensor.
+        symmetry: Symmetry of the tensor.
+    """
+
+    def __init__(
+        self,
+        *indices: Index,
+        name: Optional[str] = None,
+        symmetry: Optional[Symmetry] = None,
+    ):
+        """Initialise the tensor."""
+        if len(indices) != 4:
+            raise ValueError("ERI tensor must have four indices.")
+        if name is None:
+            name = "v"
+        if symmetry is None:
+            symmetry = Symmetry(
+                Permutation((0, 1, 2, 3), +1),
+                Permutation((1, 0, 3, 2), +1),
+                Permutation((2, 3, 0, 1), +1),
+                Permutation((3, 2, 1, 0), +1),
+            )
+        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
+
+    def as_uhf(self, target_rhf: bool = False) -> tuple[Base, ...]:
+        """Convert the indices without spin to indices with spin.
+
+        Indices that start without spin are assumed to be spin orbitals.
+
+        Args:
+            target_rhf: Whether the target is RHF. For some tensors, the intermediate conversion
+                to UHF is different depending on the target.
+
+        Returns:
+            Tuple of tensors resulting from the conversion.
+        """
+        # Loop over spins
+        tensors = []
+        for spins in ["aaaa", "bbbb", "abab", "baba"]:
+            # Check for fixed spins
+            if any(index.spin and index.spin != spin for index, spin in zip(self.indices, spins)):
+                continue
+
+            # Create the UHF tensor
+            indices = tuple(index.copy(spin=spin) for index, spin in zip(self.indices, spins))
+            tensors.append(uhf.ERI(indices[0], indices[2], indices[1], indices[3], name=self.name))
+
+        return tuple(tensors)
+
+
+class RDM2(Tensor):
+    """Class for the two-particle reduced density matrix.
+
+    Args:
+        indices: Indices of the tensor.
+        name: Name of the tensor.
+        symmetry: Symmetry of the tensor.
+    """
+
+    def __init__(
+        self,
+        *indices: Index,
+        name: Optional[str] = None,
+        symmetry: Optional[Symmetry] = None,
+    ):
+        """Initialise the tensor."""
+        if len(indices) != 4:
+            raise ValueError("RDM2 tensor must have four indices.")
+        if name is None:
+            name = "Γ"
+        if symmetry is None:
+            symmetry = Symmetry(
+                Permutation((0, 1, 2, 3), +1),
+                Permutation((0, 1, 3, 2), -1),
+                Permutation((1, 0, 2, 3), -1),
+                Permutation((1, 0, 3, 2), +1),
+            )
+        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
+
+    def as_uhf(self, target_rhf: bool = False) -> tuple[Base, ...]:
+        """Convert the indices without spin to indices with spin.
+
+        Indices that start without spin are assumed to be spin orbitals.
+
+        Args:
+            target_rhf: Whether the target is RHF. For some tensors, the intermediate conversion
+                to UHF is different depending on the target.
+
+        Returns:
+            Tuple of tensors resulting from the conversion.
+        """
+        # Loop over spins
+        tensors: list[Base] = []
+        for spins, direct, exchange in [
+            ("aaaa", True, True),
+            ("bbbb", True, True),
+            ("abab", True, False),
+            ("baba", True, False),
+            ("abba", False, True),
+            ("baab", False, True),
+        ]:
+            # Check for fixed spins
+            if any(index.spin and index.spin != spin for index, spin in zip(self.indices, spins)):
+                continue
+
+            # Create the UHF tensor
+            indices = tuple(index.copy(spin=spin) for index, spin in zip(self.indices, spins))
+            if direct:
+                tensors.append(
+                    uhf.RDM2(indices[0], indices[1], indices[2], indices[3], name=self.name)
+                )
+            if exchange:
+                tensors.append(
+                    -uhf.RDM2(indices[0], indices[1], indices[3], indices[2], name=self.name)
+                )
+
+        return tuple(tensors)
+
+
+def _amplitude_as_uhf(
+    amp: Tensor,
+    type_uhf: type[Tensor],
+    covariant: int,
+    contravariant: int,
+    target_rhf: bool = False,
+) -> tuple[Base, ...]:
+    """Convert a GHF amplitude tensor to a tuple of UHF tensors.
+
+    Args:
+        amp: GHF amplitude tensor.
+        covariant: Number of covariant indices.
+        contravariant: Number of contravariant indices.
+        target_rhf: Whether the target is RHF tensors, which changes the desired
+            antisymmetric format. If `True`, the output is still a tuple of UHF tensors, but these
+            tensors can then be correctly converted to RHF tensors.
+
+    Returns:
+        Tuple of UHF tensors.
+    """
+    # Loop over spins
+    tensors: list[Base] = []
+    for spin_major in itertools.product("ab", repeat=max(covariant, contravariant)):
+        for spin_minor in set(itertools.permutations(spin_major)):
+            # Get the spin ordering
+            if covariant > contravariant:
+                spins = spin_major[:covariant] + spin_minor[:contravariant]
+            else:
+                spins = spin_minor[:contravariant] + spin_major[:covariant]
+
+            # Check for fixed spins
+            if any(index.spin and index.spin != spin for index, spin in zip(amp.indices, spins)):
+                continue
+
+            # Create the UHF tensor
+            indices = tuple(index.copy(spin=spin) for index, spin in zip(amp.indices, spins))
+            tensor_uhf = type_uhf(*indices, name=amp.name)
+
+            # Check for RHF tensors
+            if target_rhf:
+                tensors.append(tensor_uhf)
+                continue
+
+            # Expand antisymmetry
+            for perm_major in fully_antisymmetric_group(max(covariant, contravariant)).permutations:
+                if covariant > contravariant:
+                    perm = perm_major + Permutation(tuple(range(contravariant)), 1)
                 else:
-                    uhf_tensor.append(uhf_tensor_part)
+                    perm = Permutation(tuple(range(covariant)), 1) + perm_major
+                spins_perm = tuple(spins[i] for i in perm.permutation)
+                if spins == spins_perm:
+                    tensors.append(tensor_uhf.permute_indices(perm))
 
-        return tuple(uhf_tensor)
+    return tuple(tensors)
 
 
-U11 = MixedAmplitude("u11", 1, 1, 1, uhf_symbol=uhf.U11)
-U12 = MixedAmplitude("u12", 2, 1, 1, uhf_symbol=uhf.U12)
-LU11 = MixedAmplitude("lu11", 1, 1, 1, uhf_symbol=uhf.LU11)
-LU12 = MixedAmplitude("lu12", 2, 1, 1, uhf_symbol=uhf.LU12)
+class T1(Tensor):
+    """Class for the T1 amplitude tensor.
+
+    Args:
+        indices: Indices of the tensor.
+        name: Name of the tensor.
+        symmetry: Symmetry of the tensor.
+    """
+
+    def __init__(
+        self,
+        *indices: Index,
+        name: Optional[str] = None,
+        symmetry: Optional[Symmetry] = None,
+    ):
+        """Initialise the tensor."""
+        if len(indices) != 2:
+            raise ValueError("T1 amplitude tensor must have two indices.")
+        if name is None:
+            name = "t1"
+        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
+
+    def as_uhf(self, target_rhf: bool = False) -> tuple[Base, ...]:
+        """Convert the indices without spin to indices with spin.
+
+        Indices that start without spin are assumed to be spin orbitals.
+
+        Args:
+            target_rhf: Whether the target is RHF. For some tensors, the intermediate conversion
+                to UHF is different depending on the target.
+
+        Returns:
+            Tuple of tensors resulting from the conversion.
+        """
+        # Loop over spins
+        tensors = []
+        for spin in ("a", "b"):
+            # Check for fixed spins
+            if any(index.spin and index.spin != spin for index in self.indices):
+                continue
+
+            # Create the UHF tensor
+            indices = tuple(index.copy(spin=spin) for index in self.indices)
+            tensors.append(uhf.T1(*indices, name=self.name))
+
+        return tuple(tensors)
+
+
+class T2(Tensor):
+    """Class for the T2 amplitude tensor.
+
+    Args:
+        indices: Indices of the tensor.
+        name: Name of the tensor.
+        symmetry: Symmetry of the tensor.
+    """
+
+    def __init__(
+        self,
+        *indices: Index,
+        name: Optional[str] = None,
+        symmetry: Optional[Symmetry] = None,
+    ):
+        """Initialise the tensor."""
+        if len(indices) != 4:
+            raise ValueError("T2 amplitude tensor must have four indices.")
+        if name is None:
+            name = "t2"
+        if symmetry is None:
+            symmetry = Symmetry(
+                Permutation((0, 1, 2, 3), +1),
+                Permutation((0, 1, 3, 2), -1),
+                Permutation((1, 0, 2, 3), -1),
+                Permutation((1, 0, 3, 2), +1),
+            )
+        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
+
+    def as_uhf(self, target_rhf: bool = False) -> tuple[Base, ...]:
+        """Convert the indices without spin to indices with spin.
+
+        Indices that start without spin are assumed to be spin orbitals.
+
+        Args:
+            target_rhf: Whether the target is RHF. For some tensors, the intermediate conversion
+                to UHF is different depending on the target.
+
+        Returns:
+            Tuple of tensors resulting from the conversion.
+        """
+        # TODO: Hardcode these for efficiency
+        return _amplitude_as_uhf(self, uhf.T2, 2, 2, target_rhf=target_rhf)
+
+
+class T3(Tensor):
+    """Class for the T3 amplitude tensor.
+
+    Args:
+        indices: Indices of the tensor.
+        name: Name of the tensor.
+        symmetry: Symmetry of the tensor.
+    """
+
+    def __init__(
+        self,
+        *indices: Index,
+        name: Optional[str] = None,
+        symmetry: Optional[Symmetry] = None,
+    ):
+        """Initialise the tensor."""
+        if len(indices) != 6:
+            raise ValueError("T3 amplitude tensor must have six indices.")
+        if name is None:
+            name = "t3"
+        if symmetry is None:
+            symmetry = Symmetry(
+                *(
+                    perm_bra + perm_ket
+                    for perm_ket in fully_antisymmetric_group(3).permutations
+                    for perm_bra in fully_antisymmetric_group(3).permutations
+                )
+            )
+        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
+
+    def as_uhf(self, target_rhf: bool = False) -> tuple[Base, ...]:
+        """Convert the indices without spin to indices with spin.
+
+        Indices that start without spin are assumed to be spin orbitals.
+
+        Args:
+            target_rhf: Whether the target is RHF. For some tensors, the intermediate conversion
+                to UHF is different depending on the target.
+
+        Returns:
+            Tuple of tensors resulting from the conversion.
+        """
+        return _amplitude_as_uhf(self, uhf.T3, 3, 3, target_rhf=target_rhf)
+
+
+class L1(T1):
+    """Class for the L1 amplitude tensor.
+
+    Args:
+        indices: Indices of the tensor.
+        name: Name of the tensor.
+        symmetry: Symmetry of the tensor.
+    """
+
+    def __init__(
+        self,
+        *indices: Index,
+        name: Optional[str] = None,
+        symmetry: Optional[Symmetry] = None,
+    ):
+        """Initialise the tensor."""
+        if len(indices) != 2:
+            raise ValueError("L1 amplitude tensor must have two indices.")
+        if name is None:
+            name = "l1"
+        T1.__init__(self, *indices, name=name, symmetry=symmetry)
+
+    def as_uhf(self, target_rhf: bool = False) -> tuple[Base, ...]:
+        """Convert the indices without spin to indices with spin.
+
+        Indices that start without spin are assumed to be spin orbitals.
+
+        Args:
+            target_rhf: Whether the target is RHF. For some tensors, the intermediate conversion
+                to UHF is different depending on the target.
+
+        Returns:
+            Tuple of tensors resulting from the conversion.
+        """
+        # Loop over spins
+        tensors = []
+        for spin in ("a", "b"):
+            # Check for fixed spins
+            if any(index.spin and index.spin != spin for index in self.indices):
+                continue
+
+            # Create the UHF tensor
+            indices = tuple(index.copy(spin=spin) for index in self.indices)
+            tensors.append(uhf.L1(*indices))
+
+        return tuple(tensors)
+
+
+class L2(T2):
+    """Class for the L2 amplitude tensor.
+
+    Args:
+        indices: Indices of the tensor.
+        name: Name of the tensor.
+        symmetry: Symmetry of the tensor.
+    """
+
+    def __init__(
+        self,
+        *indices: Index,
+        name: Optional[str] = None,
+        symmetry: Optional[Symmetry] = None,
+    ):
+        """Initialise the tensor."""
+        if len(indices) != 4:
+            raise ValueError("L2 amplitude tensor must have four indices.")
+        if name is None:
+            name = "l2"
+        T2.__init__(self, *indices, name=name, symmetry=symmetry)
+
+    def as_uhf(self, target_rhf: bool = False) -> tuple[Base, ...]:
+        """Convert the indices without spin to indices with spin.
+
+        Indices that start without spin are assumed to be spin orbitals.
+
+        Args:
+            target_rhf: Whether the target is RHF. For some tensors, the intermediate conversion
+                to UHF is different depending on the target.
+
+        Returns:
+            Tuple of tensors resulting from the conversion.
+        """
+        # TODO: Hardcode these for efficiency
+        return _amplitude_as_uhf(self, uhf.L2, 2, 2, target_rhf=target_rhf)
+
+
+class L3(T3):
+    """Class for the L3 amplitude tensor.
+
+    Args:
+        indices: Indices of the tensor.
+        name: Name of the tensor.
+        symmetry: Symmetry of the tensor.
+    """
+
+    def __init__(
+        self,
+        *indices: Index,
+        name: Optional[str] = None,
+        symmetry: Optional[Symmetry] = None,
+    ):
+        """Initialise the tensor."""
+        if len(indices) != 6:
+            raise ValueError("L3 amplitude tensor must have six indices.")
+        if name is None:
+            name = "l3"
+        T3.__init__(self, *indices, name=name, symmetry=symmetry)
+
+    def as_uhf(self, target_rhf: bool = False) -> tuple[Base, ...]:
+        """Convert the indices without spin to indices with spin.
+
+        Indices that start without spin are assumed to be spin orbitals.
+
+        Args:
+            target_rhf: Whether the target is RHF. For some tensors, the intermediate conversion
+                to UHF is different depending on the target.
+
+        Returns:
+            Tuple of tensors resulting from the conversion.
+        """
+        # TODO: Hardcode these for efficiency
+        return _amplitude_as_uhf(self, uhf.L3, 3, 3, target_rhf=target_rhf)
+
+
+class R0(Tensor):
+    """Class for the R0 amplitude tensor.
+
+    Args:
+        indices: Indices of the tensor.
+        name: Name of the tensor.
+        symmetry: Symmetry of the tensor.
+    """
+
+    def __init__(
+        self,
+        *indices: Index,
+        name: Optional[str] = None,
+        symmetry: Optional[Symmetry] = None,
+    ):
+        """Initialise the tensor."""
+        if len(indices) != 0:
+            raise ValueError("R0 amplitude tensor must have zero indices.")
+        if name is None:
+            name = "r0"
+        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
+
+    def as_uhf(self, target_rhf: bool = False) -> tuple[Base, ...]:
+        """Convert the indices without spin to indices with spin.
+
+        Returns:
+            Tuple of tensors resulting from the conversion.
+        """
+        return (uhf.R0(name=self.name),)
+
+
+class R1ip(Tensor):
+    """Class for the R1ip amplitude tensor.
+
+    Args:
+        indices: Indices of the tensor.
+        name: Name of the tensor.
+        symmetry: Symmetry of the tensor.
+    """
+
+    def __init__(
+        self,
+        *indices: Index,
+        name: Optional[str] = None,
+        symmetry: Optional[Symmetry] = None,
+    ):
+        """Initialise the tensor."""
+        if len(indices) != 1:
+            raise ValueError("R1ip amplitude tensor must have two indices.")
+        if name is None:
+            name = "r1"
+        if symmetry is None:
+            symmetry = symmetric_group((0,))
+        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
+
+    def as_uhf(self, target_rhf: bool = False) -> tuple[Base, ...]:
+        """Convert the indices without spin to indices with spin.
+
+        Indices that start without spin are assumed to be spin orbitals.
+
+        Args:
+            target_rhf: Whether the target is RHF. For some tensors, the intermediate conversion
+                to UHF is different depending on the target.
+
+        Returns:
+            Tuple of tensors resulting from the conversion.
+        """
+        # Loop over spins
+        tensors = []
+        for spin in ("a", "b"):
+            # Check for fixed spins
+            if any(index.spin and index.spin != spin for index in self.indices):
+                continue
+
+            # Create the UHF tensor
+            indices = tuple(index.copy(spin=spin) for index in self.indices)
+            tensors.append(uhf.R1ip(*indices, name=self.name))
+
+        return tuple(tensors)
+
+
+class R2ip(Tensor):
+    """Class for the R2ip amplitude tensor.
+
+    Args:
+        indices: Indices of the tensor.
+        name: Name of the tensor.
+        symmetry: Symmetry of the tensor.
+    """
+
+    def __init__(
+        self,
+        *indices: Index,
+        name: Optional[str] = None,
+        symmetry: Optional[Symmetry] = None,
+    ):
+        """Initialise the tensor."""
+        if len(indices) != 3:
+            raise ValueError("R2ip amplitude tensor must have two indices.")
+        if name is None:
+            name = "r2"
+        if symmetry is None:
+            symmetry = Symmetry(
+                *(
+                    perm_bra + perm_ket
+                    for perm_ket in fully_antisymmetric_group(1).permutations
+                    for perm_bra in fully_antisymmetric_group(2).permutations
+                )
+            )
+        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
+
+    def as_uhf(self, target_rhf: bool = False) -> tuple[Base, ...]:
+        """Convert the indices without spin to indices with spin.
+
+        Indices that start without spin are assumed to be spin orbitals.
+
+        Args:
+            target_rhf: Whether the target is RHF. For some tensors, the intermediate conversion
+                to UHF is different depending on the target.
+
+        Returns:
+            Tuple of tensors resulting from the conversion.
+        """
+        return _amplitude_as_uhf(self, uhf.R2ip, 2, 1, target_rhf=target_rhf)
+
+
+class R3ip(Tensor):
+    """Class for the R3ip amplitude tensor.
+
+    Args:
+        indices: Indices of the tensor.
+        name: Name of the tensor.
+        symmetry: Symmetry of the tensor.
+    """
+
+    def __init__(
+        self,
+        *indices: Index,
+        name: Optional[str] = None,
+        symmetry: Optional[Symmetry] = None,
+    ):
+        """Initialise the tensor."""
+        if len(indices) != 5:
+            raise ValueError("R3ip amplitude tensor must have two indices.")
+        if name is None:
+            name = "r3"
+        if symmetry is None:
+            symmetry = Symmetry(
+                *(
+                    perm_bra + perm_ket
+                    for perm_ket in fully_antisymmetric_group(2).permutations
+                    for perm_bra in fully_antisymmetric_group(3).permutations
+                )
+            )
+        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
+
+    def as_uhf(self, target_rhf: bool = False) -> tuple[Base, ...]:
+        """Convert the indices without spin to indices with spin.
+
+        Indices that start without spin are assumed to be spin orbitals.
+
+        Args:
+            target_rhf: Whether the target is RHF. For some tensors, the intermediate conversion
+                to UHF is different depending on the target.
+
+        Returns:
+            Tuple of tensors resulting from the conversion.
+        """
+        return _amplitude_as_uhf(self, uhf.R3ip, 3, 2, target_rhf=target_rhf)
+
+
+class R1ea(Tensor):
+    """Class for the R1ea amplitude tensor.
+
+    Args:
+        indices: Indices of the tensor.
+        name: Name of the tensor.
+        symmetry: Symmetry of the tensor.
+    """
+
+    def __init__(
+        self,
+        *indices: Index,
+        name: Optional[str] = None,
+        symmetry: Optional[Symmetry] = None,
+    ):
+        """Initialise the tensor."""
+        if len(indices) != 1:
+            raise ValueError("R1ea amplitude tensor must have two indices.")
+        if name is None:
+            name = "r1"
+        if symmetry is None:
+            symmetry = symmetric_group((0,))
+        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
+
+    def as_uhf(self, target_rhf: bool = False) -> tuple[Base, ...]:
+        """Convert the indices without spin to indices with spin.
+
+        Indices that start without spin are assumed to be spin orbitals.
+
+        Args:
+            target_rhf: Whether the target is RHF. For some tensors, the intermediate conversion
+                to UHF is different depending on the target.
+
+        Returns:
+            Tuple of tensors resulting from the conversion.
+        """
+        # Loop over spins
+        tensors = []
+        for spin in ("a", "b"):
+            # Check for fixed spins
+            if any(index.spin and index.spin != spin for index in self.indices):
+                continue
+
+            # Create the UHF tensor
+            indices = tuple(index.copy(spin=spin) for index in self.indices)
+            tensors.append(uhf.R1ea(*indices, name=self.name))
+
+        return tuple(tensors)
+
+
+class R2ea(Tensor):
+    """Class for the R2ea amplitude tensor.
+
+    Args:
+        indices: Indices of the tensor.
+        name: Name of the tensor.
+        symmetry: Symmetry of the tensor.
+    """
+
+    def __init__(
+        self,
+        *indices: Index,
+        name: Optional[str] = None,
+        symmetry: Optional[Symmetry] = None,
+    ):
+        """Initialise the tensor."""
+        if len(indices) != 3:
+            raise ValueError("R2ea amplitude tensor must have two indices.")
+        if name is None:
+            name = "r2"
+        if symmetry is None:
+            symmetry = Symmetry(
+                *(
+                    perm_bra + perm_ket
+                    for perm_ket in fully_antisymmetric_group(2).permutations
+                    for perm_bra in fully_antisymmetric_group(1).permutations
+                )
+            )
+        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
+
+    def as_uhf(self, target_rhf: bool = False) -> tuple[Base, ...]:
+        """Convert the indices without spin to indices with spin.
+
+        Returns:
+            Tuple of tensors resulting from the conversion.
+        """
+        return _amplitude_as_uhf(self, uhf.R2ea, 1, 2, target_rhf=target_rhf)
+
+
+class R3ea(Tensor):
+    """Class for the R3ea amplitude tensor.
+
+    Args:
+        indices: Indices of the tensor.
+        name: Name of the tensor.
+        symmetry: Symmetry of the tensor.
+    """
+
+    def __init__(
+        self,
+        *indices: Index,
+        name: Optional[str] = None,
+        symmetry: Optional[Symmetry] = None,
+    ):
+        """Initialise the tensor."""
+        if len(indices) != 5:
+            raise ValueError("R3ea amplitude tensor must have two indices.")
+        if name is None:
+            name = "r3"
+        if symmetry is None:
+            symmetry = Symmetry(
+                *(
+                    perm_bra + perm_ket
+                    for perm_ket in fully_antisymmetric_group(3).permutations
+                    for perm_bra in fully_antisymmetric_group(2).permutations
+                )
+            )
+        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
+
+    def as_uhf(self, target_rhf: bool = False) -> tuple[Base, ...]:
+        """Convert the indices without spin to indices with spin.
+
+        Indices that start without spin are assumed to be spin orbitals.
+
+        Args:
+            target_rhf: Whether the target is RHF. For some tensors, the intermediate conversion
+                to UHF is different depending on the target.
+
+        Returns:
+            Tuple of tensors resulting from the conversion.
+        """
+        return _amplitude_as_uhf(self, uhf.R3ea, 2, 3, target_rhf=target_rhf)
+
+
+class R1ee(T1):
+    """Class for the R1ee amplitude tensor.
+
+    Args:
+        indices: Indices of the tensor.
+        name: Name of the tensor.
+        symmetry: Symmetry of the tensor.
+    """
+
+    def __init__(
+        self,
+        *indices: Index,
+        name: Optional[str] = None,
+        symmetry: Optional[Symmetry] = None,
+    ):
+        """Initialise the tensor."""
+        if len(indices) != 2:
+            raise ValueError("R1ee amplitude tensor must have two indices.")
+        if name is None:
+            name = "r1"
+        T1.__init__(self, *indices, name=name, symmetry=symmetry)
+
+    def as_uhf(self, target_rhf: bool = False) -> tuple[Base, ...]:
+        """Convert the indices without spin to indices with spin.
+
+        Indices that start without spin are assumed to be spin orbitals.
+
+        Args:
+            target_rhf: Whether the target is RHF. For some tensors, the intermediate conversion
+                to UHF is different depending on the target.
+
+        Returns:
+            Tuple of tensors resulting from the conversion.
+        """
+        return _amplitude_as_uhf(self, uhf.R1ee, 1, 1, target_rhf=target_rhf)
+
+
+class R2ee(T2):
+    """Class for the R2ee amplitude tensor.
+
+    Args:
+        indices: Indices of the tensor.
+        name: Name of the tensor.
+        symmetry: Symmetry of the tensor.
+    """
+
+    def __init__(
+        self,
+        *indices: Index,
+        name: Optional[str] = None,
+        symmetry: Optional[Symmetry] = None,
+    ):
+        """Initialise the tensor."""
+        if len(indices) != 4:
+            raise ValueError("R2ee amplitude tensor must have four indices.")
+        if name is None:
+            name = "r2"
+        T2.__init__(self, *indices, name=name, symmetry=symmetry)
+
+    def as_uhf(self, target_rhf: bool = False) -> tuple[Base, ...]:
+        """Convert the indices without spin to indices with spin.
+
+        Indices that start without spin are assumed to be spin orbitals.
+
+        Args:
+            target_rhf: Whether the target is RHF. For some tensors, the intermediate conversion
+                to UHF is different depending on the target.
+
+        Returns:
+            Tuple of tensors resulting from the conversion.
+        """
+        return _amplitude_as_uhf(self, uhf.R2ee, 2, 2, target_rhf=target_rhf)
+
+
+class R3ee(T3):
+    """Class for the R3ee amplitude tensor.
+
+    Args:
+        indices: Indices of the tensor.
+        name: Name of the tensor.
+        symmetry: Symmetry of the tensor.
+    """
+
+    def __init__(
+        self,
+        *indices: Index,
+        name: Optional[str] = None,
+        symmetry: Optional[Symmetry] = None,
+    ):
+        """Initialise the tensor."""
+        if len(indices) != 6:
+            raise ValueError("R3ee amplitude tensor must have six indices.")
+        if name is None:
+            name = "r3"
+        T3.__init__(self, *indices, name=name, symmetry=symmetry)
+
+    def as_uhf(self, target_rhf: bool = False) -> tuple[Base, ...]:
+        """Convert the indices without spin to indices with spin.
+
+        Indices that start without spin are assumed to be spin orbitals.
+
+        Args:
+            target_rhf: Whether the target is RHF. For some tensors, the intermediate conversion
+                to UHF is different depending on the target.
+
+        Returns:
+            Tuple of tensors resulting from the conversion.
+        """
+        return _amplitude_as_uhf(self, uhf.R3ee, 3, 3, target_rhf=target_rhf)

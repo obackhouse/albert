@@ -1,2 +1,1 @@
-"""Quantum chemistry tools.
-"""
+"""Functionality specific to quantum chemistry applications."""

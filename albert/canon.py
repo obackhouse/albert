@@ -1,88 +1,82 @@
-"""Canonicalisation of terms and expressions.
-"""
+"""Canonicalisation of expressions."""
 
-from albert.algebra import Add
-from albert.qc.index import Index
+from __future__ import annotations
+
+from collections import defaultdict
+from typing import TYPE_CHECKING
+
+from albert.base import IMul
+from albert.index import Index
+
+if TYPE_CHECKING:
+    from typing import Optional
+
+    from albert.base import Base
 
 
-def canonicalise_indices(expr, *index_groups):
+def canonicalise_indices(expr: Base, extra_indices: Optional[list[Index]] = None) -> Base:
     """Canonicalise the indices of a tensor expression.
 
-    Parameters
-    ----------
-    expr : Algebraic
-        The tensor expression to canonicalise.
-    index_groups : tuple of tuple of str
-        Groups of equivalent indices, used to replace indices throughout
-        the expression in a canonical fashion.
+    Args:
+        expr: The tensor expression to canonicalise.
 
-    Returns
-    -------
-    expr : Algebraic
+    Returns:
         The canonicalised tensor expression.
     """
+    from albert.tensor import Tensor  # FIXME
 
-    # Expand parentheses
-    expr = expr.expand()
-
-    # Canonicalise the expression
-    expr = expr.canonicalise()
-
-    # Get the index lists and sets
-    index_sets = [set(indices) for indices in index_groups]
-    index_lists = [sorted(indices) for indices in index_groups]
-
-    # Get the arguments as a list of Mul objects
-    args = list(expr.args) if isinstance(expr, Add) else [expr]
-
-    # Spin-aware helper functions
-    def _unpack_index(index):
-        if isinstance(index, Index):
-            return index.name, index.spin, index.space
-        return index, None, None
-
-    def _set_index(index_map, index, new_index, spin, space):
-        if not isinstance(index, Index):
-            index_map[index] = new_index
-        else:
-            index_map[index] = Index(new_index, spin=spin, space=space)
-            index_map[index.spin_flip()] = index_map[index].spin_flip()
+    # Get the indices, grouped by spin and space
+    index_groups = defaultdict(set)
+    for leaf in expr.search_leaves(Tensor):  # type: ignore[type-abstract]
+        for index in leaf.external_indices:
+            index_groups[(index.spin, index.space)].add(index)
+            if index.spin in ("a", "b"):
+                index_groups[(index.spin_flip().spin, index.space)].add(index.spin_flip())
+    for index in extra_indices or []:
+        index_groups[(index.spin, index.space)].add(index)
+        if index.spin in ("a", "b"):
+            index_groups[(index.spin_flip().spin, index.space)].add(index.spin_flip())
+    index_lists = {key: sorted(indices) for key, indices in index_groups.items()}
 
     # Find the canonical external indices globally
     index_map = {}
-    for external_index in expr.external_indices:
-        index, spin, space = _unpack_index(external_index)
+    for index in expr.external_indices:
+        index_map[index] = index_lists[(index.spin, index.space)].pop(0)
 
-        # Find the group and set the canonical index
-        for indices, index_set in zip(index_lists, index_sets):
-            if index in index_set:
-                new_index = indices.pop(0)
-                _set_index(index_map, external_index, new_index, spin, space)
-                break
-        else:
-            raise ValueError(f"Index {index} not found in any index group")
+        # If the spin-flipped index exists, remove it to avoid repeat indices with the same name
+        if index.spin in ("a", "b"):
+            index_flip = index_map[index].spin_flip()
+            if index_flip in index_lists.get((index_flip.spin, index_flip.space), []):
+                index_lists[(index_flip.spin, index_flip.space)].remove(index_flip)
 
-    # Find the canonical dummy indices for each term in the addition
-    for i, arg in enumerate(args):
-        index_map_i = index_map.copy()
-        index_lists_i = [indices.copy() for indices in index_lists]
+    def _canonicalise_node(node: IMul) -> Base:
+        """Canonicalise a node."""
+        index_map_node = index_map.copy()
+        index_lists_node = {key: indices.copy() for key, indices in index_lists.items()}
 
-        for dummy_index in arg.dummy_indices:
-            index, spin, space = _unpack_index(dummy_index)
-
-            # Find the group and set the canonical index
-            for indices, index_set in zip(index_lists_i, index_sets):
-                if index in index_set:
-                    new_index = indices.pop(0)
-                    _set_index(index_map_i, dummy_index, new_index, spin, space)
-                    break
+        # Find the canonical internal indices for each term
+        for index in node.internal_indices:
+            if len(index_lists_node[(index.spin, index.space)]):
+                index_map_node[index] = index_lists_node[(index.spin, index.space)].pop(0)
             else:
-                raise ValueError(f"Index {index} not found in any index group")
+                # Somehow we ran out of indices? Didn't think this was possible, but we can
+                # just make a new one
+                index_map_node[index] = Index(
+                    f"idx{len(index_map_node)}",
+                    space=index.space,
+                    spin=index.spin,
+                )
 
-        # Replace the indices in the term
-        args[i] = arg.map_indices(index_map_i)
+            # If the spin-flipped index exists, remove it to avoid repeat indices with the same name
+            index_flip = index_map_node[index].spin_flip()
+            if index_flip in index_lists_node.get((index_flip.spin, index_flip.space), []):
+                index_lists_node[(index_flip.spin, index_flip.space)].remove(index_flip)
 
-    # Build the canonicalised expression
-    expr = Add(*args)
+        # Canonicalise the node
+        return node.map_indices(index_map_node)
+
+    # Find the canonical internal indices for each term
+    expr = expr.expand()
+    expr = expr.apply(_canonicalise_node, IMul)
 
     return expr

@@ -1,99 +1,122 @@
-"""Interface to `pdaggerq`.
-"""
+"""Interface to `pdaggerq`."""
+
+from __future__ import annotations
 
 import re
 from numbers import Number
+from typing import TYPE_CHECKING
 
-from albert.algebra import Add, Mul
-from albert.qc.ghf import ERI, L1, L2, L3, T1, T2, T3, L0, R0, R1ip, R2ip, R3ip, R1ea, R2ea, R3ea, R1ee, R2ee, R3ee, Delta, Fock, SingleERI
-from albert.qc.index import Index
+from albert.algebra import _compose_mul
+from albert.index import Index
+from albert.qc import ghf
+from albert.scalar import Scalar
+from albert.symmetry import symmetric_group
+from albert.tensor import Tensor
+
+if TYPE_CHECKING:
+    from typing import Any, Literal, Optional
+
+    from albert.base import Base
+    from albert.symmetry import Symmetry
 
 
-def import_from_pdaggerq(terms, index_spins=None, index_spaces=None, l_is_lambda=True):
-    """Import terms from `pdaggerq` output into the internal format.
+class PermutationOperator(Tensor):
+    """Class for a permutation operator.
 
-    Parameters
-    ----------
-    terms : list of list of str
-        Terms from `pdaggerq` output, corresponding to a single tensor
-        output.
-    index_spins : dict, optional
-        Dictionary mapping indices to spins. If not provided, the
-        indices are not constrained to a single spin. Default value is
-        `None`.
-    index_spaces : dict, optional
-        Dictionary mapping indices to spaces. If not provided, the
-        indices are assigned to the spaces based on their names. Default
-        value is `None`.
-    l_is_lambda : bool, optional
-        If `True`, `l` is interpreted as the lambda operator. If `False`,
-        `l` is interpreted as the left-hand EOM vector. Default value is
-        `True`.
-
-    Returns
-    -------
-    expr : Algebraic
-        Expression in the internal format.
+    Args:
+        indices: Indices of the tensor.
+        name: Name of the tensor.
+        symmetry: Symmetry of the tensor.
     """
 
-    # Get the index spins and spaces
+    def __init__(
+        self,
+        *indices: Index,
+        name: Optional[str] = None,
+        symmetry: Optional[Symmetry] = None,
+    ):
+        """Initialise the tensor."""
+        if len(indices) != 2:
+            raise ValueError("Permutation operator must have two indices.")
+        if name is None:
+            name = "P"
+        if symmetry is None:
+            symmetry = symmetric_group((0, 1), (1, 0))
+        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
+
+
+def import_from_pdaggerq(
+    terms: list[list[str]],
+    index_spins: Optional[dict[str, str]] = None,
+    index_spaces: Optional[dict[str, str]] = None,
+    l_is_lambda: bool = True,
+) -> Base:
+    """Import an expression from `pdaggerq`.
+
+    Tensors in the return expression are `GHF` tensors.
+
+    Args:
+        terms: The terms of the expression. Should be the output of the `fully_contracted_strings`
+            method in `pdaggerq`.
+        index_spins: The index spins.
+        index_spaces: The index spaces.
+        l_is_lambda: Whether `l` corresponds to the Lambda operator, rather than the left-hand EOM
+            operator.
+
+    Returns:
+        The imported expression.
+    """
     if index_spins is None:
         index_spins = {}
     if index_spaces is None:
         index_spaces = {}
 
-    contractions = []
+    # Build the expression
+    expr: Base = Scalar(0.0)
     for term in terms:
-        # Convert symbols
+        # Convert the symbols
         symbols = [
-            _convert_symbol(symbol, index_spins=index_spins, index_spaces=index_spaces, l_is_lambda=l_is_lambda)
+            _convert_symbol(
+                symbol,
+                index_spins=index_spins,
+                index_spaces=index_spaces,
+                l_is_lambda=l_is_lambda,
+            )
             for symbol in term
         ]
 
         # Remove the permutation operators
-        perm_operators = [symbol for symbol in symbols if isinstance(symbol, PermutationOperator)]
-        symbols = [symbol for symbol in symbols if not isinstance(symbol, PermutationOperator)]
-        part = Mul(*symbols)
-        for perm_operator in perm_operators:
+        perm_ops = filter(lambda symbol: isinstance(symbol, PermutationOperator), symbols)
+        symbols = filter(lambda symbol: not isinstance(symbol, PermutationOperator), symbols)
+        part = _compose_mul(*symbols)
+        for perm_op in perm_ops:
             index_map = {
-                perm_operator.indices[0]: perm_operator.indices[1],
-                perm_operator.indices[1]: perm_operator.indices[0],
+                perm_op.external_indices[0]: perm_op.external_indices[1],
+                perm_op.external_indices[1]: perm_op.external_indices[0],
             }
             part = part - part.map_indices(index_map)
 
-        # Add to the list of contractions
-        contractions.append(part)
-
-    # Add all contractions together
-    expr = Add(*contractions)
+        # Add the term to the expression
+        expr += part
 
     return expr
 
 
-def _to_space(index, which="full"):
-    """Convert an index to a space.
+def _guess_space(index: str, which: Literal["full", "active", "inactive"] = "full") -> str:
+    """Guess the space of an index.
 
-    Parameters
-    ----------
-    index : str
-        Index to convert.
-    which : str, optional
-        Which space to convert to. Default value is `full`.
-
-    Returns
-    -------
-    out : str
-        Space.
+    Args:
+        index: The index.
+        which: The type of the space.
     """
-
-    if index in "ijklmnot" or index.startswith("o"):
+    if index in ("i", "j", "k", "l", "m", "n", "o", "t") or index.startswith("o"):
         if which == "full":
             return "o"
         elif which == "active":
             return "O"
         elif which == "inactive":
             return "i"
-    elif index in "abcdefgh" or index.startswith("v"):
+    elif index in ("a", "b", "c", "d", "e", "f", "g", "h") or index.startswith("v"):
         if which == "full":
             return "v"
         elif which == "active":
@@ -101,246 +124,301 @@ def _to_space(index, which="full"):
         elif which == "inactive":
             return "a"
 
-    raise ValueError(f"Unknown index {index}")
+    raise ValueError(f"Could not guess space of index {index}.")
 
 
-class PermutationOperatorSymbol:
-    """Permutation operator symbol."""
-
-    def __getitem__(self, indices):
-        """Create a permutation operator."""
-        return PermutationOperator(*indices)
-
-
-class PermutationOperator:
-    """Permutation operator."""
-
-    def __init__(self, i, j):
-        self.indices = (i, j)
-
-
-P = PermutationOperatorSymbol()
-
-
-def _is_number(symbol):
+def _is_number(obj: Any) -> bool:
     """Check if something is a number.
 
-    Parameters
-    ----------
-    symbol : str
-        Symbol to check.
+    Args:
+        obj: The object to check.
 
-    Returns
-    -------
-    out : bool
-        True if `symbol` is a number, False otherwise.
+    Returns:
+        Whether the object is a number.
     """
-
-    if isinstance(symbol, Number):
+    if isinstance(obj, Number):
         return True
     else:
         try:
-            float(symbol)
+            float(obj)
             return True
         except ValueError:
             return False
 
 
-def _convert_symbol(symbol, index_spins=None, index_spaces=None, l_is_lambda=True):
-    """Convert a `pdaggerq` symbol to the internal format.
+def _convert_symbol(
+    symbol: str,
+    index_spins: Optional[dict[str, str]] = None,
+    index_spaces: Optional[dict[str, str]] = None,
+    l_is_lambda: bool = True,
+) -> Base:
+    """Convert a symbol to a subclass of `Base`.
 
-    Parameters
-    ----------
-    symbol : str
-        Symbol to convert.
-    index_spins : dict, optional
-        Dictionary mapping indices to spins. If not provided, the
-        indices are not constrained to a single spin. Default value is
-        `None`.
-    index_spaces : dict, optional
-        Dictionary mapping indices to spaces. If not provided, the
-        indices are assigned to the spaces based on their names. Default
-        value is `None`.
-    l_is_lambda : bool, optional
-        If `True`, `l` is interpreted as the lambda operator. If `False`,
-        `l` is interpreted as the left-hand EOM vector. Default value is
-        `True`.
+    Args:
+        symbol: The symbol.
+        index_spins: The index spins.
+        index_spaces: The index spaces.
+        l_is_lambda: Whether `l` corresponds to the Lambda operator, rather than the left-hand EOM
+            operator.
 
-    Returns
-    -------
-    out : Tensor or Number
-        Converted symbol.
+    Returns:
+        The converted symbol.
     """
+    if index_spins is None:
+        index_spins = {}
+    if index_spaces is None:
+        index_spaces = {}
 
     if re.match(r".*_[0-9]+$", symbol):
-        # Symbol has spaces
+        # Symbol has spaces attached, separate them
         symbol, spaces = symbol.rsplit("_", 1)
 
     if _is_number(symbol):
-        # factor
-        return float(symbol)
+        # It's the factor
+        return Scalar(float(symbol))
 
-    elif symbol in ("r0", "l0"):
+    tensor_symbol: type[Tensor]
+    index_strs: tuple[str, ...]
+    if symbol in ("r0", "l0"):
         # r0 or l0
-        indices = tuple()
-        tensor_symbol = R0 if symbol == "r0" else L0
-
+        index_strs = ()
+        tensor_symbol = ghf.R0
     elif re.match(r"f\((?i:[a-z]),(?i:[a-z])\)", symbol):
         # f(i,j)
-        indices = tuple(symbol[2:-1].replace("t", "p").split(","))
-        tensor_symbol = Fock
-
+        index_strs = tuple(symbol[2:-1].split(","))
+        tensor_symbol = ghf.Fock
     elif re.match(r"<(?i:[a-z]),(?i:[a-z])\|\|(?i:[a-z]),(?i:[a-z])>", symbol):
         # <i,j||k,l>
-        indices = tuple(symbol[1:-1].replace("t", "p").replace("||", ",").split(","))
-        tensor_symbol = ERI
-
+        index_strs = tuple(symbol[1:-1].replace("||", ",").split(","))
+        tensor_symbol = ghf.ERI
     elif re.match(r"<(?i:[a-z]),(?i:[a-z])\|(?i:[a-z]),(?i:[a-z])>", symbol):
         # <i,j|k,l>
-        indices = tuple(symbol[1:-1].replace("t", "p").replace("|", ",").split(","))
-        tensor_symbol = SingleERI
-
+        index_strs = tuple(symbol[1:-1].replace("|", ",").split(","))
+        tensor_symbol = ghf.ERISingle
     elif re.match(r"t1\((?i:[a-z]),(?i:[a-z])\)", symbol):
         # t1(i,j)
-        indices = tuple(symbol[3:-1].replace("t", "p").split(","))
-        indices = (indices[1], indices[0])
-        tensor_symbol = T1
-
+        index_strs = tuple(symbol[3:-1].split(","))
+        index_strs = (index_strs[1], index_strs[0])
+        tensor_symbol = ghf.T1
     elif re.match(r"t2\((?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z])\)", symbol):
         # t2(i,j,k,l)
-        indices = tuple(symbol[3:-1].replace("t", "p").split(","))
-        indices = (indices[2], indices[3], indices[0], indices[1])
-        tensor_symbol = T2
-
-    elif re.match(r"t3\((?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z])\)", symbol):
+        index_strs = tuple(symbol[3:-1].split(","))
+        index_strs = (index_strs[2], index_strs[3], index_strs[0], index_strs[1])
+        tensor_symbol = ghf.T2
+    elif re.match(
+        r"t3\((?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z])\)", symbol
+    ):
         # t3(i,j,k,l,m,n)
-        indices = tuple(symbol[3:-1].replace("t", "p").split(","))
-        indices = (indices[3], indices[4], indices[5], indices[0], indices[1], indices[2])
-        tensor_symbol = T3
-
+        index_strs = tuple(symbol[3:-1].split(","))
+        index_strs = (
+            index_strs[3],
+            index_strs[4],
+            index_strs[5],
+            index_strs[0],
+            index_strs[1],
+            index_strs[2],
+        )
+        tensor_symbol = ghf.T3
     elif re.match(r"l1\((?i:[a-z]),(?i:[a-z])\)", symbol) and l_is_lambda:
         # l1(i,j)
-        indices = tuple(symbol[3:-1].replace("t", "p").split(","))
-        indices = (indices[1], indices[0])
-        tensor_symbol = L1
-
+        index_strs = tuple(symbol[3:-1].split(","))
+        index_strs = (index_strs[1], index_strs[0])
+        tensor_symbol = ghf.L1
     elif re.match(r"l2\((?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z])\)", symbol) and l_is_lambda:
         # l2(i,j,k,l)
-        indices = tuple(symbol[3:-1].replace("t", "p").split(","))
-        indices = (indices[2], indices[3], indices[0], indices[1])
-        tensor_symbol = L2
-
-    elif re.match(r"l3\((?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z])\)", symbol) and l_is_lambda:
+        index_strs = tuple(symbol[3:-1].split(","))
+        index_strs = (index_strs[2], index_strs[3], index_strs[0], index_strs[1])
+        tensor_symbol = ghf.L2
+    elif (
+        re.match(r"l3\((?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z])\)", symbol)
+        and l_is_lambda
+    ):
         # l3(i,j,k,l,m,n)
-        indices = tuple(symbol[3:-1].replace("t", "p").split(","))
-        indices = (indices[3], indices[4], indices[5], indices[0], indices[1], indices[2])
-        tensor_symbol = L3
-
+        index_strs = tuple(symbol[3:-1].split(","))
+        index_strs = (
+            index_strs[3],
+            index_strs[4],
+            index_strs[5],
+            index_strs[0],
+            index_strs[1],
+            index_strs[2],
+        )
+        tensor_symbol = ghf.L3
     elif re.match(r"r1\((?i:[a-z])\)", symbol):
         # r1(i)
-        indices = (symbol[3],)
-        #tensor_symbol = R1ip if _to_space(symbol[3]) == "o" else R1ea
-        tensor_symbol = R1ip  # FIXME
-
+        index_strs = (symbol[3],)
+        tensor_symbol = ghf.R1ip  # FIXME: Use EA
     elif re.match(r"r2\((?i:[a-z]),(?i:[a-z]),(?i:[a-z])\)", symbol):
         # r2(i,j,a)
-        indices = tuple(symbol[3:-1].replace("t", "p").split(","))
-        if _to_space(indices[1]) == "o":
-            indices = (indices[1], indices[2], indices[0])
-            tensor_symbol = R2ip
+        index_strs = tuple(symbol[3:-1].split(","))
+        if _guess_space(index_strs[1]) == "o":
+            index_strs = (index_strs[1], index_strs[2], index_strs[0])
+            tensor_symbol = ghf.R2ip
         else:
-            #indices = (indices[2], indices[0], indices[1])
-            #tensor_symbol = R2ea
-            tensor_symbol = R2ip  # FIXME
-
+            tensor_symbol = ghf.R2ip  # FIXME: Use EA
     elif re.match(r"r3\((?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z])\)", symbol):
         # r3(i,j,k,a,b)
-        indices = tuple(symbol[3:-1].replace("t", "p").split(","))
-        if _to_space(indices[2]) == "o":
-            indices = (indices[2], indices[3], indices[4], indices[0], indices[1])
-            tensor_symbol = R3ip
+        index_strs = tuple(symbol[3:-1].split(","))
+        if _guess_space(index_strs[2]) == "o":
+            index_strs = (index_strs[2], index_strs[3], index_strs[4], index_strs[0], index_strs[1])
+            tensor_symbol = ghf.R3ip
         else:
-            #indices = (indices[3], indices[4], indices[0], indices[1], indices[2])
-            #tensor_symbol = R3ea
-            tensor_symbol = R3ip  # FIXME
-
+            tensor_symbol = ghf.R3ip  # FIXME: Use EA
     elif re.match(r"r1\((?i:[a-z]),(?i:[a-z])\)", symbol):
         # r1(a,i)
-        indices = tuple(symbol[3:-1].replace("t", "p").split(","))
-        indices = (indices[1], indices[0])
-        tensor_symbol = R1ee
-
+        index_strs = tuple(symbol[3:-1].split(","))
+        index_strs = (index_strs[1], index_strs[0])
+        tensor_symbol = ghf.R1ee
     elif re.match(r"r2\((?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z])\)", symbol):
         # r2(a,b,i,j)
-        indices = tuple(symbol[3:-1].replace("t", "p").split(","))
-        indices = (indices[2], indices[3], indices[0], indices[1])
-        tensor_symbol = R2ee
-
-    elif re.match(r"r3\((?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z])\)", symbol):
+        index_strs = tuple(symbol[3:-1].split(","))
+        index_strs = (index_strs[2], index_strs[3], index_strs[0], index_strs[1])
+        tensor_symbol = ghf.R2ee
+    elif re.match(
+        r"r3\((?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z])\)", symbol
+    ):
         # r3(a,b,c,i,j,k)
-        indices = tuple(symbol[3:-1].replace("t", "p").split(","))
-        indices = (indices[3], indices[4], indices[5], indices[0], indices[1], indices[2])
-        tensor_symbol = R3ee
-
+        index_strs = tuple(symbol[3:-1].split(","))
+        index_strs = (
+            index_strs[3],
+            index_strs[4],
+            index_strs[5],
+            index_strs[0],
+            index_strs[1],
+            index_strs[2],
+        )
+        tensor_symbol = ghf.R3ee
     elif re.match(r"l1\((?i:[a-z])\)", symbol) and not l_is_lambda:
         # l1(i)
-        indices = (symbol[3],)
-        tensor_symbol = R1ip  # FIXME
-
+        index_strs = (symbol[3],)
+        tensor_symbol = ghf.R1ip
     elif re.match(r"l2\((?i:[a-z]),(?i:[a-z]),(?i:[a-z])\)", symbol):
         # l2(i,j,a)
-        indices = tuple(symbol[3:-1].replace("t", "p").split(","))
-        if _to_space(indices[1]) == "o":
-            tensor_symbol = R2ip
+        index_strs = tuple(symbol[3:-1].split(","))
+        if _guess_space(index_strs[1]) == "o":
+            tensor_symbol = ghf.R2ip
         else:
-            indices = (indices[1], indices[2], indices[0])
-            tensor_symbol = R2ip  # FIXME
-
-    elif re.match(r"l3\((?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z])\)", symbol) and not l_is_lambda:
+            index_strs = (index_strs[1], index_strs[2], index_strs[0])
+            tensor_symbol = ghf.R2ip
+    elif (
+        re.match(r"l3\((?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z])\)", symbol)
+        and not l_is_lambda
+    ):
         # l3(i,j,k,a,b)
-        indices = tuple(symbol[3:-1].replace("t", "p").split(","))
-        if _to_space(indices[2]) == "o":
-            tensor_symbol = R3ip
+        index_strs = tuple(symbol[3:-1].split(","))
+        if _guess_space(index_strs[2]) == "o":
+            tensor_symbol = ghf.R3ip
         else:
-            indices = (indices[2], indices[3], indices[4], indices[0], indices[1])
-            tensor_symbol = R3ip  # FIXME
-
+            index_strs = (index_strs[2], index_strs[3], index_strs[4], index_strs[0], index_strs[1])
+            tensor_symbol = ghf.R3ip
     elif re.match(r"l1\((?i:[a-z]),(?i:[a-z])\)", symbol) and not l_is_lambda:
         # l1(i,a)
-        indices = tuple(symbol[3:-1].replace("t", "p").split(","))
-        tensor_symbol = R1ee
-
+        index_strs = tuple(symbol[3:-1].split(","))
+        tensor_symbol = ghf.R1ee
     elif re.match(r"l2\((?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z])\)", symbol) and not l_is_lambda:
         # l2(i,j,a,b)
-        indices = tuple(symbol[3:-1].replace("t", "p").split(","))
-        tensor_symbol = R2ee
-
-    elif re.match(r"l3\((?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z])\)", symbol) and not l_is_lambda:
+        index_strs = tuple(symbol[3:-1].split(","))
+        tensor_symbol = ghf.R2ee
+    elif (
+        re.match(r"l3\((?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z])\)", symbol)
+        and not l_is_lambda
+    ):
         # l3(i,j,k,a,b,c)
-        indices = tuple(symbol[3:-1].replace("t", "p").split(","))
-        tensor_symbol = R3ee
-
+        index_strs = tuple(symbol[3:-1].split(","))
+        tensor_symbol = ghf.R3ee
     elif re.match(r"d\((?i:[a-z]),(?i:[a-z])\)", symbol):
         # d(i,j)
-        indices = tuple(symbol[2:-1].replace("t", "p").split(","))
-        tensor_symbol = Delta
-
+        index_strs = tuple(symbol[2:-1].split(","))
+        tensor_symbol = ghf.Delta
     elif re.match(r"P\((?i:[a-z]),(?i:[a-z])\)", symbol):
         # P(i,j)
-        indices = tuple(symbol[2:-1].replace("t", "p").split(","))
-        tensor_symbol = P
-
+        index_strs = tuple(symbol[2:-1].split(","))
+        tensor_symbol = PermutationOperator
     else:
         raise ValueError(f"Unknown symbol {symbol}")
 
-    # Convert the indices to Index
+    # Convert the indices
     indices = tuple(
         Index(
             index,
-            spin=index_spins.get(index),
-            space=index_spaces.get(index, _to_space(index)),
+            spin=index_spins.get(index, None),
+            space=index_spaces.get(index, _guess_space(index)),
         )
-        for index in indices
+        for index in index_strs
     )
 
-    return tensor_symbol[indices]
+    return tensor_symbol(*indices)
+
+
+def remove_reference_energy(terms: list[list[str]]) -> list[list[str]]:
+    """Remove the reference energy from the terms.
+
+    Args:
+        terms: The terms.
+
+    Returns:
+        The terms with the reference energy removed.
+    """
+    terms_new: list[list[str]] = []
+    for term in terms:
+        if term[0].startswith("+1.0") and term[1] == "f(i,i)":
+            continue
+        if term[0].startswith("-0.5") and term[1] == "<j,i||j,i>":
+            continue
+        terms_new.append(term)
+    return terms_new
+
+
+def remove_reference_energy_eom(terms: list[list[str]]) -> list[list[str]]:
+    """Remove the reference energy from the terms for EOM.
+
+    Args:
+        terms: The terms.
+
+    Returns:
+        The terms with the reference energy removed.
+    """
+    terms_new: list[list[str]] = []
+    for term in terms:
+        # Find if the term is disconnected
+        r = None
+        rest = []
+        for t in term[1:]:
+            if t.startswith("r") or t.startswith("l"):
+                r = t
+            elif not t.startswith("P("):
+                rest.append(t)
+        assert r is not None
+        r_inds = set(r.split("(")[1].split(")")[0].split(","))
+        rest_inds = set()
+        for r in rest:
+            if "<" in r:
+                r = r.replace("<", "(").replace(">", ")").replace("||", ",")
+            rest_inds.update(r.split("(")[1].split(")")[0].split(","))
+        connected = r_inds & rest_inds
+        if connected:
+            terms_new.append(term)
+            continue
+
+        # We only want to remove the E0 terms:
+        #  f(i,i) r
+        #  f(i,a) t(a,i) r
+        #  <i,j||i,j> r
+        #  <i,a||j,b> t2(a,b,i,j) r
+        #  <i,a||j,b> t1(a,i) t1(b,j) r
+        if len(term) == 3:
+            tensor = [t for t in term[1:] if not (t.startswith("r") or t.startswith("l"))][0]
+            if tensor.startswith("f") and tensor[2] == tensor[4]:
+                continue
+            if tensor.startswith("<") and tensor[1] == tensor[6] and tensor[3] == tensor[8]:
+                continue
+        else:
+            tensors = sorted([t for t in term[1:] if not (t.startswith("r") or t.startswith("l"))])
+            if tensors[0].startswith("f") and tensors[1].startswith("t"):
+                continue
+            if tensors[0].startswith("<") and all(t.startswith("t") for t in tensors[1:]):
+                continue
+
+        terms_new.append(term)
+
+    return terms_new

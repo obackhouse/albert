@@ -1,116 +1,145 @@
-"""Miscellaneous functions.
-"""
+"""Miscellaneous utility functions."""
 
-import networkx as nx
+from __future__ import annotations
+
+import re
+import time
+from collections.abc import Container
+from typing import TYPE_CHECKING, Hashable
+
+from albert.index import from_list  # noqa: F401
+from albert.scalar import Scalar  # noqa: F401
+from albert.tensor import Tensor  # noqa: F401
+
+if TYPE_CHECKING:
+    from typing import Any, Iterable, Optional
+
+    from albert.base import Base
 
 
-class TwoWayDict(dict):
-    """A dictionary that can be accessed by key or value.
+class ExclusionSet(Container[Hashable]):
+    """A set that is defined by its exclusions rather than its inclusions."""
 
-    Parameters
-    ----------
-    *args : tuple
-        The key-value pairs to initialise the dictionary with.
-    """
-
-    def __init__(self, *args, **kwargs):
+    def __init__(self, exclusions: Optional[Iterable[Hashable]] = None) -> None:
         """Initialise the object."""
-        super().__init__(*args, **kwargs)
-        self.update({v: k for k, v in self.items()})
+        self._exclusions = set(exclusions) if exclusions is not None else set()
 
-    def __setitem__(self, key, value):
-        """Set a value and its key."""
-        super().__setitem__(key, value)
-        super().__setitem__(value, key)
+    def __contains__(self, item: Any) -> bool:
+        """Check if an item is in the set.
 
-    def __delitem__(self, key):
-        """Delete a value and its key."""
-        super().__delitem__(self[key])
-        super().__delitem__(key)
+        Args:
+            item: The item to check.
 
-    def __len__(self):
-        """Return the length of the dictionary."""
-        return super().__len__() // 2
+        Returns:
+            Whether the item is in the set.
+        """
+        return item not in self._exclusions
+
+    def add(self, item: Hashable) -> None:
+        """Add an item to the set.
+
+        Args:
+            item: The item to add.
+
+        Note:
+            This method removes the item from the exclusions.
+        """
+        self._exclusions.discard(item)
+
+    def discard(self, item: Hashable) -> None:
+        """Remove an item from the set.
+
+        Args:
+            item: The item to remove.
+
+        Note:
+            This method adds the item to the exclusions.
+        """
+        self._exclusions.add(item)
+
+    def remove(self, item: Hashable) -> None:
+        """Remove an item from the set.
+
+        Args:
+            item: The item to remove.
+
+        Raises:
+            KeyError: If the item is not in the set.
+        """
+        if item not in self:
+            raise KeyError(item)
+        self.discard(item)
+
+    def __repr__(self) -> str:
+        """Return a string representation of the object."""
+        return f"{self.__class__.__name__}({self._exclusions})"
 
 
-def plot_graph(graph, ax=None, show=True):
-    """Plot the graph representing the contractions in an expression.
+class Stopwatch:
+    """A simple stopwatch for timing code execution."""
 
-    Parameters
-    ----------
-    graph : networkx.MultiGraph
-        The graph to plot.
-    ax : matplotlib.axes.Axes, optional
-        The axes to plot on. If not provided, a new figure is created.
-        Default value is `None`.
-    show : bool, optional
-        Whether to show the figure. Default value is `True`.
+    def __init__(self, name: Optional[str] = None):
+        """Initialise the object."""
+        self._name = name
+        self._start: Optional[float] = None
+        self._end: Optional[float] = None
+
+    def __enter__(self) -> Stopwatch:
+        """Start the stopwatch."""
+        self._start = time.time()
+        return self
+
+    def __exit__(self, *args: Any) -> None:
+        """Stop the stopwatch."""
+        self._end = time.time()
+        if self._name is not None:
+            print(f"{self._name}: {self.elapsed:.3f} s")
+
+    @property
+    def elapsed(self) -> float:
+        """Return the elapsed time in seconds."""
+        if self._start is None:
+            raise RuntimeError("Stopwatch has not been started")
+        start = self._start
+        if self._end is None:
+            end = time.time()
+        else:
+            end = self._end
+        return end - start
+
+
+def from_string(string: str) -> Base:
+    """Convert an object from a string representation to the algebraic object.
+
+    Args:
+        string: The string representation of the object.
+
+    Returns:
+        The algebraic object.
+
+    Notes:
+        This function is intended for convenience when debugging and testing. It lacks many
+        features offered by directly instantiating the object. One pitfall in particular is that
+        tensor names cannot contain numbers.
     """
 
-    # Import matplotlib here to avoid dependency
-    import matplotlib.pyplot as plt
+    def _format_scalar(m: re.Match[str]) -> str:
+        """Format a scalar statement from a matched regular expression."""
+        value = m.group(1)
+        return f"Scalar({value})"
 
-    # Initialise the figure
-    if ax is None:
-        fig, ax = plt.subplots()
+    def _format_tensor(m: re.Match[str]) -> str:
+        """Format a tensor statement from a matched regular expression."""
+        name = m.group(1)
+        inds = m.group(2).split(",")
+        inds_string = ", ".join(f'"{x.strip()}"' for x in inds)
+        return f'Tensor(*from_list([{inds_string}]), name="{name}")'
 
-    # Get the layout
-    pos = nx.kamada_kawai_layout(graph)
+    # Make the substitutions
+    string = re.sub(r"(\w+)\(([^)]+)\)", _format_tensor, string)
+    string = re.sub(r"(\d+\.\d+|\d+)", _format_scalar, string)
 
-    # Draw the nodes
-    nx.draw_networkx_nodes(
-        graph,
-        pos,
-        ax=ax,
-        node_color="w",
-        edgecolors="k",
-        linewidths=1,
-        node_size=500,
-    )
+    # Evaluate the string
+    expr: Base = eval(string)
 
-    # Draw the edges
-    for n, edge in enumerate(graph.edges):
-        i, j = divmod(edge[2], 2)
-        ax.annotate(
-            "",
-            xy=pos[edge[0]],
-            xycoords="data",
-            xytext=pos[edge[1]],
-            textcoords="data",
-            zorder=-1,
-            arrowprops=dict(
-                arrowstyle="-",
-                color=f"C{n}",
-                shrinkA=5,
-                shrinkB=5,
-                patchA=None,
-                patchB=None,
-                connectionstyle=f"arc3,rad={0.15 * (i + 1) * (-1)**j}",
-            ),
-        )
-        label = f"[{graph.nodes[edge[0]]['data'].name}, {graph.edges[edge]['data'][edge[0]]}]"
-        label += r"$ \rightarrow $"
-        label += f"[{graph.nodes[edge[1]]['data'].name}, {graph.edges[edge]['data'][edge[1]]}]"
-        ax.plot(
-            [pos[edge[0]][0], pos[edge[0]][0]],
-            [pos[edge[0]][1], pos[edge[0]][1]],
-            color=f"C{n}",
-            label=label,
-            zorder=-1,
-        )
-
-    # Draw the labels
-    nx.draw_networkx_labels(
-        graph,
-        pos,
-        ax=ax,
-        labels={node: graph._node[node]["data"].name for node in graph.nodes},
-    )
-
-    # Show the figure
-    if show:
-        plt.axis("off")
-        plt.legend()
-        plt.show()
-
-    return ax
+    return expr
