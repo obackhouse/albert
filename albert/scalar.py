@@ -107,7 +107,7 @@ class Scalar(Base):
         Returns:
             Object after applying function (if applicable).
         """
-        if isinstance(self, node_type):
+        if isinstance(self, node_type) or self._interface == node_type:
             return function(cast(T, self))
         return self
 
@@ -144,6 +144,14 @@ class Scalar(Base):
 
         Returns:
             Object with like terms collected.
+        """
+        return self
+
+    def squeeze(self) -> Base:
+        """Squeeze the object by removing any redundant algebraic operations.
+
+        Returns:
+            Object with redundant operations removed.
         """
         return self
 

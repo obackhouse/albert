@@ -33,6 +33,22 @@ def _spin_penalty(indices: tuple[Index, ...]) -> int:
     return penalty
 
 
+def _sign_penalty(children: tuple[Base, ...]) -> int:
+    """Return a penalty for the sign in scalars.
+
+    Args:
+        children: Children to check.
+
+    Returns:
+        Penalty for the sign.
+    """
+    penalty = 1
+    for child in children:
+        if isinstance(child, IScalar):
+            penalty *= 1 if child._value < 0 else -1
+    return -penalty
+
+
 class Comparable(Protocol):
     """Protocol for comparable objects."""
 
@@ -273,6 +289,15 @@ class Base(Serialisable):
         pass
 
     @abstractmethod
+    def squeeze(self) -> Base:
+        """Squeeze the object by removing any redundant algebraic operations.
+
+        Returns:
+            Object with redundant operations removed.
+        """
+        pass
+
+    @abstractmethod
     def as_sympy(self) -> Any:
         """Return a sympy representation of the object.
 
@@ -334,8 +359,9 @@ class Base(Serialisable):
         yield _spin_penalty(self.external_indices)
         yield self.external_indices
         yield self.internal_indices
+        yield _sign_penalty(self._children) if self._children else 0
         yield _SCORES[self._interface]
-        yield getattr(self, "name", "")
+        yield getattr(self, "name", "~")
         yield len(self._children) if self._children is not None else 0
         if self._children:
             yield from self._children

@@ -51,6 +51,12 @@ def test_substitute_expressions():
     output_expr_sub = substitute_expressions(output_expr)
     assert len(output_expr_sub) == 2
     assert output_expr_sub[0][0] == u_output
-    assert output_expr_sub[0][1] == Tensor.from_string("(a(i,k,l) * b(k,l,j)) + (a(i,k,l) * c(k,l,j)) + (z(i,j))").expand()
+    assert (
+        output_expr_sub[0][1]
+        == Tensor.from_string("(a(i,k,l) * b(k,l,j)) + (a(i,k,l) * c(k,l,j)) + (z(i,j))").expand()
+    )
     assert output_expr_sub[1][0] == v_output
-    assert output_expr_sub[1][1] == Tensor.from_string("(a(i,k,l) * b(k,l,j)) + (a(i,k,l) * c(k,l,j)) + (z(i,j))").expand()
+    assert (
+        output_expr_sub[1][1]
+        == Tensor.from_string("(a(i,k,l) * b(k,l,j)) + (a(i,k,l) * c(k,l,j)) + (z(i,j))").expand()
+    )

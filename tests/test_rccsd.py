@@ -9,7 +9,6 @@ import pytest
 from pyscf import ao2mo, cc, gto, scf
 
 from albert.code.einsum import EinsumCodeGenerator
-from albert.misc import ExclusionSet
 from albert.opt import optimise as _optimise
 from albert.qc._pdaggerq import import_from_pdaggerq, remove_reference_energy
 from albert.qc.spin import ghf_to_rhf
@@ -46,10 +45,7 @@ def test_rccsd_einsum(helper, optimise, method, canonicalise, kwargs):
 
 
 def _test_rccsd_einsum(helper, file, optimise, method, canonicalise, kwargs):
-    class _EinsumCodeGenerator(EinsumCodeGenerator):
-        _add_spaces = ExclusionSet(("t1", "t2"))
-
-    codegen = _EinsumCodeGenerator(stdout=file)
+    codegen = EinsumCodeGenerator(stdout=file)
     codegen.preamble()
 
     pq = pdaggerq.pq_helper("fermi")
@@ -155,14 +151,14 @@ def _test_rccsd_einsum(helper, file, optimise, method, canonicalise, kwargs):
     t1 = ccsd.t1
     t2 = ccsd.t2
 
-    e1 = np.ravel(energy(f=f, v=v, t1=t1, t2=t2)).item()
+    e1 = np.ravel(energy(f=f, v=v, t1=SimpleNamespace(ov=t1), t2=SimpleNamespace(oovv=t2))).item()
     e2 = ccsd.energy(t1=t1, t2=t2)
     assert np.allclose(e1, e2)
 
     d = eo[:, None] - ev[None, :]
-    amps = update_amplitudes(f=f, v=v, t1=t1, t2=t2)
-    amps["t1new"] = amps["t1new"] / d + t1
-    amps["t2new"] = amps["t2new"] / (d[:, None, :, None] + d[None, :, None, :]) + t2
-    e1 = np.ravel(ccsd.energy(t1=amps["t1new"], t2=amps["t2new"])).item()
-    e2 = ccsd.energy(t1=amps["t1new"], t2=amps["t2new"])
+    amps = update_amplitudes(f=f, v=v, t1=SimpleNamespace(ov=t1), t2=SimpleNamespace(oovv=t2))
+    amps["t1new"].ov = amps["t1new"].ov / d + t1
+    amps["t2new"].oovv = amps["t2new"].oovv / (d[:, None, :, None] + d[None, :, None, :]) + t2
+    e1 = ccsd.energy(*ccsd.update_amps(t1, t2, ccsd.ao2mo()))
+    e2 = ccsd.energy(t1=amps["t1new"].ov, t2=amps["t2new"].oovv)
     assert np.allclose(e1, e2)

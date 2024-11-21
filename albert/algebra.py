@@ -7,7 +7,7 @@ from collections import defaultdict
 from functools import cached_property, reduce
 from typing import TYPE_CHECKING, TypedDict, TypeVar, cast
 
-from albert.base import Base, IAdd, IAlgebraic, IMul
+from albert.base import Base, IAdd, IAlgebraic, IMul, ITensor
 from albert.canon import canonicalise_indices
 from albert.scalar import Scalar, _compose_scalar
 
@@ -70,6 +70,7 @@ class Algebraic(IAlgebraic):
 
     _interface = IAlgebraic
     _children: tuple[Base, ...]
+    _compose: Callable[..., Base]
 
     def __init__(self, *children: Base):
         """Initialise the addition."""
@@ -112,7 +113,7 @@ class Algebraic(IAlgebraic):
             The function is applied to the children first, and then to the object itself.
         """
         children = [child.apply(function, node_type) for child in self._children]
-        if isinstance(self, node_type):
+        if isinstance(self, node_type) or self._interface == node_type:
             return function(cast(T, self.copy(*children)))
         return self.copy(*children)
 
@@ -144,6 +145,36 @@ class Algebraic(IAlgebraic):
         )
 
         return expr
+
+    def squeeze(self) -> Base:
+        """Squeeze the object by removing any redundant algebraic operations.
+
+        Returns:
+            Object with redundant operations removed.
+        """
+        children = [child.squeeze() for child in self._children]
+        if len(children) == 1:
+            return children[0]
+        else:
+            return self.copy(*children)
+
+    def canonicalise(self, indices: bool = False) -> Base:
+        """Canonicalise the object.
+
+        The results of this function for equivalent representations should be equal.
+
+        Args:
+            indices: Whether to canonicalise the indices of the object. When `True`, this is
+                performed for the outermost call in recursive calls.
+
+        Returns:
+            Object in canonical format.
+        """
+        children = sorted([child.canonicalise(indices=False) for child in self._children])
+        expr = self._compose(*children)
+        if indices:
+            expr = canonicalise_indices(expr)
+        return expr.squeeze()
 
     def as_json(self) -> _AlgebraicJSON:
         """Return a JSON representation of the object.
@@ -320,6 +351,7 @@ class Add(IAdd, Algebraic):
     """
 
     _interface = IAdd
+    _compose = staticmethod(_compose_add)
 
     def __init__(self, *children: Base):
         """Initialise the addition."""
@@ -355,25 +387,6 @@ class Add(IAdd, Algebraic):
         for child in self._children:
             children.extend(child.expand()._children)
         return ExpandedAddLayer(*children)
-
-    def canonicalise(self, indices: bool = False) -> Base:
-        """Canonicalise the object.
-
-        The results of this function for equivalent representations should be equal.
-
-        Args:
-            indices: Whether to canonicalise the indices of the object. When `True`, this is
-                performed for the outermost call in recursive calls.
-
-        Returns:
-            Object in canonical format.
-        """
-        children = sorted([child.canonicalise(indices=False) for child in self._children])
-        out = _compose_add(*children)
-        if indices:
-            out = canonicalise_indices(out)
-            out = out.canonicalise(indices=False)
-        return out
 
     def as_sympy(self) -> Any:
         """Return a sympy representation of the object.
@@ -416,6 +429,7 @@ class Mul(IMul, Algebraic):
     """
 
     _interface = IMul
+    _compose = staticmethod(_compose_mul)
 
     def __init__(self, *children: Base):
         """Initialise the multiplication."""
@@ -465,25 +479,6 @@ class Mul(IMul, Algebraic):
                     for a, b in itertools.product(children, inner_children)
                 ]
         return ExpandedAddLayer(*children)
-
-    def canonicalise(self, indices: bool = False) -> Base:
-        """Canonicalise the object.
-
-        The results of this function for equivalent representations should be equal.
-
-        Args:
-            indices: Whether to canonicalise the indices of the object. When `True`, this is
-                performed for the outermost call in recursive calls.
-
-        Returns:
-            Object in canonical format.
-        """
-        children = sorted([child.canonicalise(indices=False) for child in self._children])
-        out = _compose_mul(*children)
-        if indices:
-            out = canonicalise_indices(out)
-            out = out.canonicalise(indices=False)
-        return out
 
     def as_sympy(self) -> Any:
         """Return a sympy representation of the object.

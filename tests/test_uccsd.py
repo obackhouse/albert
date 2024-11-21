@@ -9,7 +9,6 @@ import pytest
 from pyscf import ao2mo, cc, gto, scf
 
 from albert.code.einsum import EinsumCodeGenerator
-from albert.misc import ExclusionSet
 from albert.opt import optimise as _optimise
 from albert.qc._pdaggerq import import_from_pdaggerq, remove_reference_energy
 from albert.qc.spin import ghf_to_uhf
@@ -44,10 +43,7 @@ def test_uccsd_einsum(helper, optimise, canonicalise, kwargs):
 
 
 def _test_uccsd_einsum(helper, file, optimise, canonicalise, kwargs):
-    class _EinsumCodeGenerator(EinsumCodeGenerator):
-        _add_spaces = ExclusionSet(("t1", "t2"))
-
-    codegen = _EinsumCodeGenerator(stdout=file)
+    codegen = EinsumCodeGenerator(stdout=file)
     codegen.preamble()
 
     pq = pdaggerq.pq_helper("fermi")
@@ -162,38 +158,46 @@ def _test_uccsd_einsum(helper, file, optimise, canonicalise, kwargs):
                 v_key = ao2mo.kernel(mol, coeffs, compact=False).reshape(shape)
                 setattr(getattr(v, spin1 * 2 + spin2 * 2), "".join(key), v_key)
 
-    t1 = SimpleNamespace(aa=ccsd.t1[0], bb=ccsd.t1[1])
-    t2 = SimpleNamespace(aaaa=ccsd.t2[0], abab=ccsd.t2[1], bbbb=ccsd.t2[2])
+    t1 = SimpleNamespace(aa=SimpleNamespace(ov=ccsd.t1[0]), bb=SimpleNamespace(ov=ccsd.t1[1]))
+    t2 = SimpleNamespace(
+        aaaa=SimpleNamespace(oovv=ccsd.t2[0]),
+        abab=SimpleNamespace(oovv=ccsd.t2[1]),
+        bbbb=SimpleNamespace(oovv=ccsd.t2[2]),
+    )
 
     e1 = np.ravel(energy(f=f, v=v, t1=t1, t2=t2)).item()
     e2 = ccsd.energy(
-        t1=(t1.aa, t1.bb),
+        t1=(t1.aa.ov, t1.bb.ov),
         # Note different representation of t2 compared to pyscf
-        t2=(t2.aaaa - t2.aaaa.swapaxes(2, 3), t2.abab, t2.bbbb - t2.bbbb.swapaxes(2, 3)),
+        t2=(
+            t2.aaaa.oovv - t2.aaaa.oovv.swapaxes(2, 3),
+            t2.abab.oovv,
+            t2.bbbb.oovv - t2.bbbb.oovv.swapaxes(2, 3),
+        ),
     )
     assert np.allclose(e1, e2)
 
     d = (eo[0][:, None] - ev[0][None, :], eo[1][:, None] - ev[1][None, :])
     amps = update_amplitudes(f=f, v=v, t1=t1, t2=t2)
-    amps["t1new"].aa = amps["t1new"].aa / d[0] + t1.aa
-    amps["t1new"].bb = amps["t1new"].bb / d[1] + t1.bb
-    amps["t2new"].aaaa = (
-        amps["t2new"].aaaa / (d[0][:, None, :, None] + d[0][None, :, None, :]) + t2.aaaa
+    amps["t1new"].aa.ov = amps["t1new"].aa.ov / d[0] + t1.aa.ov
+    amps["t1new"].bb.ov = amps["t1new"].bb.ov / d[1] + t1.bb.ov
+    amps["t2new"].aaaa.oovv = (
+        amps["t2new"].aaaa.oovv / (d[0][:, None, :, None] + d[0][None, :, None, :]) + t2.aaaa.oovv
     )
-    amps["t2new"].abab = (
-        amps["t2new"].abab / (d[0][:, None, :, None] + d[1][None, :, None, :]) + t2.abab
+    amps["t2new"].abab.oovv = (
+        amps["t2new"].abab.oovv / (d[0][:, None, :, None] + d[1][None, :, None, :]) + t2.abab.oovv
     )
-    amps["t2new"].bbbb = (
-        amps["t2new"].bbbb / (d[1][:, None, :, None] + d[1][None, :, None, :]) + t2.bbbb
+    amps["t2new"].bbbb.oovv = (
+        amps["t2new"].bbbb.oovv / (d[1][:, None, :, None] + d[1][None, :, None, :]) + t2.bbbb.oovv
     )
     e1 = np.ravel(energy(f=f, v=v, t1=amps["t1new"], t2=amps["t2new"])).item()
     e2 = ccsd.energy(
-        t1=(amps["t1new"].aa, amps["t1new"].bb),
+        t1=(amps["t1new"].aa.ov, amps["t1new"].bb.ov),
         # Note different representation of t2 compared to pyscf
         t2=(
-            amps["t2new"].aaaa - amps["t2new"].aaaa.swapaxes(2, 3),
-            amps["t2new"].abab,
-            amps["t2new"].bbbb - amps["t2new"].bbbb.swapaxes(2, 3),
+            amps["t2new"].aaaa.oovv - amps["t2new"].aaaa.oovv.swapaxes(2, 3),
+            amps["t2new"].abab.oovv,
+            amps["t2new"].bbbb.oovv - amps["t2new"].bbbb.oovv.swapaxes(2, 3),
         ),
     )
     assert np.allclose(e1, e2)
