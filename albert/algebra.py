@@ -7,7 +7,7 @@ from collections import defaultdict
 from functools import cached_property, reduce
 from typing import TYPE_CHECKING, TypedDict, TypeVar, cast
 
-from albert.base import Base, IAdd, IAlgebraic, IMul, ITensor
+from albert.base import Base, IAdd, IAlgebraic, IMul
 from albert.canon import canonicalise_indices
 from albert.scalar import Scalar, _compose_scalar
 

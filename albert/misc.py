@@ -7,9 +7,9 @@ import time
 from collections.abc import Container
 from typing import TYPE_CHECKING, Hashable
 
-from albert.tensor import Tensor  # noqa: F401
-from albert.scalar import Scalar  # noqa: F401
 from albert.index import from_list  # noqa: F401
+from albert.scalar import Scalar  # noqa: F401
+from albert.tensor import Tensor  # noqa: F401
 
 if TYPE_CHECKING:
     from typing import Any, Iterable, Optional
