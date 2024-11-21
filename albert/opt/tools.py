@@ -52,21 +52,23 @@ def substitute_expressions(output_expr: list[tuple[Tensor, Base]]) -> list[tuple
                 if i == j:
                     continue
 
-                def _substitute(tensor: Tensor) -> Base:  # noqa: B023
+                def _substitute(tensor: Tensor) -> Base:
                     """Perform the substitution."""
-                    if o_src.name == tensor.name:
+                    if o_src.name == tensor.name:  # noqa: B023
                         memo["found"] = True
 
                         # Find the index substitution
-                        index_map = dict(zip(o_src.external_indices, tensor.external_indices))
-                        for tensor in e_src.search_leaves(Tensor):
+                        index_map = dict(
+                            zip(o_src.external_indices, tensor.external_indices)  # noqa: B023
+                        )
+                        for tensor in e_src.search_leaves(Tensor):  # noqa: B023
                             for index in tensor.external_indices:
                                 if index not in index_map:
                                     index_map[index] = index.copy(name=f"z{memo['counter']}_")
                                     memo["counter"] += 1
 
                         # Substitute the expression
-                        return e_src.map_indices(index_map)
+                        return e_src.map_indices(index_map)  # noqa: B023
 
                     return tensor
 

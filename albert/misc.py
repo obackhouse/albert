@@ -119,10 +119,6 @@ def from_string(string: str) -> Base:
         tensor names cannot contain numbers.
     """
 
-    # Find all distinct indices
-    tensors = [(name, inds.split(",")) for name, inds in re.findall(r"(\w+)\(([^)]+)\)", string)]
-    indices = set(index for _, inds in tensors for index in inds)
-
     def _format_scalar(m: re.Match[str]) -> str:
         """Format a scalar statement from a matched regular expression."""
         value = m.group(1)
