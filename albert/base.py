@@ -15,40 +15,6 @@ if TYPE_CHECKING:
     T = TypeVar("T", bound="Base")
 
 
-def _spin_penalty(indices: tuple[Index, ...]) -> int:
-    """Return a penalty for the configuration of spins in a set of indices.
-
-    Args:
-        indices: Indices to check.
-
-    Returns:
-        Penalty for the configuration of spins.
-    """
-    spins = tuple(index.spin if index.spin else "" for index in indices)
-    penalty = 0
-    for i in range(len(spins) - 1):
-        penalty += int(spins[i] == spins[i + 1]) * 2
-    if spins and spins[0] != min(spins):
-        penalty += 1
-    return penalty
-
-
-def _sign_penalty(children: tuple[Base, ...]) -> int:
-    """Return a penalty for the sign in scalars.
-
-    Args:
-        children: Children to check.
-
-    Returns:
-        Penalty for the sign.
-    """
-    penalty = 1
-    for child in children:
-        if isinstance(child, IScalar):
-            penalty *= 1 if child._value < 0 else -1
-    return -penalty
-
-
 class Comparable(Protocol):
     """Protocol for comparable objects."""
 
@@ -141,6 +107,40 @@ class Base(Serialisable):
 
     _interface: type[IBase]
     _children: Optional[tuple[Base, ...]]
+
+    @staticmethod
+    def _spin_penalty(indices: tuple[Index, ...]) -> int:
+        """Return a penalty for the configuration of spins in a set of indices.
+
+        Args:
+            indices: Indices to check.
+
+        Returns:
+            Penalty for the configuration of spins.
+        """
+        spins = tuple(index.spin if index.spin else "" for index in indices)
+        penalty = 0
+        for i in range(len(spins) - 1):
+            penalty += int(spins[i] == spins[i + 1]) * 2
+        if spins and spins[0] != min(spins):
+            penalty += 1
+        return penalty
+
+    @staticmethod
+    def _sign_penalty(children: tuple[Base, ...]) -> int:
+        """Return a penalty for the sign in scalars.
+
+        Args:
+            children: Children to check.
+
+        Returns:
+            Penalty for the sign.
+        """
+        penalty = 1
+        for child in children:
+            if isinstance(child, IScalar):
+                penalty *= 1 if child._value < 0 else -1
+        return -penalty
 
     def search_leaves(self, type_filter: type[T]) -> Iterable[T]:
         """Depth-first search through leaves.
@@ -356,10 +356,10 @@ class Base(Serialisable):
     def _hashable_fields(self) -> Iterable[SerialisedField]:
         """Yield fields of the hashable representation."""
         yield self.rank
-        yield _spin_penalty(self.external_indices)
+        yield self._spin_penalty(self.external_indices)
         yield self.external_indices
         yield self.internal_indices
-        yield _sign_penalty(self._children) if self._children else 0
+        yield self._sign_penalty(self._children) if self._children else 0
         yield _SCORES[self._interface]
         yield getattr(self, "name", "~")
         yield len(self._children) if self._children is not None else 0

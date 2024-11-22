@@ -407,6 +407,30 @@ class T3(Tensor):
         """
         return _amplitude_as_rhf(self, rhf.T3, 3, 3)
 
+    @staticmethod
+    def _spin_penalty(indices: tuple[Index, ...]) -> int:
+        """Override the default spin penalty function.
+
+        Canonical spin forms of T3 are aaaaaa, abaaba, babbab, and bbbbbb.
+
+        Args:
+            indices: Indices to check.
+
+        Returns:
+            Penalty for the configuration of spins.
+        """
+        spins = tuple(index.spin for index in indices)
+        if spins == ("a", "a", "a", "a", "a", "a"):
+            return 0
+        elif spins == ("a", "b", "a", "a", "b", "a"):
+            return 1
+        elif spins == ("b", "a", "b", "b", "a", "b"):
+            return 2
+        elif spins == ("b", "b", "b", "b", "b", "b"):
+            return 3
+        else:
+            return 10
+
 
 class L1(T1):
     """Class for the L1 amplitude tensor.
@@ -506,6 +530,20 @@ class L3(T3):
             Tensor resulting from the conversion.
         """
         return _amplitude_as_rhf(self, rhf.L3, 3, 3)
+
+    @staticmethod
+    def _spin_penalty(indices: tuple[Index, ...]) -> int:
+        """Override the default spin penalty function.
+
+        Canonical spin forms of T3 are aaaaaa, abaaba, babbab, and bbbbbb.
+
+        Args:
+            indices: Indices to check.
+
+        Returns:
+            Penalty for the configuration of spins.
+        """
+        return T3._spin_penalty(indices)
 
 
 class R0(Tensor):

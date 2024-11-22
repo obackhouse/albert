@@ -18,13 +18,14 @@ Installation
 __version__ = "0.0.0"
 
 _default_sizes: dict[str | None, float] = {
-    "o": 200,
-    "O": 20,
-    "i": 180,
-    "v": 800,
-    "V": 20,
-    "a": 780,
-    "x": 3000,
-    "d": 100000,
-    None: 10,
+    "o": 200,  # occupied, correlated
+    "O": 20,  # occupied, active
+    "i": 180,  # occupied, inactive
+    "v": 800,  # virtual, correlated
+    "V": 20,  # virtual, active
+    "a": 780,  # virtual, inactive
+    "x": 3000,  # auxiliary
+    "d": 100000,  # dummy
+    "k": 5,  # k-point
+    None: 10,  # default
 }
