@@ -67,9 +67,9 @@ class EinsumCodeGenerator(BaseCodeGenerator):
         # Add the spins
         _add_spins = (add_spins is None and tensor.name in self._add_spins) or add_spins
         _add_spins = _add_spins and not tensor.name.startswith("tmp")
-        _add_spins = _add_spins and all(i.spin in ("a", "b") for i in tensor.external_indices)
+        _add_spins = _add_spins and any(i.spin in ("a", "b") for i in tensor.external_indices)
         if _add_spins:
-            spins = tuple(cast(str, i.spin) for i in tensor.external_indices)
+            spins = tuple(i.spin for i in tensor.external_indices if i.spin in ("a", "b"))
             if len(spins):
                 string += spin_delimiter + "".join(spins)
 
