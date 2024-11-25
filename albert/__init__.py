@@ -15,6 +15,8 @@ Installation
 
 """  # noqa: D205, D212, D415
 
+from __future__ import annotations
+
 __version__ = "0.0.0"
 
 _default_sizes: dict[str | None, float] = {
@@ -24,6 +26,7 @@ _default_sizes: dict[str | None, float] = {
     "v": 800,  # virtual, correlated
     "V": 20,  # virtual, active
     "a": 780,  # virtual, inactive
+    "b": 8,  # boson
     "x": 3000,  # auxiliary
     "d": 100000,  # dummy
     "k": 5,  # k-point
