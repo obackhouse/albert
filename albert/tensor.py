@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from typing import Any, Callable, Optional
 
     from albert.index import _IndexJSON
-    from albert.symmetry import Symmetry, _SymmetryJSON
+    from albert.symmetry import Permutation, Symmetry, _SymmetryJSON
 
 T = TypeVar("T", bound=Base)
 
@@ -118,6 +118,24 @@ class Tensor(Base):
         """
         indices = tuple(mapping.get(index, index) for index in self._indices)
         return self.copy(*indices)
+
+    def permute_indices(self, permutation: tuple[int, ...] | Permutation) -> Base:
+        """Return a copy of the object with the indices permuted according to some permutation.
+
+        Args:
+            permutation: permutation to apply.
+
+        Returns:
+            Object with permuted indices.
+        """
+        if isinstance(permutation, tuple):
+            perm = permutation
+            sign = 1
+        else:
+            perm = permutation.permutation
+            sign = permutation.sign
+        indices = tuple(self._indices[i] for i in perm)
+        return sign * self.copy(*indices)
 
     def apply(
         self,
