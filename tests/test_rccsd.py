@@ -55,7 +55,7 @@ def _test_rccsd_einsum(helper, file, optimise, method, canonicalise, kwargs):
     pq.add_st_operator(1.0, ["f"], ["t1", "t2"])
     pq.add_st_operator(1.0, ["v"], ["t1", "t2"])
     pq.simplify()
-    energy = pq.fully_contracted_strings()
+    energy = pq.strings()
     energy = remove_reference_energy(energy)
     energy = import_from_pdaggerq(energy)
     energy = ghf_to_rhf(energy)
@@ -79,7 +79,7 @@ def _test_rccsd_einsum(helper, file, optimise, method, canonicalise, kwargs):
     pq.add_st_operator(1.0, ["f"], ["t1", "t2"])
     pq.add_st_operator(1.0, ["v"], ["t1", "t2"])
     pq.simplify()
-    t1 = pq.fully_contracted_strings()
+    t1 = pq.strings()
     t1 = import_from_pdaggerq(t1, index_spins=dict(i="a", a="a"))
     t1 = ghf_to_rhf(t1)
     if canonicalise:
@@ -93,7 +93,7 @@ def _test_rccsd_einsum(helper, file, optimise, method, canonicalise, kwargs):
     pq.add_st_operator(1.0, ["f"], ["t1", "t2"])
     pq.add_st_operator(1.0, ["v"], ["t1", "t2"])
     pq.simplify()
-    t2 = pq.fully_contracted_strings()
+    t2 = pq.strings()
     t2 = import_from_pdaggerq(t2, index_spins=dict(i="a", j="b", a="a", b="b"))
     t2 = ghf_to_rhf(t2)
     if canonicalise:

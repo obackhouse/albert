@@ -53,7 +53,7 @@ def _test_uccsd_einsum(helper, file, optimise, canonicalise, kwargs):
     pq.add_st_operator(1.0, ["f"], ["t1", "t2"])
     pq.add_st_operator(1.0, ["v"], ["t1", "t2"])
     pq.simplify()
-    energy = pq.fully_contracted_strings()
+    energy = pq.strings()
     energy = remove_reference_energy(energy)
     energy = import_from_pdaggerq(energy)
     energy = ghf_to_uhf(energy)
@@ -77,7 +77,7 @@ def _test_uccsd_einsum(helper, file, optimise, canonicalise, kwargs):
     pq.add_st_operator(1.0, ["f"], ["t1", "t2"])
     pq.add_st_operator(1.0, ["v"], ["t1", "t2"])
     pq.simplify()
-    t1 = pq.fully_contracted_strings()
+    t1 = pq.strings()
     t1 = import_from_pdaggerq(t1)
     t1 = ghf_to_uhf(t1)
     if canonicalise:
@@ -92,7 +92,7 @@ def _test_uccsd_einsum(helper, file, optimise, canonicalise, kwargs):
     pq.add_st_operator(1.0, ["f"], ["t1", "t2"])
     pq.add_st_operator(1.0, ["v"], ["t1", "t2"])
     pq.simplify()
-    t2 = pq.fully_contracted_strings()
+    t2 = pq.strings()
     t2_expr = tuple()
     for spins in ("aaaa", "abab", "baba", "bbbb"):
         index_spins = dict(zip("ijab", spins))

@@ -23,7 +23,7 @@ def test_ccsd_energy():
     pq.add_st_operator(1.0, ["f"], ["t1", "t2"])
     pq.add_st_operator(1.0, ["v"], ["t1", "t2"])
     pq.simplify()
-    terms = pq.fully_contracted_strings()
+    terms = pq.strings()
     expr_ghf = import_from_pdaggerq(terms)
     expr_ghf = expr_ghf.canonicalise()
     assert (
