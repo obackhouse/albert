@@ -257,6 +257,39 @@ class T3(Tensor):
         Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
 
 
+class T4(Tensor):
+    """Class for the T4 amplitude tensor.
+
+    Args:
+        indices: Indices of the tensor.
+        name: Name of the tensor.
+        symmetry: Symmetry of the tensor.
+    """
+
+    def __init__(
+        self,
+        *indices: Index,
+        name: Optional[str] = None,
+        symmetry: Optional[Symmetry] = None,
+    ):
+        """Initialise the tensor."""
+        if len(indices) != 8:
+            raise ValueError("T4 amplitude tensor must have eight indices.")
+        if name is None:
+            name = "t4"
+        if symmetry is None:
+            symmetry = Symmetry(
+                *(
+                    Permutation((i, j, k, l, a, b, c, d), sik * sjl * sac * sbd)
+                    for (i, k), sik in [((0, 2), +1), ((2, 0), -1)]
+                    for (j, l), sjl in [((1, 3), +1), ((3, 1), -1)]
+                    for (a, c), sac in [((4, 6), +1), ((6, 4), -1)]
+                    for (b, d), sbd in [((5, 7), +1), ((7, 5), -1)]
+                )
+            )
+        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
+
+
 class L1(T1):
     """Class for the L1 amplitude tensor.
 
@@ -324,6 +357,26 @@ class L3(T3):
         if name is None:
             name = "l3"
         T3.__init__(self, *indices, name=name, symmetry=symmetry)
+
+
+class L4(T4):
+    """Class for the L4 amplitude tensor.
+
+    Args:
+        indices: Indices of the tensor.
+        name: Name of the tensor.
+        symmetry: Symmetry of the tensor.
+    """
+
+    def __init__(
+        self, *indices: Index, name: Optional[str] = None, symmetry: Optional[Symmetry] = None
+    ):
+        """Initialise the tensor."""
+        if len(indices) != 8:
+            raise ValueError("L4 amplitude tensor must have eight indices.")
+        if name is None:
+            name = "l4"
+        T4.__init__(self, *indices, name=name, symmetry=symmetry)
 
 
 class R0(Tensor):

@@ -291,6 +291,64 @@ def _amplitude_as_rhf(
     return sum(amps, Scalar(0.0))
 
 
+def _t4_as_rhf(
+    amp: Tensor,
+    type_rhf: type[Tensor],
+    covariant: int,
+    contravariant: int,
+) -> Base:
+    """Convert a UHF T4 amplitude tensor to a RHF tensor.
+
+    T4 in RHF has two components: T4 and T4a. The T4 component comes from the αβαβαβαβ and the T4a
+    from αααβαααβ configurations of the UHF T4 tensor.
+
+    Args:
+        amp: UHF amplitude tensor.
+        covariant: Number of covariant indices.
+        contravariant: Number of contravariant indices.
+
+    Returns:
+        RHF tensor.
+    """
+    # Spin flip if necessary
+    na = sum(index.spin == "a" for index in amp.external_indices)
+    nb = sum(index.spin == "b" for index in amp.external_indices)
+    if nb > na:
+        indices = tuple(index.spin_flip() for index in amp.external_indices)
+        amp = amp.copy(*indices)
+
+    # Expand same spin amplitudes as linear combination of mixed spin amplitudes
+    amps: list[Base] = [amp]
+    if amp.rank > 2:
+        if all(index.spin == "a" for index in amp.external_indices):
+            # Get the mixed spin amplitudes
+            amps = []
+            for k in range(covariant):
+                spin = [("a", "b")[j % 2] for j in range(covariant)]
+                spin += [("a", "b")[j == k] for j in range(contravariant)]
+                indices = tuple(index.copy(spin=s) for index, s in zip(amp.external_indices, spin))
+                amps.append(amp.copy(*indices))
+
+    # Canonicalise the amplitudes
+    amps = [amp.canonicalise() for amp in amps]
+
+    # Relabel the indices
+    for i, amp in enumerate(amps):
+        spins = tuple(index.spin for index in amp.external_indices)
+        if spins == ("a", "b", "a", "b", "a", "b", "a", "b"):
+            name = "t4"
+        elif spins == ("a", "a", "a", "b", "a", "a", "a", "b"):
+            name = "t4a"
+        else:
+            raise ValueError("Invalid spin configuration for T4 amplitude.")
+        indices = tuple(index.copy(spin="r") for index in amp.external_indices)
+        amps[i] = amp.apply(
+            lambda tensor: type_rhf(*indices, name=name), node_type=Tensor  # noqa: B023
+        )
+
+    return sum(amps, Scalar(0.0))
+
+
 class T1(Tensor):
     """Class for the T1 amplitude tensor.
 
@@ -432,6 +490,68 @@ class T3(Tensor):
             return 10
 
 
+class T4(Tensor):
+    """Class for the T4 amplitude tensor.
+
+    Args:
+        indices: Indices of the tensor.
+        name: Name of the tensor.
+        symmetry: Symmetry of the tensor.
+    """
+
+    def __init__(
+        self, *indices: Index, name: Optional[str] = None, symmetry: Optional[Symmetry] = None
+    ):
+        """Initialise the tensor."""
+        if len(indices) != 8:
+            raise ValueError("T4 amplitude tensor must have eight indices.")
+        if name is None:
+            name = "t4"
+        if symmetry is None:
+            symmetry = Symmetry(
+                *(
+                    perm_bra + perm_ket
+                    for perm_ket in fully_antisymmetric_group(4).permutations
+                    for perm_bra in fully_antisymmetric_group(4).permutations
+                )
+            )
+        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
+
+    def as_rhf(self) -> Base:
+        """Convert the indices with spin to indices without spin.
+
+        Returns:
+            Tensor resulting from the conversion.
+        """
+        return _t4_as_rhf(self, rhf.T4, 4, 4)
+
+    @staticmethod
+    def _spin_penalty(indices: tuple[Index, ...]) -> int:
+        """Override the default spin penalty function.
+
+        Canonical spin forms of T3 are aaaaaa, abaaba, babbab, and bbbbbb.
+
+        Args:
+            indices: Indices to check.
+
+        Returns:
+            Penalty for the configuration of spins.
+        """
+        spins = tuple(index.spin for index in indices)
+        if spins == ("a", "a", "a", "a", "a", "a", "a", "a"):
+            return 0
+        elif spins == ("a", "b", "a", "b", "a", "b", "a", "b"):
+            return 1
+        elif spins == ("a", "a", "a", "b", "a", "a", "a", "b"):
+            return 2
+        elif spins == ("b", "b", "b", "a", "b", "b", "b", "a"):
+            return 3
+        elif spins == ("b", "b", "b", "b", "b", "b", "b", "b"):
+            return 4
+        else:
+            return 10
+
+
 class L1(T1):
     """Class for the L1 amplitude tensor.
 
@@ -544,6 +664,30 @@ class L3(T3):
             Penalty for the configuration of spins.
         """
         return T3._spin_penalty(indices)
+
+
+class L4(T4):
+    """Class for the L4 amplitude tensor.
+
+    Args:
+        indices: Indices of the tensor.
+        name: Name of the tensor.
+        symmetry: Symmetry of the tensor.
+    """
+
+    @staticmethod
+    def _spin_penalty(indices: tuple[Index, ...]) -> int:
+        """Override the default spin penalty function.
+
+        Canonical spin forms of T3 are aaaaaa, abaaba, babbab, and bbbbbb.
+
+        Args:
+            indices: Indices to check.
+
+        Returns:
+            Penalty for the configuration of spins.
+        """
+        return T4._spin_penalty(indices)
 
 
 class R0(Tensor):

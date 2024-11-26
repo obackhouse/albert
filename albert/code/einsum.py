@@ -116,12 +116,13 @@ class EinsumCodeGenerator(BaseCodeGenerator):
 
     # Function methods:
 
-    def function_declaration(self, name: str, args: list[Tensor]) -> None:
+    def function_declaration(self, name: str, args: list[Tensor], rets: list[Tensor]) -> None:
         """Write the function declaration.
 
         Args:
             name: The function name.
             args: The function arguments.
+            rets: The function return values.
         """
         names = sorted(set(self.get_argument(arg) for arg in args))
         kwargs = [f"{name}=None" for name in names]

@@ -161,12 +161,13 @@ class BaseCodeGenerator(ABC):
     # Function methods:
 
     @abstractmethod
-    def function_declaration(self, name: str, args: list[Tensor]) -> None:
+    def function_declaration(self, name: str, args: list[Tensor], rets: list[Tensor]) -> None:
         """Write the function declaration.
 
         Args:
             name: The function name.
             args: The function arguments.
+            rets: The function return values.
         """
         pass
 
@@ -336,7 +337,7 @@ class BaseCodeGenerator(ABC):
         rets = sorted(rets, key=self.get_return)
 
         # Write the function declaration
-        self.function_declaration(function_name, args)
+        self.function_declaration(function_name, args, rets)
         self.indent()
 
         # Write the function docstring

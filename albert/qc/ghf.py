@@ -563,6 +563,45 @@ class T3(Tensor):
         return _amplitude_as_uhf(self, uhf.T3, 3, 3, target_rhf=target_rhf)
 
 
+class T4(Tensor):
+    """Class for the T4 amplitude tensor.
+
+    Args:
+        indices: Indices of the tensor.
+        name: Name of the tensor.
+        symmetry: Symmetry of the tensor.
+    """
+
+    def __init__(
+        self,
+        *indices: Index,
+        name: Optional[str] = None,
+        symmetry: Optional[Symmetry] = None,
+    ):
+        """Initialise the tensor."""
+        if len(indices) != 8:
+            raise ValueError("T4 amplitude tensor must have eight indices.")
+        if name is None:
+            name = "t4"
+        if symmetry is None:
+            symmetry = Symmetry(
+                *(
+                    perm_bra + perm_ket
+                    for perm_ket in fully_antisymmetric_group(4).permutations
+                    for perm_bra in fully_antisymmetric_group(4).permutations
+                )
+            )
+        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
+
+    def as_uhf(self, target_rhf: bool = False) -> tuple[Base, ...]:
+        """Convert the indices without spin to indices with spin.
+
+        Returns:
+            Tuple of tensors resulting from the conversion.
+        """
+        return _amplitude_as_uhf(self, uhf.T4, 4, 4, target_rhf=target_rhf)
+
+
 class L1(T1):
     """Class for the L1 amplitude tensor.
 
@@ -685,6 +724,37 @@ class L3(T3):
         """
         # TODO: Hardcode these for efficiency
         return _amplitude_as_uhf(self, uhf.L3, 3, 3, target_rhf=target_rhf)
+
+
+class L4(T4):
+    """Class for the L4 amplitude tensor.
+
+    Args:
+        indices: Indices of the tensor.
+        name: Name of the tensor.
+        symmetry: Symmetry of the tensor.
+    """
+
+    def __init__(
+        self,
+        *indices: Index,
+        name: Optional[str] = None,
+        symmetry: Optional[Symmetry] = None,
+    ):
+        """Initialise the tensor."""
+        if len(indices) != 8:
+            raise ValueError("L4 amplitude tensor must have eight indices.")
+        if name is None:
+            name = "l4"
+        T4.__init__(self, *indices, name=name, symmetry=symmetry)
+
+    def as_uhf(self, target_rhf: bool = False) -> tuple[Base, ...]:
+        """Convert the indices without spin to indices with spin.
+
+        Returns:
+            Tuple of tensors resulting from the conversion.
+        """
+        return _amplitude_as_uhf(self, uhf.L4, 4, 4, target_rhf=target_rhf)
 
 
 class R0(Tensor):

@@ -141,6 +141,7 @@ def optimise_gristmill(
 
             # Set the symmetry
             if tensor.symmetry is not None and base not in done:
+                assert all(len(p.permutation) == tensor.rank for p in tensor.symmetry.permutations)
                 perms = [
                     drudge.Perm(list(p.permutation), drudge.NEG if p.sign == -1 else drudge.IDENT)
                     for p in tensor.symmetry.permutations

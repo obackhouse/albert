@@ -219,6 +219,24 @@ def _convert_symbol(
             index_strs[2],
         )
         tensor_symbol = ghf.T3
+    elif re.match(
+        r"t4\((?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z]),"
+        r"(?i:[a-z])\)",
+        symbol,
+    ):
+        # t4(i,j,k,l,m,n,o,p)
+        index_strs = tuple(symbol[3:-1].split(","))
+        index_strs = (
+            index_strs[4],
+            index_strs[5],
+            index_strs[6],
+            index_strs[7],
+            index_strs[0],
+            index_strs[1],
+            index_strs[2],
+            index_strs[3],
+        )
+        tensor_symbol = ghf.T4
     elif re.match(r"l1\((?i:[a-z]),(?i:[a-z])\)", symbol) and l_is_lambda:
         # l1(i,j)
         index_strs = tuple(symbol[3:-1].split(","))
@@ -244,6 +262,27 @@ def _convert_symbol(
             index_strs[2],
         )
         tensor_symbol = ghf.L3
+    elif (
+        re.match(
+            r"l4\((?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z]),"
+            r"(?i:[a-z])\)",
+            symbol,
+        )
+        and l_is_lambda
+    ):
+        # l4(i,j,k,l,m,n,o,p)
+        index_strs = tuple(symbol[3:-1].split(","))
+        index_strs = (
+            index_strs[4],
+            index_strs[5],
+            index_strs[6],
+            index_strs[7],
+            index_strs[0],
+            index_strs[1],
+            index_strs[2],
+            index_strs[3],
+        )
+        tensor_symbol = ghf.L4
     elif re.match(r"r1\((?i:[a-z])\)", symbol):
         # r1(i)
         index_strs = (symbol[3],)
