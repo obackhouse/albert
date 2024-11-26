@@ -299,8 +299,8 @@ def _t4_as_rhf(
 ) -> Base:
     """Convert a UHF T4 amplitude tensor to a RHF tensor.
 
-    T4 in RHF has two components: T4 and T4a. The T4 component comes from the αβαβαβαβ and the T4a
-    from αααβαααβ configurations of the UHF T4 tensor.
+    T4 in RHF has two components: T4 and T4a. The T4 component comes from the abababab and the T4a
+    from aabaaaba configurations of the UHF T4 tensor.
 
     Args:
         amp: UHF amplitude tensor.
@@ -337,7 +337,7 @@ def _t4_as_rhf(
         spins = tuple(index.spin for index in amp.external_indices)
         if spins == ("a", "b", "a", "b", "a", "b", "a", "b"):
             name = "t4"
-        elif spins == ("a", "a", "a", "b", "a", "a", "a", "b"):
+        elif spins == ("a", "a", "b", "a", "a", "a", "b", "a"):
             name = "t4a"
         else:
             raise ValueError("Invalid spin configuration for T4 amplitude.")
@@ -529,7 +529,7 @@ class T4(Tensor):
     def _spin_penalty(indices: tuple[Index, ...]) -> int:
         """Override the default spin penalty function.
 
-        Canonical spin forms of T3 are aaaaaa, abaaba, babbab, and bbbbbb.
+        Canonical spin forms of T4 are aaaaaaaa, aabaaba, babbbabb, abababab, babababa, bbbbbbbb.
 
         Args:
             indices: Indices to check.
@@ -542,9 +542,9 @@ class T4(Tensor):
             return 0
         elif spins == ("a", "b", "a", "b", "a", "b", "a", "b"):
             return 1
-        elif spins == ("a", "a", "a", "b", "a", "a", "a", "b"):
+        elif spins == ("a", "a", "b", "a", "a", "a", "b", "a"):
             return 2
-        elif spins == ("b", "b", "b", "a", "b", "b", "b", "a"):
+        elif spins == ("b", "a", "b", "b", "b", "a", "b", "b"):
             return 3
         elif spins == ("b", "b", "b", "b", "b", "b", "b", "b"):
             return 4
