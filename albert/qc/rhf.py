@@ -250,8 +250,8 @@ class T3(Tensor):
         if symmetry is None:
             symmetry = Symmetry(
                 Permutation((0, 1, 2, 3, 4, 5), +1),
-                Permutation((0, 1, 2, 5, 4, 3), -1),
-                Permutation((2, 1, 0, 3, 4, 5), -1),
+                # Permutation((0, 1, 2, 5, 4, 3), -1),
+                # Permutation((2, 1, 0, 3, 4, 5), -1),
                 Permutation((2, 1, 0, 5, 4, 3), +1),
             )
         Tensor.__init__(self, *indices, name=name, symmetry=symmetry)

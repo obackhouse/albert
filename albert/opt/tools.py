@@ -9,6 +9,7 @@ from albert import _default_sizes
 from albert.canon import canonicalise_indices
 from albert.index import Index
 from albert.opt import optimise
+from albert.scalar import Scalar
 from albert.symmetry import Permutation, Symmetry
 from albert.tensor import Tensor
 
@@ -91,6 +92,37 @@ def substitute_expressions(output_expr: list[tuple[Tensor, Base]]) -> list[tuple
         output[i] = o.copy(*[expr[i].external_indices[p] for p in perm])
 
     return list(zip(output, expr))
+
+
+def combine_expressions(output_expr: list[tuple[Tensor, Base]]) -> list[tuple[Tensor, Base]]:
+    """Combine identical expressions.
+
+    Args:
+        output_expr: The output tensors and their expressions.
+
+    Returns:
+        The total expression with the combined tensors, for each distinct output tensor.
+    """
+    # Get the factors of the unique expressions
+    output_expr_factors: dict[tuple[Tensor, Base], Scalar] = defaultdict(lambda: Scalar(0.0))
+    for output, expr in output_expr:
+        for mul in expr.expand()._children:
+            factor = Scalar(1.0)
+            tensors = []
+            for leaf in mul._children:
+                if isinstance(leaf, Scalar):
+                    factor *= leaf
+                else:
+                    tensors.append(leaf)
+            mul_no_factor = mul.copy(*tensors)
+            output_expr_factors[output, mul_no_factor] += factor
+
+    # Find the unique expressions
+    output_expr: list[tuple[Tensor, Base]] = []
+    for (output, expr), factor in output_expr_factors.items():
+        output_expr.append((output, factor * expr))
+
+    return output_expr
 
 
 def _tensor_info(tensor: Tensor) -> TensorInfo:

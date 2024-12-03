@@ -39,6 +39,7 @@ _amplitude_names = [
     "c2",
     "c3",
     "c4",
+    "c4a",
 ]
 _descriptions = {
     "f": "Fock matrix.",

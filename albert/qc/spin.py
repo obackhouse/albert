@@ -163,6 +163,10 @@ def get_amplitude_spins(
         for i, index in enumerate(vir_indices):
             case[_get_name(index)] = ["a", "b"][i % 2]
         cases.append(case)
+        # FIXME how to generalise?
+        if len(occ_indices) == len(vir_indices) == 4:
+            case = dict(zip(map(_get_name, occ_indices + vir_indices), ["a", "b", "a", "a"] * 2))
+            cases.append(case)
 
     elif spin_type == "uhf":
         # UHF
@@ -176,10 +180,16 @@ def get_amplitude_spins(
                 best: tuple[tuple[str, ...], int] = (("",), int(1e10))
                 for s in itertools.permutations(spins):
                     penalty = 0
-                    for i in range(len(s) - 1):
-                        penalty += int(s[i] == s[i + 1]) * 2
-                    if s[0] != min(s):
-                        penalty += 1
+                    if abs(spins.count("a") - spins.count("b")) < 2:
+                        # Use alternating spins (ababab... or bababa...)
+                        for i in range(len(s) - 1):
+                            penalty += int(s[i] == s[i + 1]) * 2
+                        if s[0] != min(s):
+                            penalty += 1
+                    else:
+                        # Use lexicographic spins (abbbb... or aa...aab)
+                        for i in range(len(s) - 1):
+                            penalty += int(s[i] > s[i + 1])
                     if penalty < best[1]:
                         best = (s, penalty)
                 spins = best[0]

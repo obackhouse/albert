@@ -285,7 +285,7 @@ def _amplitude_as_rhf(
     for i, amp in enumerate(amps):
         indices = tuple(index.copy(spin="r") for index in amp.external_indices)
         amps[i] = amp.apply(
-            lambda tensor: type_rhf(*indices, name=tensor.name), node_type=Tensor  # noqa: B023
+            lambda tensor: type_rhf(*indices, name=tensor.name), Tensor  # noqa: B023
         )
 
     return sum(amps, Scalar(0.0))
@@ -300,7 +300,7 @@ def _t4_as_rhf(
     """Convert a UHF T4 amplitude tensor to a RHF tensor.
 
     T4 in RHF has two components: T4 and T4a. The T4 component comes from the abababab and the T4a
-    from aabaaaba configurations of the UHF T4 tensor.
+    from abaaabaa configurations of the UHF T4 tensor.
 
     Args:
         amp: UHF amplitude tensor.
@@ -332,18 +332,24 @@ def _t4_as_rhf(
     # Canonicalise the amplitudes
     amps = [amp.canonicalise() for amp in amps]
 
+    # Transform aaabaaab to abaaabaa
+    for i, amp in enumerate(amps):
+        spins = tuple(index.spin for index in amp.external_indices)
+        if spins == ("a", "a", "a", "b", "a", "a", "a", "b"):
+            amps[i] = amp.permute_indices((2, 3, 0, 1, 6, 7, 4, 5))
+
     # Relabel the indices
     for i, amp in enumerate(amps):
         spins = tuple(index.spin for index in amp.external_indices)
         if spins == ("a", "b", "a", "b", "a", "b", "a", "b"):
-            name = "t4"
-        elif spins == ("a", "a", "b", "a", "a", "a", "b", "a"):
-            name = "t4a"
+            extra = ""
+        elif spins == ("a", "b", "a", "a", "a", "b", "a", "a"):
+            extra = "a"
         else:
             raise ValueError("Invalid spin configuration for T4 amplitude.")
         indices = tuple(index.copy(spin="r") for index in amp.external_indices)
         amps[i] = amp.apply(
-            lambda tensor: type_rhf(*indices, name=name), node_type=Tensor  # noqa: B023
+            lambda tensor: type_rhf(*indices, name=tensor.name + extra), Tensor  # noqa: B023
         )
 
     return sum(amps, Scalar(0.0))
@@ -542,9 +548,9 @@ class T4(Tensor):
             return 0
         elif spins == ("a", "b", "a", "b", "a", "b", "a", "b"):
             return 1
-        elif spins == ("a", "a", "b", "a", "a", "a", "b", "a"):
+        elif spins == ("a", "a", "a", "b", "a", "a", "a", "b"):
             return 2
-        elif spins == ("b", "a", "b", "b", "b", "a", "b", "b"):
+        elif spins == ("a", "b", "b", "b", "a", "b", "b", "b"):
             return 3
         elif spins == ("b", "b", "b", "b", "b", "b", "b", "b"):
             return 4
