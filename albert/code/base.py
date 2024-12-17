@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from typing import Any, Callable, Optional
 
     from albert.base import Base
+    from albert.index import Index
     from albert.opt.tools import TensorInfo
     from albert.scalar import Scalar
 
@@ -262,6 +263,8 @@ class BaseCodeGenerator(ABC):
         expr: Base,
         declared: bool = False,
         is_return: bool = False,
+        index_slices: Optional[dict[Index, int]] = None,
+        ignore_index_slices: Optional[tuple[type[Tensor]]] = None,
     ) -> None:
         """Write a tensor expression.
 
@@ -270,6 +273,8 @@ class BaseCodeGenerator(ABC):
             expr: The expression.
             declared: Whether the output tensor has already been declared.
             is_return: Whether the output tensor is a return tensor.
+            index_slices: Specific indices to use as slices for the tensors.
+            ignore_index_slices: List of tensor types to ignore slices for.
         """
         pass
 
@@ -296,6 +301,8 @@ class BaseCodeGenerator(ABC):
         preamble: Optional[Callable[[], None]] = None,
         postamble: Optional[Callable[[], None]] = None,
         reset_cache: bool = True,
+        index_slices: Optional[dict[Index, int]] = None,
+        extra_args: Optional[tuple[str, ...]] = None,
     ) -> None:
         """Generate code for a function.
 
@@ -312,6 +319,8 @@ class BaseCodeGenerator(ABC):
             preamble: A callable to call to handle the function preamble.
             postamble: A callable to call to handle the function postamble.
             reset_cache: Whether to reset the caches before generating the code.
+            index_slices: Specific indices to use as slices for the tensors.
+            extra_args: Extra arguments to add to the function signature.
         """
         # Reset the caches
         if reset_cache:
@@ -326,6 +335,8 @@ class BaseCodeGenerator(ABC):
                     args.append(tensor)
                     done.add(tensor.name)
         args = sorted(args, key=self.get_argument)
+        if extra_args:
+            args += [Tensor(name=arg) for arg in extra_args]
 
         # Get the returns
         done = set()
@@ -384,7 +395,13 @@ class BaseCodeGenerator(ABC):
                 self._tensor_declared.add(info)
 
             # Write the tensor expression
-            self.tensor_expression(output, expr, declared=already_declared, is_return=is_return)
+            self.tensor_expression(
+                output,
+                expr,
+                declared=already_declared,
+                is_return=is_return,
+                index_slices=index_slices,
+            )
 
             # Write the tensor cleanup
             already_cleaned = info in self._tensor_cleaned

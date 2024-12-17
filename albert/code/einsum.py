@@ -281,6 +281,8 @@ class EinsumCodeGenerator(BaseCodeGenerator):
         expr: Base,
         declared: bool = False,
         is_return: bool = False,
+        index_slices: Optional[dict[Index, int]] = None,
+        ignore_index_slices: Optional[tuple[type[Tensor]]] = None,
     ) -> None:
         """Write a tensor expression.
 
@@ -289,6 +291,8 @@ class EinsumCodeGenerator(BaseCodeGenerator):
             expr: The expression.
             declared: Whether the output tensor has already been declared.
             is_return: Whether the output tensor is a return tensor.
+            index_slices: Specific indices to use as slices for the tensors.
+            ignore_index_slices: List of tensor types to ignore slices for.
         """
         expr = expr.expand()  # guarantee Add[Mul[Tensor | Scalar]]
         for i, mul in enumerate(expr._children):
@@ -305,7 +309,14 @@ class EinsumCodeGenerator(BaseCodeGenerator):
             # Get the arguments
             args: list[str] = []
             for tensor, index in zip(tensors, indices):
-                args.append(self.get_name(tensor))
+                name = self.get_name(tensor)
+                if index_slices and any(idx in index_slices for idx in tensor.external_indices):
+                    if ignore_index_slices is None or not isinstance(tensor, ignore_index_slices):
+                        slices = [
+                            str(index_slices.get(idx, ":")) for idx in tensor.external_indices
+                        ]
+                        name = f"{name}[{', '.join(slices)}]"
+                args.append(name)
                 args.append(repr(index))
             args.append(repr(indices[-1]))
 
