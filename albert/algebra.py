@@ -7,6 +7,7 @@ from collections import defaultdict
 from functools import cached_property, reduce
 from typing import TYPE_CHECKING, TypedDict, TypeVar, cast
 
+from albert import ALLOW_NON_EINSTEIN_NOTATION
 from albert.base import Base, IAdd, IAlgebraic, IMul
 from albert.canon import canonicalise_indices
 from albert.scalar import Scalar, _compose_scalar
@@ -32,7 +33,7 @@ def _check_indices(children: Iterable[Base]) -> None:
             counts[index] += 1
         for index in child.external_indices:
             counts[index] += 1
-    if any(count > 2 for count in counts.values()):
+    if any(count > 2 for count in counts.values()) and not ALLOW_NON_EINSTEIN_NOTATION:
         raise ValueError(
             "Input arguments are not a valid Einstein notation.  Each index must appear at most "
             "twice."
