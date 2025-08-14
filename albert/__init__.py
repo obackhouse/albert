@@ -32,3 +32,5 @@ _default_sizes: dict[str | None, float] = {
     "k": 5,  # k-point
     None: 10,  # default
 }
+
+ALLOW_NON_EINSTEIN_NOTATION = 0
