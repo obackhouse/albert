@@ -2,16 +2,94 @@
 
 from __future__ import annotations
 
+import functools
+import itertools
 from collections import defaultdict
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol, TypeVar
 
 from albert.base import IMul
 from albert.index import Index
 
 if TYPE_CHECKING:
-    from typing import Optional
+    from typing import Any, Callable, Generator, Optional
 
     from albert.base import Base
+    from albert.tensor import Tensor
+
+
+T = TypeVar("T", contravariant=True)
+
+
+class SupportsDunderLT(Protocol[T]):
+    """Protocol for objects that support the less than comparison."""
+
+    def __lt__(self, __other: T) -> bool:
+        """Less than comparison for canonicalisation."""
+        pass
+
+
+def iter_equivalent_forms(expr: Base) -> Generator[Base, None, None]:
+    """Iterate over all equivalent forms of a tensor expression.
+
+    Args:
+        expr: The tensor expression to iterate over.
+
+    Yields:
+        All equivalent forms of the tensor expression.
+    """
+    from albert.scalar import Scalar
+    from albert.tensor import Tensor  # FIXME
+
+    @functools.lru_cache(maxsize=None)
+    def _symmetry(node: Tensor) -> list[Base]:
+        if node._symmetry is None:
+            return [node]
+        return list(node._symmetry(node))
+
+    def _iter_variants(node: Base) -> Generator[Base, None, None]:
+        if isinstance(node, Scalar):
+            yield node
+            return
+        if isinstance(node, Tensor):
+            yield from _symmetry(node)
+            return
+        assert node._children is not None
+        variants = [list(_iter_variants(child)) if child else [] for child in node._children]
+        for combo in itertools.product(*variants):
+            yield node.copy(*combo)
+
+    yield from _iter_variants(expr)
+
+
+def canonicalise_exhaustive(
+    expr: Base,
+    output: Optional[Tensor] = None,
+    key: Callable[[Base], SupportsDunderLT[Any]] = lambda x: x,
+) -> Base:
+    """Canonicalise a tensor expression exhaustively.
+
+    Args:
+        expr: The tensor expression to canonicalise.
+
+    Returns:
+        The canonicalised tensor expression.
+    """
+
+    def _iter_equivalent_forms(expr: Base) -> Generator[Base, None, None]:
+        """Iterate over all equivalent forms of a tensor expression."""
+        if output is None or output._symmetry is None:
+            yield from iter_equivalent_forms(expr)
+            return
+        for variant in iter_equivalent_forms(expr):
+            for output_variant in output._symmetry(output):
+                index_map = dict(zip(output.external_indices, output_variant.external_indices))
+                variant = variant.map_indices(index_map)
+                yield variant
+
+    expr = canonicalise_indices(expr)
+    expr = min(_iter_equivalent_forms(expr), key=key)
+
+    return expr
 
 
 def canonicalise_indices(expr: Base, extra_indices: Optional[list[Index]] = None) -> Base:

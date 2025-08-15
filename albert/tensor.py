@@ -158,7 +158,8 @@ class Tensor(Base):
     def canonicalise(self, indices: bool = False) -> Base:
         """Canonicalise the object.
 
-        The results of this function for equivalent representations should be equal.
+        This function performs a greedy canonicalisation and may not always find the optimal
+        canonical form. For a more exhaustive canonicalisation, use `canonicalise_exhaustive`.
 
         Args:
             indices: Whether to canonicalise the indices of the object. When `True`, this is
