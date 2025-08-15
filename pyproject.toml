@@ -103,6 +103,7 @@ ignore = [
     "B007",  # Loop control variable not used within the loop body
     "B019",  # Use of `functools.lru_cache` or `functools.cache` ...
     "B027",  # Empty method in an abstract base class wit no abstract decorator
+    "NU002", # Use `Foo | None` syntax instead of Optional
 ]
 per-file-ignores = [
     "__init__.py:E402,W605,F401,F811,D103",

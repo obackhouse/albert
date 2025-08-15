@@ -135,7 +135,7 @@ def _tensor_info(tensor: Tensor) -> TensorInfo:
 
 
 def expressions_to_graph(
-    output_expr: list[tuple[Tensor, Base]]
+    output_expr: list[tuple[Tensor, Base]],
 ) -> dict[TensorInfo, set[TensorInfo]]:
     """Convert the expressions into a graph.
 
