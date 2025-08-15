@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 
 T = TypeVar("T", contravariant=True)
 
+
 class SupportsDunderLT(Protocol[T]):
     def __lt__(self, __other: T) -> bool: ...
 
