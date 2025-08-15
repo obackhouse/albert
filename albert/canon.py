@@ -21,7 +21,11 @@ T = TypeVar("T", contravariant=True)
 
 
 class SupportsDunderLT(Protocol[T]):
-    def __lt__(self, __other: T) -> bool: ...
+    """Protocol for objects that support the less than comparison."""
+
+    def __lt__(self, __other: T) -> bool:
+        """Less than comparison for canonicalisation."""
+        pass
 
 
 def iter_equivalent_forms(expr: Base) -> Generator[Base, None, None]:
