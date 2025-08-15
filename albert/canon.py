@@ -11,7 +11,7 @@ from albert.base import IMul
 from albert.index import Index
 
 if TYPE_CHECKING:
-    from typing import Callable, Generator, Optional, Any
+    from typing import Any, Callable, Generator, Optional
 
     from albert.base import Base
     from albert.tensor import Tensor
