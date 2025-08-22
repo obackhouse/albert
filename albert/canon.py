@@ -5,7 +5,7 @@ from __future__ import annotations
 import functools
 import itertools
 from collections import defaultdict
-from typing import TYPE_CHECKING, Protocol, TypeVar
+from typing import TYPE_CHECKING, Literal, Protocol, TypeVar
 
 from albert.base import IMul
 from albert.index import Index
@@ -86,13 +86,17 @@ def canonicalise_exhaustive(
                 variant = variant.map_indices(index_map)
                 yield variant
 
-    expr = canonicalise_indices(expr)
+    expr = expr.canonicalise()
     expr = min(_iter_equivalent_forms(expr), key=key)
 
     return expr
 
 
-def canonicalise_indices(expr: Base, extra_indices: Optional[list[Index]] = None) -> Base:
+def canonicalise_indices(
+    expr: Base,
+    extra_indices: Optional[list[Index]] = None,
+    which: Literal["all", "external", "internal"] = "all",
+) -> Base:
     """Canonicalise the indices of a tensor expression.
 
     Args:
@@ -149,6 +153,15 @@ def canonicalise_indices(expr: Base, extra_indices: Optional[list[Index]] = None
             index_flip = index_map_node[index].spin_flip()
             if index_flip in index_lists_node.get((index_flip.spin, index_flip.space), []):
                 index_lists_node[(index_flip.spin, index_flip.space)].remove(index_flip)
+
+        # Remove mappings for indices we don't want to change
+        for src, dst in list(index_map.items()):
+            touches_internal = src in node.internal_indices or dst in node.internal_indices
+            touches_external = src in node.external_indices or dst in node.external_indices
+            if which == "external" and touches_internal:
+                del index_map_node[src]
+            elif which == "internal" and touches_external:
+                del index_map_node[src]
 
         # Canonicalise the node
         return node.map_indices(index_map_node)
