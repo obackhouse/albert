@@ -6,7 +6,6 @@ import functools
 import itertools
 from collections import defaultdict
 from typing import TYPE_CHECKING, Protocol, TypeVar, Literal
-import warnings
 
 from albert.base import IMul
 from albert.index import Index
