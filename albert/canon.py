@@ -5,7 +5,7 @@ from __future__ import annotations
 import functools
 import itertools
 from collections import defaultdict
-from typing import TYPE_CHECKING, Protocol, TypeVar, Literal
+from typing import TYPE_CHECKING, Literal, Protocol, TypeVar
 
 from albert.base import IMul
 from albert.index import Index
