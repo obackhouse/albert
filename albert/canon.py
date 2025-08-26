@@ -15,7 +15,6 @@ if TYPE_CHECKING:
     from typing import Any, Callable, Generator, Optional
 
     from albert.base import Base
-    from albert.tensor import Tensor
 
 
 T = TypeVar("T", contravariant=True)
