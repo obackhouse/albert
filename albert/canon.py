@@ -7,14 +7,14 @@ import itertools
 from collections import defaultdict
 from typing import TYPE_CHECKING, Literal, Protocol, TypeVar
 
-from albert.base import IMul
+from albert.base import IAlgebraic, IMul
 from albert.index import Index
+from albert.scalar import Scalar
 
 if TYPE_CHECKING:
     from typing import Any, Callable, Generator, Optional
 
     from albert.base import Base
-    from albert.tensor import Tensor
 
 
 T = TypeVar("T", contravariant=True)
@@ -63,8 +63,7 @@ def iter_equivalent_forms(expr: Base) -> Generator[Base, None, None]:
 
 def canonicalise_exhaustive(
     expr: Base,
-    output: Optional[Tensor] = None,
-    key: Callable[[Base], SupportsDunderLT[Any]] = lambda x: x,
+    key: Callable[[Base], SupportsDunderLT[Any]] | None = None,
 ) -> Base:
     """Canonicalise a tensor expression exhaustively.
 
@@ -77,16 +76,21 @@ def canonicalise_exhaustive(
 
     def _iter_equivalent_forms(expr: Base) -> Generator[Base, None, None]:
         """Iterate over all equivalent forms of a tensor expression."""
-        if output is None or output._symmetry is None:
-            yield from iter_equivalent_forms(expr)
-            return
-        for variant in iter_equivalent_forms(expr):
-            for output_variant in output._symmetry(output):
-                index_map = dict(zip(output.external_indices, output_variant.external_indices))
-                variant = variant.map_indices(index_map)
-                yield variant
+        internal_indices = sorted(expr.internal_indices)
+        categories = [(index.space, index.spin) for index in internal_indices]
+        for perm in itertools.permutations(range(len(internal_indices))):
+            if all(categories[i] == categories[j] for i, j in enumerate(perm)):
+                index_map = dict(zip(internal_indices, (internal_indices[i] for i in perm)))
+                yield expr.map_indices(index_map).canonicalise()
 
-    expr = expr.canonicalise()
+    if key is None:
+
+        def key(e: Base) -> SupportsDunderLT[Any]:
+            """Key function for canonicalisation."""
+            if isinstance(e, IAlgebraic):
+                return tuple(sorted(filter(lambda x: not isinstance(x, Scalar), e._children or [])))
+            return e
+
     expr = min(_iter_equivalent_forms(expr), key=key)
 
     return expr
