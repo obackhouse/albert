@@ -64,7 +64,6 @@ def iter_equivalent_forms(expr: Base) -> Generator[Base, None, None]:
 
 def canonicalise_exhaustive(
     expr: Base,
-    output: Optional[Tensor] = None,
     key: Callable[[Base], SupportsDunderLT[Any]] | None = None,
 ) -> Base:
     """Canonicalise a tensor expression exhaustively.
@@ -83,14 +82,7 @@ def canonicalise_exhaustive(
         for perm in itertools.permutations(range(len(internal_indices))):
             if all(categories[i] == categories[j] for i, j in enumerate(perm)):
                 index_map = dict(zip(internal_indices, (internal_indices[i] for i in perm)))
-                if output is None or output._symmetry is None:
-                    yield expr.map_indices(index_map).canonicalise()
-                else:
-                    for output_variant in output._symmetry(output):
-                        index_map_output = dict(
-                            zip(output.external_indices, output_variant.external_indices)
-                        )
-                        yield expr.map_indices({**index_map, **index_map_output}).canonicalise()
+                yield expr.map_indices(index_map).canonicalise()
 
     if key is None:
 
