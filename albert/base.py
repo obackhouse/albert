@@ -172,6 +172,20 @@ class Base(Serialisable):
             for child in self._children:
                 yield from child.search_nodes(type_filter)
 
+    def search_children(self, type_filter: type[T]) -> Iterable[T]:
+        """Search through direct children.
+
+        Args:
+            type_filter: Type to filter by.
+
+        Yields:
+            Elements of the `_children` tuple.
+        """
+        if self._children is not None:
+            for child in self._children:
+                if isinstance(child, type_filter):
+                    yield child
+
     @property
     def is_leaf(self) -> bool:
         """Get whether the object is a leaf in a tree."""

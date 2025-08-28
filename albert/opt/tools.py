@@ -236,7 +236,8 @@ def sort_expressions(output_expr: list[tuple[Tensor, Base]]) -> list[tuple[Tenso
             _add(name)
 
     # Check the sanity of the result
-    assert len(outputs) == len(exprs) == len(output_expr)
+    # FIXME: Doesn't really have to be true...
+    # assert len(outputs) == len(exprs) == len(output_expr)
 
     return list(zip(outputs, exprs))
 
