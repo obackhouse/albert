@@ -7,10 +7,11 @@ import itertools
 import warnings
 from typing import TYPE_CHECKING
 
+from albert import _default_sizes
 from albert.algebra import Algebraic, Mul, _compose_mul
 from albert.canon import canonicalise_indices
 from albert.opt.parenth import factorise, parenthesise_mul
-from albert.opt.tools import sort_expressions
+from albert.opt.tools import count_flops, sort_expressions
 from albert.scalar import Scalar
 from albert.tensor import Tensor
 
@@ -94,7 +95,7 @@ def _identify_subexpressions(
 
 
 def eliminate_common_subexpressions(
-    output_exprs: list[tuple[Tensor, Base]],
+    output_exprs: list[tuple[Tensor, Base]], sizes: Optional[dict[str | None, float]] = None
 ) -> list[tuple[Tensor, Base]]:
     """Identify common subexpressions in a series of expressions.
 
@@ -103,11 +104,15 @@ def eliminate_common_subexpressions(
     Args:
         output_exprs: The output and expression pairs to identify common subexpressions in, as
             `(Tensor, Base)` pairs.
+        sizes: The sizes of the spaces in the expressions.
 
     Returns:
         Expressions with common subexpressions eliminated, and a list of intermediate definitions
         as `(Tensor, Base)` pairs.
     """
+    if sizes is None:
+        sizes = _default_sizes
+
     # Get all indices in the expressions
     indices: set[Index] = set()
     for _, expr in output_exprs:
@@ -131,10 +136,14 @@ def eliminate_common_subexpressions(
         if not candidates:
             break
 
-        # Favour the candidate with the most uses, then the most tensors
-        candidate, candidate_indices = max(
-            candidates, key=lambda c: (candidates[c], _count_tensors(c[0]))
-        )
+        def _cost(c: tuple[Base, tuple[Index, ...]]) -> float:
+            """Estimate the cost (benefit) of a candidate intermediate."""
+            count = candidates[c]  # noqa: B023
+            flops = count_flops(c[0], sizes=sizes)
+            return count * flops
+
+        # Favour the best candidate according to the cost function
+        candidate, candidate_indices = max(candidates, key=_cost)
 
         # Initialise the intermediate
         interm = Tensor(
@@ -150,8 +159,9 @@ def eliminate_common_subexpressions(
             # Find the substitutions
             substs: dict[Base, Base] = {}
             for mul in expr.search_nodes(Mul):
-                # Loop over all combinations of >1 children to find subexpressions
+                # Loop over combinations of children to find subexpressions
                 children = [child for child in mul._children if not isinstance(child, Scalar)]
+                assert candidate._children is not None
                 for combo in itertools.combinations(children, len(candidate._children)):
                     mul_check = Mul(*combo)
                     _, mul_check_canon = _canonicalise_intermediate(None, mul_check, indices)
@@ -491,7 +501,7 @@ def eliminate_and_factorise_common_subexpressions(
         output_exprs_prev = output_exprs.copy()
         if i != 0:
             output_exprs = factorise(output_exprs)
-        output_exprs = eliminate_common_subexpressions(output_exprs)
+        output_exprs = eliminate_common_subexpressions(output_exprs, sizes=sizes)
         output_exprs = _canonicalise(output_exprs)
         output_exprs = absorb_trivial_intermediates(output_exprs)
         output_exprs = merge_identical_intermediates(output_exprs)
