@@ -1,16 +1,17 @@
 """Parenthesisation."""
 
 from __future__ import annotations
+
 from typing import TYPE_CHECKING
 
 import opt_einsum
 
 from albert import _default_sizes
-from albert.algebra import Mul, Add
+from albert.algebra import Add, Mul
+from albert.base import Base
 from albert.index import Index
 from albert.scalar import Scalar
 from albert.tensor import Tensor
-from albert.base import Base
 
 if TYPE_CHECKING:
     from typing import Any, Optional
@@ -221,9 +222,7 @@ def factorise(output_exprs: list[tuple[Tensor, Base]]) -> list[tuple[Tensor, Bas
         for output, expr in to_factorise:
             assert expr._children is not None
             if factor in expr._children:
-                group.append(
-                    (output, Mul(*[child for child in expr._children if child != factor]))
-                )
+                group.append((output, Mul(*[child for child in expr._children if child != factor])))
             else:
                 new_to_factorise.append((output, expr))
         to_factorise = new_to_factorise

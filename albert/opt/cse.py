@@ -152,16 +152,15 @@ def eliminate_common_subexpressions(
             for mul in expr.search_nodes(Mul):
                 # Loop over all combinations of >1 children to find subexpressions
                 children = [child for child in mul._children if not isinstance(child, Scalar)]
-                for r in range(2, len(children) + 1):  # TODO: only check len(candidate)?
-                    for combo in itertools.combinations(children, r):
-                        mul_check = Mul(*combo)
-                        _, mul_check_canon = _canonicalise_intermediate(None, mul_check, indices)
-                        if mul_check_canon == candidate:
-                            index_map = _get_canonicalise_intermediate_map(mul_check, indices)
-                            index_map_rev = {v: k for k, v in index_map.items()}
-                            scalars = [child for child in mul._children if child not in combo]
-                            substs[mul] = _compose_mul(*scalars, interm.map_indices(index_map_rev))
-                            touched = True
+                for combo in itertools.combinations(children, len(candidate._children)):
+                    mul_check = Mul(*combo)
+                    _, mul_check_canon = _canonicalise_intermediate(None, mul_check, indices)
+                    if mul_check_canon == candidate:
+                        index_map = _get_canonicalise_intermediate_map(mul_check, indices)
+                        index_map_rev = {v: k for k, v in index_map.items()}
+                        scalars = [child for child in mul._children if child not in combo]
+                        substs[mul] = _compose_mul(*scalars, interm.map_indices(index_map_rev))
+                        touched = True
 
             if substs:
                 # Apply the substitutions
@@ -176,8 +175,6 @@ def eliminate_common_subexpressions(
             # Add the definition of the intermediate and increment the counter
             output_exprs.append((interm, candidate))
             counter += 1
-        else:
-            break
 
     # For any remaining nested multiplications, assign intermediates instead of the nesting
     new_output_exprs = []
