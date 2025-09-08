@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 from albert import __version__
 from albert.opt.tools import _tensor_info, sort_expressions, split_expressions
 from albert.tensor import Tensor
+from albert.expression import Expression
 
 if TYPE_CHECKING:
     from typing import Any, Callable, Optional
@@ -259,8 +260,7 @@ class BaseCodeGenerator(ABC):
     @abstractmethod
     def tensor_expression(
         self,
-        output: Tensor,
-        expr: Base,
+        expr: Expression,
         declared: bool = False,
         is_return: bool = False,
         index_slices: Optional[dict[Index, int]] = None,
@@ -269,8 +269,7 @@ class BaseCodeGenerator(ABC):
         """Write a tensor expression.
 
         Args:
-            output: The output tensor.
-            expr: The expression.
+            expr: The tensor expression.
             declared: Whether the output tensor has already been declared.
             is_return: Whether the output tensor is a return tensor.
             index_slices: Specific indices to use as slices for the tensors.
@@ -295,7 +294,7 @@ class BaseCodeGenerator(ABC):
         self,
         function_name: str,
         returns: list[Tensor],
-        output_expr: list[tuple[Tensor, Base]],
+        expressions: list[Expression],
         as_dict: bool = False,
         function_description: Optional[str] = None,
         preamble: Optional[Callable[[], None]] = None,
@@ -312,7 +311,7 @@ class BaseCodeGenerator(ABC):
 
         Args:
             function_name: The name of the function.
-            output_expr: The output tensors and their expressions.
+            expressions: The tensor expressions.
             returns: The tensors to return.
             as_dict: Whether to return as a dictionary. Otherwise, return as a tuple.
             function_description: The description of the function.
@@ -329,7 +328,7 @@ class BaseCodeGenerator(ABC):
         # Get the arguments
         done = set()
         args = []
-        for _, expr in output_expr:
+        for _, expr in expressions:
             for tensor in expr.search_leaves(Tensor):
                 if not self.ignore_argument(tensor) and tensor.name not in done:
                     args.append(tensor)
@@ -366,13 +365,13 @@ class BaseCodeGenerator(ABC):
             self.blank()
 
         # Sort the expressions
-        output_expr = split_expressions(output_expr)
-        output_expr = sort_expressions(output_expr)
+        expressions = split_expressions(expressions)
+        expressions = sort_expressions(expressions)
 
         # Find the last appearance of each tensor
         last_appearance: dict[TensorInfo, int] = {}
         info_tensor_map: dict[TensorInfo, Tensor] = {}
-        for i, (output, expr) in enumerate(output_expr):
+        for i, (output, expr) in enumerate(expressions):
             for tensor in expr.search_leaves(Tensor):
                 info = _tensor_info(tensor)
                 last_appearance[info] = i
@@ -385,7 +384,7 @@ class BaseCodeGenerator(ABC):
                 to_cleanup[i].append(info_tensor_map[info])
 
         # Write the tensor contractions
-        for i, (output, expr) in enumerate(output_expr):
+        for i, (output, expr) in enumerate(expressions):
             # Write the tensor declaration
             info = _tensor_info(output)
             already_declared = info in self._tensor_declared
@@ -396,8 +395,7 @@ class BaseCodeGenerator(ABC):
 
             # Write the tensor expression
             self.tensor_expression(
-                output,
-                expr,
+                Expression(output, expr),
                 declared=already_declared,
                 is_return=is_return,
                 index_slices=index_slices,

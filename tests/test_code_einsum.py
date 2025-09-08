@@ -12,12 +12,13 @@ from albert.opt._gristmill import optimise_gristmill
 from albert.qc.ghf import Fock
 from albert.qc.spin import ghf_to_uhf
 from albert.tensor import Tensor
+from albert.expression import Expression
 
 
 def _test_einsum(
     helper,
     returns,
-    output_expr,
+    exprs,
     kwargs,
     output_data_ref,
     codegen=EinsumCodeGenerator,
@@ -29,7 +30,7 @@ def _test_einsum(
     with open(f"{os.path.dirname(__file__)}/_{caller}.py", "w") as file:
         codegen = codegen(stdout=file)
         codegen.preamble()
-        codegen("_test_function", returns, output_expr, as_dict=as_dict)
+        codegen("_test_function", returns, exprs, as_dict=as_dict)
         codegen.postamble()
 
     if debug:
@@ -70,7 +71,7 @@ def test_einsum_code_simple(helper):
     y = Tensor(b, c, name="y")
     output = Tensor(a, c, name="output")
     expr = x * y
-    output_expr = [(output, expr)]
+    exprs = [Expression(output, expr)]
 
     size = 4
     x1_data = helper.random((size, size))
@@ -80,7 +81,7 @@ def test_einsum_code_simple(helper):
     _test_einsum(
         helper,
         [output],
-        output_expr,
+        exprs,
         dict(x=x1_data, y=y1_data),
         output_data_ref,
     )
@@ -96,7 +97,7 @@ def test_einsum_code_simple_dict(helper):
     output_2 = Tensor(a, c, name="output2")
     expr_1 = x * y
     expr_2 = 0.5 * x * y
-    output_expr = [(output_1, expr_1), (output_2, expr_2)]
+    exprs = [Expression(output_1, expr_1), Expression(output_2, expr_2)]
 
     size = 4
     x1_data = helper.random((size, size))
@@ -109,7 +110,7 @@ def test_einsum_code_simple_dict(helper):
     _test_einsum(
         helper,
         [output_1, output_2],
-        output_expr,
+        exprs,
         dict(x=x1_data, y=y1_data),
         output_data_ref,
         as_dict=True,
@@ -134,7 +135,7 @@ def test_einsum_code_simple_spins_spaces(helper):
     y_bb = Tensor(b_b, c_b, name="y")
     output_bb = Tensor(a_b, c_b, name="output")
     expr_bb = 0.5 * x_bb * y_bb
-    output_expr = [(output_aa, expr_aa), (output_bb, expr_bb)]
+    exprs = [Expression(output_aa, expr_aa), Expression(output_bb, expr_bb)]
 
     size = 4
     x1_data = SimpleNamespace(
@@ -153,7 +154,7 @@ def test_einsum_code_simple_spins_spaces(helper):
     _test_einsum(
         helper,
         [output_aa, output_bb],
-        output_expr,
+        exprs,
         dict(x=x1_data, y=y1_data),
         output_data_ref,
         codegen=_EinsumCodeGenerator,
@@ -175,7 +176,7 @@ def test_einsum_code_opt(helper):
     output = Tensor(a, d, name="output")
     expr = (x1 + 0.5 * x2) * (2.0 * y1 + y2) * (1.5 * z1 + -2.0 * z2)
     expr = expr.expand()
-    output_expr = optimise_gristmill([output], [expr], strategy="exhaust")
+    exprs = optimise_gristmill([Expression(output, expr)], strategy="exhaust")
 
     a_size = 3
     b_size = 4
@@ -198,7 +199,7 @@ def test_einsum_code_opt(helper):
     _test_einsum(
         helper,
         [output],
-        output_expr,
+        exprs,
         dict(
             x1=x1_data,
             x2=x2_data,
@@ -232,9 +233,9 @@ def test_einsum_code_opt_spins(helper, strategy, transposes, greedy_cutoff, drop
     expr = expr.expand()
     expr = tuple(ghf_to_uhf(expr))
     output = tuple(Fock(*e.external_indices, name="output") for e in expr)
-    output_expr = optimise_gristmill(
-        output,
-        expr,
+    exprs = [Expression(o, e) for o, e in zip(output, expr)]
+    exprs = optimise_gristmill(
+        exprs,
         strategy=strategy,
         transposes=transposes,
         greedy_cutoff=greedy_cutoff,
@@ -263,7 +264,7 @@ def test_einsum_code_opt_spins(helper, strategy, transposes, greedy_cutoff, drop
     _test_einsum(
         helper,
         list(output),
-        output_expr,
+        exprs,
         dict(x=x, y=y),
         output_data_ref,
         debug=True,

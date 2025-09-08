@@ -10,8 +10,8 @@ def test_substitute_expressions():
     output_expr = [(z_output, z_expr), (x_output, x_expr)]
     output_expr_sub = substitute_expressions(output_expr)
     assert len(output_expr_sub) == 1
-    assert output_expr_sub[0][0] == z_output
-    assert output_expr_sub[0][1] == Tensor.from_string("a(i,j,k) * b(j,k,l) * y(l)").expand()
+    assert output_expr_sub[0].lhs == z_output
+    assert output_expr_sub[0].rhs == Tensor.from_string("a(i,j,k) * b(j,k,l) * y(l)").expand()
 
     x_output = Tensor.from_string("x(i,j)")
     x_expr = Tensor.from_string("a(i,k,l) * b(k,l,j)")
@@ -29,10 +29,10 @@ def test_substitute_expressions():
     ]
     output_expr_sub = substitute_expressions(output_expr)
     assert len(output_expr_sub) == 2
-    assert output_expr_sub[0][0] == u_output
-    assert output_expr_sub[0][1] == Tensor.from_string("(a(i,k,l) * b(k,l,j)) + (z(i,j))").expand()
-    assert output_expr_sub[1][0] == v_output
-    assert output_expr_sub[1][1] == Tensor.from_string("(a(i,k,l) * c(k,l,j)) + (z(i,j))").expand()
+    assert output_expr_sub[0].lhs == u_output
+    assert output_expr_sub[0].rhs == Tensor.from_string("(a(i,k,l) * b(k,l,j)) + (z(i,j))").expand()
+    assert output_expr_sub[1].lhs == v_output
+    assert output_expr_sub[1].rhs == Tensor.from_string("(a(i,k,l) * c(k,l,j)) + (z(i,j))").expand()
 
     x_output = Tensor.from_string("x(i,j)")
     x_expr = Tensor.from_string("a(i,k,l) * b(k,l,j)")
@@ -50,13 +50,13 @@ def test_substitute_expressions():
     ]
     output_expr_sub = substitute_expressions(output_expr)
     assert len(output_expr_sub) == 2
-    assert output_expr_sub[0][0] == u_output
+    assert output_expr_sub[0].lhs == u_output
     assert (
-        output_expr_sub[0][1]
+        output_expr_sub[0].rhs
         == Tensor.from_string("(a(i,k,l) * b(k,l,j)) + (a(i,k,l) * c(k,l,j)) + (z(i,j))").expand()
     )
-    assert output_expr_sub[1][0] == v_output
+    assert output_expr_sub[1].lhs == v_output
     assert (
-        output_expr_sub[1][1]
+        output_expr_sub[1].rhs
         == Tensor.from_string("(a(i,k,l) * b(k,l,j)) + (a(i,k,l) * c(k,l,j)) + (z(i,j))").expand()
     )

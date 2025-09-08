@@ -12,6 +12,7 @@ from albert.base import Base
 from albert.index import Index
 from albert.scalar import Scalar
 from albert.tensor import Tensor
+from albert.expression import Expression
 
 if TYPE_CHECKING:
     from typing import Any, Optional
@@ -23,7 +24,7 @@ def parenthesise_mul(
     scaling_limit_cpu: dict[tuple[str, ...], int] | None = None,
     scaling_limit_ram: dict[tuple[str, ...], int] | None = None,
     intermediate_counter: int = 0,
-) -> tuple[Mul, list[tuple[Tensor, Base]]]:
+) -> tuple[Mul, list[Expression]]:
     """Parenthesise a product.
 
     Converts the `Mul` of given children into a nested `Mul` of groups of said children.
@@ -38,8 +39,8 @@ def parenthesise_mul(
         intermediate_counter: The starting counter for naming intermediate tensors.
 
     Returns:
-        The parenthesised contraction represented by a non-nested product, and a list of
-        `(Tensor, Base)` pairs defining the intermediates to resolve the nested product.
+        The parenthesised contraction represented by a non-nested product, and a list of tensor
+        expressions defining the intermediates to resolve the nested product.
     """
     if sizes is None:
         sizes = _default_sizes
@@ -171,22 +172,21 @@ def parenthesise_mul(
     return expr, intermediates
 
 
-def factorise(output_exprs: list[tuple[Tensor, Base]]) -> list[tuple[Tensor, Base]]:
+def factorise(exprs: list[Expression]) -> list[Expression]:
     """Factorise expressions that differ by at most one tensor and the scalar factor.
 
     Args:
-        output_exprs: The output and expression pairs to identify common subexpressions in, as
-            `(Tensor, Base)` pairs.
+        exprs: The tensor expressions to identify common subexpressions in.
 
     Returns:
-        The factorised expressions as `(Tensor, Base)` pairs.
+        The factorised tensor expressions.
     """
     # Check that each expression is either:
     #  a) a Mul with at most two non-scalar children
     #  b) a non-scalar
-    new_output_exprs: list[tuple[Tensor, Base]] = []
-    to_factorise: list[tuple[Tensor, Base]] = []
-    for output, expr in output_exprs:
+    new_exprs: list[Expression] = []
+    to_factorise: list[Expression] = []
+    for output, expr in exprs:
         if isinstance(expr, Mul):
             children = [child for child in expr._children if not isinstance(child, Scalar)]
             if len(children) > 2:
@@ -195,11 +195,11 @@ def factorise(output_exprs: list[tuple[Tensor, Base]]) -> list[tuple[Tensor, Bas
                     "parenthesising the expressions first.",
                 )
             if len(children) == 2:
-                to_factorise.append((output, expr))
+                to_factorise.append(Expression(output, expr))
             else:
-                new_output_exprs.append((output, expr))
+                new_exprs.append(Expression(output, expr))
         else:
-            new_output_exprs.append((output, expr))
+            new_exprs.append(Expression(output, expr))
 
     while to_factorise:
         # Get all the possible factors
@@ -217,19 +217,21 @@ def factorise(output_exprs: list[tuple[Tensor, Base]]) -> list[tuple[Tensor, Bas
         factor = max(factors, key=lambda k: factors[k])
 
         # For each expression that contains this factor, remove it and group them
-        group: list[tuple[Tensor, Base]] = []
-        new_to_factorise: list[tuple[Tensor, Base]] = []
+        group: list[Expression] = []
+        new_to_factorise: list[Expression] = []
         for output, expr in to_factorise:
             assert expr._children is not None
             if factor in expr._children:
-                group.append((output, Mul(*[child for child in expr._children if child != factor])))
+                group.append(
+                    Expression(output, Mul(*[child for child in expr._children if child != factor]))
+                )
             else:
-                new_to_factorise.append((output, expr))
+                new_to_factorise.append(Expression(output, expr))
         to_factorise = new_to_factorise
 
         # Combine the group into sums for each unique output
         for output in set(output for output, _ in group):
             group_out = [child for out, child in group if out == output]
-            new_output_exprs.append((output, Mul(factor, Add(*group_out))))
+            new_exprs.append(Expression(output, Mul(factor, Add(*group_out))))
 
-    return new_output_exprs
+    return new_exprs

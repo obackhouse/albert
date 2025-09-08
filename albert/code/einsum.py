@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 
     from albert.base import Base
     from albert.index import Index
+    from albert.expression import Expression
 
 
 def _parse_indices(*index_groups: tuple[Index, ...]) -> list[tuple[int, ...]]:
@@ -277,8 +278,7 @@ class EinsumCodeGenerator(BaseCodeGenerator):
 
     def tensor_expression(
         self,
-        output: Tensor,
-        expr: Base,
+        expr: Expression,
         declared: bool = False,
         is_return: bool = False,
         index_slices: Optional[dict[Index, int]] = None,
@@ -287,15 +287,15 @@ class EinsumCodeGenerator(BaseCodeGenerator):
         """Write a tensor expression.
 
         Args:
-            output: The output tensor.
-            expr: The expression.
+            expr: The tensor expression.
             declared: Whether the output tensor has already been declared.
             is_return: Whether the output tensor is a return tensor.
             index_slices: Specific indices to use as slices for the tensors.
             ignore_index_slices: List of tensor types to ignore slices for.
         """
-        expr = expr.expand()  # guarantee Add[Mul[Tensor | Scalar]]
-        for i, mul in enumerate(expr._children):
+        output, expression = expr
+        expression = expression.expand()  # guarantee Add[Mul[Tensor | Scalar]]
+        for i, mul in enumerate(expression._children):
             # Separate the scalar and tensors
             scalars = list(mul.search_leaves(Scalar))
             tensors = list(mul.search_leaves(Tensor))

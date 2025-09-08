@@ -14,6 +14,7 @@ from albert.opt.parenth import factorise, parenthesise_mul
 from albert.opt.tools import count_flops, sort_expressions
 from albert.scalar import Scalar
 from albert.tensor import Tensor
+from albert.expression import Expression
 
 if TYPE_CHECKING:
     from typing import Optional
@@ -50,17 +51,17 @@ def _count_scalars(expr: Base) -> int:
 
 
 def _identify_subexpressions(
-    output_exprs: list[tuple[Tensor, Base]], indices: Optional[set[Index]] = None
+    exprs: list[Expression], indices: Optional[set[Index]] = None
 ) -> dict[tuple[Base, tuple[Index, ...]], int]:
     """Identify candidate common subexpressions and count their occurrences."""
     if indices is None:
         indices = set()
-        for _, expr in output_exprs:
+        for _, expr in exprs:
             for tensor in expr.search_nodes(Tensor):
                 indices.update(set(tensor.indices))
 
     candidates: dict[tuple[Base, tuple[Index, ...]], int] = {}
-    for output, expr in output_exprs:
+    for output, expr in exprs:
         for mul in expr.search_nodes(Mul):
             # Loop over all combinations of >1 children to find subexpressions
             children = [child for child in mul._children if not isinstance(child, Scalar)]
@@ -95,33 +96,31 @@ def _identify_subexpressions(
 
 
 def eliminate_common_subexpressions(
-    output_exprs: list[tuple[Tensor, Base]], sizes: Optional[dict[str | None, float]] = None
+    exprs: list[Expression], sizes: Optional[dict[str | None, float]] = None
 ) -> list[tuple[Tensor, Base]]:
     """Identify common subexpressions in a series of expressions.
 
     Expression should be parenthesised and split into individual contractions for this to work.
 
     Args:
-        output_exprs: The output and expression pairs to identify common subexpressions in, as
-            `(Tensor, Base)` pairs.
+        exprs: The tensor expressions to identify common subexpressions in.
         sizes: The sizes of the spaces in the expressions.
 
     Returns:
-        Expressions with common subexpressions eliminated, and a list of intermediate definitions
-        as `(Tensor, Base)` pairs.
+        Expressions with common subexpressions eliminated, and a list of intermediate definitions.
     """
     if sizes is None:
         sizes = _default_sizes
 
     # Get all indices in the expressions
     indices: set[Index] = set()
-    for _, expr in output_exprs:
+    for _, expr in exprs:
         for tensor in expr.search_nodes(Tensor):
             indices.update(set(tensor.indices))
 
     # Check if there are any existing intermediates we should avoid clashing with
     counter = 0
-    for output, expr in output_exprs:
+    for output, expr in exprs:
         for tensor in itertools.chain([output], expr.search_nodes(Tensor)):
             if tensor.name.startswith("tmp") and tensor.name[3:].isdigit():
                 counter = max(counter, int(tensor.name[3:]) + 1)
@@ -129,7 +128,7 @@ def eliminate_common_subexpressions(
     while True:
         # Find candidate subexpressions and count their occurrences
         # TODO: write update function to avoid repeating work
-        candidates = _identify_subexpressions(output_exprs, indices=indices)
+        candidates = _identify_subexpressions(exprs, indices=indices)
         candidates = {k: v for k, v in candidates.items() if v > 1}
 
         # If no candidates, we're done
@@ -153,9 +152,9 @@ def eliminate_common_subexpressions(
 
         # Find all instances of the candidate
         # TODO: track addresses when searching for candidates to avoid repeating work
-        new_output_exprs: list[tuple[Tensor, Base]] = []
+        new_exprs: list[tuple[Tensor, Base]] = []
         touched = False
-        for i, (output, expr) in enumerate(output_exprs):
+        for i, (output, expr) in enumerate(exprs):
             # Find the substitutions
             substs: dict[Base, Base] = {}
             for mul in expr.search_nodes(Mul):
@@ -175,19 +174,19 @@ def eliminate_common_subexpressions(
             if substs:
                 # Apply the substitutions
                 new_expr = expr.apply(lambda node: substs.get(node, node), Mul)  # noqa: B023
-                new_output_exprs.append((output, new_expr))
+                new_exprs.append(Expression(output, new_expr))
             else:
-                new_output_exprs.append((output, expr))
+                new_exprs.append(Expression(output, expr))
 
-        output_exprs = new_output_exprs
+        exprs = new_exprs
 
         if touched:
             # Add the definition of the intermediate and increment the counter
-            output_exprs.append((interm, candidate))
+            exprs.append(Expression(interm, candidate))
             counter += 1
 
     # For any remaining nested multiplications, assign intermediates instead of the nesting
-    new_output_exprs = []
+    new_exprs = []
 
     def _separate(mul: Mul) -> Mul:
         """Separate a nested multiplication."""
@@ -202,41 +201,39 @@ def eliminate_common_subexpressions(
                     name=f"tmp{counter}",
                 )
                 counter += 1
-                output_exprs.append((intermediate, child))
+                exprs.append(Expression(intermediate, child))
                 children.append(intermediate)
             else:
                 children.append(child)
 
         return Mul(*children)
 
-    for output, expr in output_exprs:
-        new_output_exprs.append((output, expr.apply(_separate, Mul)))
-    output_exprs = new_output_exprs
+    for output, expr in exprs:
+        new_exprs.append(Expression(output, expr.apply(_separate, Mul)))
+    exprs = new_exprs
 
-    return output_exprs
+    return exprs
 
 
-def absorb_intermediate_factors(
-    output_exprs: list[tuple[Tensor, Base]],
-) -> list[tuple[Tensor, Base]]:
+def absorb_intermediate_factors(exprs: list[Expression]) -> list[Expression]:
     """Absorb factors from intermediates back into the expressions where possible.
 
     Args:
-        output_exprs: The output and expression pairs to update, as `(Tensor, Base)` pairs.
+        exprs: The tensor expressions to update.
 
     Returns:
-        The updated output and expression pairs.
+        The updated tensor expressions.
     """
-    new_output_exprs: list[tuple[Tensor, Base]] = []
-    for i, (output, expr) in enumerate(output_exprs):
+    new_exprs: list[Expression] = []
+    for i, (output, expr) in enumerate(exprs):
         if not output.name.startswith("tmp"):
-            new_output_exprs.append((output, expr))
+            new_exprs.append(Expression(output, expr))
             continue
         scalars = list(filter(lambda child: isinstance(child, Scalar), expr._children or []))
         others = list(filter(lambda child: not isinstance(child, Scalar), expr._children or []))
         if len(others) == len(scalars) == 1:
-            for j, (out, ex) in enumerate(new_output_exprs):
-                new_output_exprs[j] = (
+            for j, (out, ex) in enumerate(new_exprs):
+                new_exprs[j] = Expression(
                     out,
                     ex.apply(
                         lambda node: (
@@ -245,26 +242,24 @@ def absorb_intermediate_factors(
                         Tensor,
                     ),
                 )
-            new_output_exprs.append((output, others[0]))
+            new_exprs.append(Expression(output, others[0]))
         else:
-            new_output_exprs.append((output, expr))
-    return new_output_exprs
+            new_exprs.append(Expression(output, expr))
+    return new_exprs
 
 
-def merge_identical_intermediates(
-    output_exprs: list[tuple[Tensor, Base]],
-) -> list[tuple[Tensor, Base]]:
+def merge_identical_intermediates(exprs: list[Expression]) -> list[Expression]:
     """Merge identical intermediates to avoid duplication.
 
     Args:
-        output_exprs: The output and expression pairs to update, as `(Tensor, Base)` pairs.
+        exprs: The tensor expressions to update.
 
     Returns:
-        The updated output and expression pairs.
+        The updated tensor expressions.
     """
     # TODO: relax the identical indices requirement to allow for transposes
     groups: dict[tuple[Base, tuple[Index, ...]], list[Tensor]] = {}
-    for output, expr in output_exprs:
+    for output, expr in exprs:
         if (expr, output.indices) not in groups:
             groups[expr, output.indices] = []
         groups[expr, output.indices].append(output)
@@ -279,26 +274,24 @@ def merge_identical_intermediates(
         return node
 
     return [
-        (output, expr.apply(_apply, Tensor))
-        for output, expr in output_exprs
+        Expression(output, expr.apply(_apply, Tensor))
+        for output, expr in exprs
         if output.name == unique_intermediates[output.name].name
     ]
 
 
-def absorb_trivial_intermediates(
-    output_exprs: list[tuple[Tensor, Base]],
-) -> list[tuple[Tensor, Base]]:
+def absorb_trivial_intermediates(exprs: list[Expression]) -> list[Expression]:
     """Absorb intermediates that are just a single tensor back into the expressions.
 
     Args:
-        output_exprs: The output and expression pairs to update, as `(Tensor, Base)` pairs.
+        exprs: The tensor expressions to update.
 
     Returns:
-        The updated output and expression pairs.
+        The updated expression.
     """
     trivial: dict[str, bool] = {}
-    definitions: dict[str, tuple[Tensor, Tensor]] = {}
-    for i, (output, expr) in enumerate(output_exprs):
+    definitions: dict[str, tuple[Tensor, Base]] = {}
+    for i, (output, expr) in enumerate(exprs):
         if output.name.startswith("tmp") and isinstance(expr, Tensor):
             # If the output has multiple single tensor expressions, it's not trivial
             trivial[output.name] = output.name not in trivial and True
@@ -312,24 +305,24 @@ def absorb_trivial_intermediates(
         return node
 
     return [
-        (output, expr.apply(_apply, Tensor))
-        for output, expr in output_exprs
+        Expression(output, expr.apply(_apply, Tensor))
+        for output, expr in exprs
         if not trivial.get(output.name, False)
     ]
 
 
-def unused_intermediates(output_exprs: list[tuple[Tensor, Base]]) -> list[Tensor]:
+def unused_intermediates(exprs: list[Expression]) -> list[Tensor]:
     """Identify intermediates that are defined but not used.
 
     Args:
-        output_exprs: The output and expression pairs to check, as `(Tensor, Base)` pairs.
+        exprs: The tensor expressions to check.
 
     Returns:
         The list of unused intermediate tensors.
     """
     defined: set[Tensor] = set()
     used: set[str] = set()
-    for output, expr in output_exprs:
+    for output, expr in exprs:
         if output.name.startswith("tmp"):
             defined.add(output)
         for tensor in expr.search_nodes(Tensor):
@@ -338,18 +331,18 @@ def unused_intermediates(output_exprs: list[tuple[Tensor, Base]]) -> list[Tensor
     return [tensor for tensor in defined if tensor.name not in used]
 
 
-def undefined_intermediates(output_exprs: list[tuple[Tensor, Base]]) -> list[Tensor]:
+def undefined_intermediates(exprs: list[Expression]) -> list[Tensor]:
     """Identify intermediates that are used but not defined.
 
     Args:
-        output_exprs: The output and expression pairs to check, as `(Tensor, Base)` pairs.
+        exprs: The tensor expressions to check.
 
     Returns:
         The list of undefined intermediate tensors.
     """
     defined: set[str] = set()
     used: set[Tensor] = set()
-    for output, expr in output_exprs:
+    for output, expr in exprs:
         if output.name.startswith("tmp"):
             defined.add(output.name)
         for tensor in expr.search_nodes(Tensor):
@@ -358,22 +351,22 @@ def undefined_intermediates(output_exprs: list[tuple[Tensor, Base]]) -> list[Ten
     return [tensor for tensor in used if tensor.name not in defined]
 
 
-def renumber_intermediates(output_exprs: list[tuple[Tensor, Base]]) -> list[tuple[Tensor, Base]]:
+def renumber_intermediates(exprs: list[Expression]) -> list[Expression]:
     """Renumber intermediates to ensure a contiguous sequence.
 
     Args:
-        output_exprs: The output and expression pairs to renumber, as `(Tensor, Base)` pairs.
+        exprs: The tensor expressions to renumber.
 
     Returns:
-        The renumbered output and expression pairs.
+        The renumbered tensor expressions.
     """
     # Sort the expressions so the renumbering looks sensible after code generation
-    output_exprs = sort_expressions(output_exprs)
+    exprs = sort_expressions(exprs)
 
     # Map old intermediate names to new ones
     counter = 0
     name_map: dict[str, str] = {}
-    for output, expr in output_exprs:
+    for output, expr in exprs:
         for tensor in itertools.chain([output], expr.search_nodes(Tensor)):
             if tensor.name.startswith("tmp"):
                 if tensor.name not in name_map:
@@ -385,15 +378,15 @@ def renumber_intermediates(output_exprs: list[tuple[Tensor, Base]]) -> list[tupl
             return node.__class__(*node.indices, name=name_map[node.name])
         return node
 
-    output_expr = [
-        (
+    exprs = [
+        Expression(
             output.__class__(*output.indices, name=name_map.get(output.name, output.name)),
             expr.apply(_apply, Tensor),
         )
-        for output, expr in output_exprs
+        for output, expr in exprs
     ]
 
-    return output_expr
+    return exprs
 
 
 @functools.lru_cache(maxsize=32)
@@ -439,20 +432,18 @@ def _canonicalise_intermediate(
 
 
 def eliminate_and_factorise_common_subexpressions(
-    output: Tensor,
-    expr: Base,
+    expr: Expression,
     sizes: Optional[dict[str | None, float]] = None,
     scaling_limit_cpu: dict[tuple[str, ...], int] | None = None,
     scaling_limit_ram: dict[tuple[str, ...], int] | None = None,
     max_passes: int = 3,
-) -> list[tuple[Tensor, Base]]:
+) -> list[Expression]:
     """Identify common subexpressions in an expression, with parenthesisation and factorisation.
 
     Expression should be canonicalised for this to work well.
 
     Args:
-        output: The output tensor of the expression.
-        expr: The expression to identify common subexpressions in.
+        expr: The tensor expression to identify common subexpressions in.
         sizes: The sizes of the spaces in the expression.
         scaling_limit_cpu: The scaling limits for CPU. Keys should be tuples of index space names,
             and values are the maximum allowed scaling for that combination of spaces.
@@ -462,60 +453,61 @@ def eliminate_and_factorise_common_subexpressions(
             subexpressions, but will take longer.
 
     Returns:
-        List of `(Tensor, Base)` pairs for the output tensors and their expressions, which may be
-        the original output or intermediates.
+        List of tensor expressions, which may correspond to the original output or intermediates.
     """
+    expression, output = expr
+
     # Collect all indices in the expression
     indices: set[Index] = set()
-    for tensor in expr.search_nodes(Tensor):
+    for tensor in expression.search_nodes(Tensor):
         indices.update(set(tensor.indices))
 
-    def _canonicalise(output_exprs: list[tuple[Tensor, Base]]) -> list[tuple[Tensor, Base]]:
+    def _canonicalise(exprs: list[Expression]) -> list[Expression]:
         """Canonicalise the indices."""
-        for i, (output, expr) in enumerate(output_exprs):
+        for i, (output, expr) in enumerate(exprs):
             if output.name.startswith("tmp"):
                 output, expr = _canonicalise_intermediate(output, expr, indices)
             else:
                 expr = canonicalise_indices(expr, extra_indices=list(indices), which="internal")
             expr = expr.squeeze().canonicalise()
-            output_exprs[i] = (output, expr)
-        return output_exprs
+            exprs[i] = Expression(output, expr)
+        return exprs
 
     # Parenthesise each multiplication
-    output_exprs: list[tuple[Tensor, Base]] = []
+    exprs: list[Expression] = []
     counter = 0
-    for mul in expr.expand()._children:
-        expr, ints = parenthesise_mul(
+    for mul in expression.expand()._children:
+        expression, ints = parenthesise_mul(
             mul,
             sizes=sizes,
             scaling_limit_cpu=scaling_limit_cpu,
             scaling_limit_ram=scaling_limit_ram,
             intermediate_counter=counter,
         )
-        output_exprs.extend(ints)
-        output_exprs.append((output, expr))
+        exprs.extend(ints)
+        exprs.append(Expression(output, expression))
         counter += len(ints)
 
     # Eliminate common subexpressions
     for i in range(max_passes):
-        output_exprs_prev = output_exprs.copy()
+        exprs_prev = exprs.copy()
         if i != 0:
-            output_exprs = factorise(output_exprs)
-        output_exprs = eliminate_common_subexpressions(output_exprs, sizes=sizes)
-        output_exprs = _canonicalise(output_exprs)
-        output_exprs = absorb_trivial_intermediates(output_exprs)
-        output_exprs = merge_identical_intermediates(output_exprs)
-        if output_exprs == output_exprs_prev:
+            exprs = factorise(exprs)
+        exprs = eliminate_common_subexpressions(exprs, sizes=sizes)
+        exprs = _canonicalise(exprs)
+        exprs = absorb_trivial_intermediates(exprs)
+        exprs = merge_identical_intermediates(exprs)
+        if exprs == exprs_prev:
             break
 
     # Renumber intermediates, also sorts the expressions
-    output_exprs = renumber_intermediates(output_exprs)
+    exprs = renumber_intermediates(exprs)
 
-    unused = set(interm.name for interm in unused_intermediates(output_exprs))
-    undefined = set(interm.name for interm in undefined_intermediates(output_exprs))
+    unused = set(interm.name for interm in unused_intermediates(exprs))
+    undefined = set(interm.name for interm in undefined_intermediates(exprs))
     if unused:
         warnings.warn(f"Intermediates defined but not used: {unused}.", stacklevel=2)
     if undefined:
         warnings.warn(f"Intermediates used but not defined: {undefined}.", stacklevel=2)
 
-    return output_exprs
+    return exprs

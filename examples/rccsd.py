@@ -10,6 +10,7 @@ from albert.opt._gristmill import optimise_gristmill
 from albert.qc._pdaggerq import import_from_pdaggerq, remove_reference_energy
 from albert.qc.spin import ghf_to_rhf
 from albert.tensor import Tensor
+from albert.expression import Expression
 
 # Suppress warnings since we're outputting the code to stdout
 warnings.filterwarnings("ignore")
@@ -34,14 +35,10 @@ expr = ghf_to_rhf(expr).collect()
 output = Tensor(name="e_cc")
 
 # Optimise the energy expression
-output_expr = optimise_gristmill(
-    [output],
-    [expr],
-    strategy="exhaust",
-)
+exprs = optimise_gristmill([Expression(output, expr)], strategy="exhaust")
 
 # Generate the code for the energy expression
-codegen("energy", [output], output_expr)
+codegen("energy", [output], exprs)
 
 # Find the T1 expression
 pq.clear()
@@ -66,9 +63,8 @@ expr_t2 = ghf_to_rhf(expr_t2).collect()
 output_t2 = Tensor(*expr_t2.external_indices, name="t2new")
 
 # Optimise the T1 and T2 expressions
-output_expr = optimise_gristmill(
-    [output_t1, output_t2],
-    [expr_t1, expr_t2],
+exprs = optimise_gristmill(
+    [Expression(output_t1, expr_t1), Expression(output_t2, expr_t2)],
     strategy="trav",
 )
 
@@ -76,7 +72,7 @@ output_expr = optimise_gristmill(
 codegen(
     "update_amplitudes",
     [output_t1, output_t2],
-    output_expr,
+    exprs,
     as_dict=True,
 )
 

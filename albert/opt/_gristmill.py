@@ -9,6 +9,7 @@ from albert.algebra import _compose_mul
 from albert.index import Index
 from albert.scalar import Scalar
 from albert.tensor import Tensor
+from albert.expression import Expression
 
 if TYPE_CHECKING:
     from typing import Any, Literal, Optional
@@ -40,8 +41,7 @@ except ImportError:
 
 
 def optimise_gristmill(
-    outputs: list[Tensor],
-    exprs: list[Base],
+    exprs: list[Expression],
     sizes: Optional[dict[str | None, float]] = None,
     strategy: Literal["exhaust", "opt", "trav", "greedy"] = "exhaust",
     transposes: Literal["skip", "natural", "ignore"] = "natural",
@@ -52,8 +52,7 @@ def optimise_gristmill(
     """Perform common subexpression elimination on the given expression using `gristmill`.
 
     Args:
-        outputs: The output tensors for each expression.
-        exprs: The expressions to be optimised.
+        exprs: The tensor expressions to be optimised.
         sizes: The sizes of the indices.
         strategy: The optimisation strategy to use.
         transpose: The handling of transposed intermediate terms.
@@ -79,9 +78,9 @@ def optimise_gristmill(
 
     # Find all the indices in the expressions
     indices: set[Index] = set()
-    for expr in exprs:
+    for _, expr in exprs:
         for node in expr.search_leaves(Tensor):
-            indices.update(node.external_indices)
+            indices.update(node.indices)
 
     # Set the indices
     substs: dict[sympy.Symbol, float] = {}
@@ -112,7 +111,7 @@ def optimise_gristmill(
     done: set[sympy.Symbol] = set()
     classes: dict[sympy.Symbol, type[Tensor]] = {}
     symmetries: dict[sympy.Symbol, Optional[Symmetry]] = {}
-    for output, expr in zip(outputs, exprs):
+    for output, expr in exprs:
         # Convert the expression to sympy
         output_sympy = output.as_sympy()
         if output.rank == 0:
@@ -134,7 +133,7 @@ def optimise_gristmill(
         terms.append(dr.define(output_base, *ranges_lhs, rhs))
 
         # Record the permutations and symbols
-        tensors = [output] + list(expr.search_leaves(type_filter=Tensor))
+        tensors = [output] + list(expr.search_leaves(Tensor))
         done = set()
         for tensor in tensors:
             base = tensor.as_sympy().base if tensor.rank else tensor.as_sympy()
@@ -173,8 +172,7 @@ def optimise_gristmill(
     )
 
     # Convert the terms back to expressions
-    outputs: list[Tensor] = []
-    exprs: list[Base] = []
+    exprs: list[Expression] = []
     for term in terms:
         # Convert the LHS
         base = term.lhs if isinstance(term.lhs, sympy.Symbol) else term.lhs.base
@@ -183,7 +181,7 @@ def optimise_gristmill(
             Index(index_reference[i][0], space=index_reference[i][1], spin=index_reference[i][2])
             for i in ([] if isinstance(term.lhs, sympy.Symbol) else term.lhs.indices)
         ]
-        outputs.append(cls(*inds, name=base.name, symmetry=symmetries.get(base)))
+        output = cls(*inds, name=base.name, symmetry=symmetries.get(base))
 
         # Convert the RHS
         expr = Scalar(0.0)
@@ -203,6 +201,6 @@ def optimise_gristmill(
                 ]
                 args.append(cls(*inds, name=base.name, symmetry=symmetries.get(base)))
             expr += _compose_mul(factor, *args)
-        exprs.append(expr)
+        exprs.append(Expression(output, expr))
 
-    return list(zip(outputs, exprs))
+    return exprs
