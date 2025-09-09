@@ -22,19 +22,19 @@ if TYPE_CHECKING:
     TensorInfo = tuple[str, tuple[str | None, ...], tuple[str | None, ...]]
 
 
-def substitute_expressions(expr: list[Expression]) -> list[Expression]:
+def substitute_expressions(exprs: list[Expression]) -> list[Expression]:
     """Substitute expressions resulting from common subexpression elimination.
 
     The return value is a list of tuples, where the first element is the output tensor and the
     second element is the expression, for each distinct output tensor.
 
     Args:
-        expr: The tensor expressions.
+        exprs: The tensor expressions.
 
     Returns:
         The total expression with the substituted tensors, for each distinct output tensor.
     """
-    expr = [Expression(lhs, rhs.expand()) for lhs, rhs in expr]
+    expr = [Expression(e.lhs, e.rhs.expand()) for e in exprs]
 
     # Find original set of indices for canonicalisation
     extra_indices: set[Index] = set()
@@ -266,24 +266,22 @@ def count_flops(expr: Base, sizes: Optional[dict[str | None, float]] = None) -> 
 
 def optimise_eom(
     returns: list[Tensor],
-    outputs: list[Tensor],
-    exprs: list[Base],
+    exprs: list[Expression],
     method: str = "auto",
     **kwargs: Any,
-) -> tuple[
-    tuple[list[Tensor], list[tuple[Tensor, Base]]], tuple[list[Tensor], list[tuple[Tensor, Base]]]
-]:
+) -> tuple[tuple[list[Tensor], list[Expression]], tuple[list[Tensor], list[Expression]]]:
     """Perform common subexpression elimination for EOM expressions.
 
     This function optimises out expressions that are independent of the EOM vectors.
 
     Args:
-        outputs: The output tensors for each expression.
-        exprs: The expressions to be optimised.
+        returns: The return tensors.
+        exprs: The tensor expressions to be optimised.
         method: The optimisation method to use. Options are `"auto"`, `"gristmill"`.
 
     Returns:
-        The optimised expressions, as tuples of the output tensor and the expression.
+        The returned tensors and optimised tensor expressions, split into those that depend on the
+        EOM vectors and those that do not.
     """
 
     def _is_eom_vector(tensor: Tensor) -> bool:
@@ -335,48 +333,49 @@ def optimise_eom(
         return tensor.copy(*indices, symmetry=symmetry)
 
     # Make the optimiser more likely to optimise out constant intermediate tensors
-    for i, (output, expr) in enumerate(zip(outputs, exprs)):
-        outputs[i] = _add_dummy_index(output)
-        exprs[i] = expr.apply(_add_dummy_index, Tensor)
+    for i, expr in enumerate(exprs):
+        exprs[i] = Expression(_add_dummy_index(expr.lhs), expr.rhs.apply(_add_dummy_index, Tensor))
 
     # Optimise with the dummy indices
-    output_expr = optimise(outputs, exprs, method, **kwargs)
+    exprs = optimise(exprs, method, **kwargs)
 
     # Remove the dummy indices
-    for i, (output, expr) in enumerate(output_expr):
-        output_expr[i] = (_remove_dummy_index(output), expr.apply(_remove_dummy_index, Tensor))
+    for i, expr in enumerate(exprs):
+        exprs[i] = Expression(
+            _remove_dummy_index(expr.lhs), expr.rhs.apply(_remove_dummy_index, Tensor)
+        )
 
     # Extract the intermediates that don't depend on the EOM vectors
-    output_expr_dep: list[tuple[Tensor, Base]] = []
-    output_expr_indep: list[tuple[Tensor, Base]] = []
+    exprs_dep: list[Expression] = []
+    exprs_indep: list[Expression] = []
     cache: set[str] = set()
-    for output, expr in output_expr:
-        depends = _is_eom_vector(output)
+    for expr in exprs:
+        depends = _is_eom_vector(expr.lhs)
         if not depends:
-            for tensor in expr.search_leaves(Tensor):
+            for tensor in expr.rhs.search_leaves(Tensor):
                 if _is_eom_vector(tensor) or tensor.name in cache:
                     depends = True
                     break
         if depends:
-            output_expr_dep.append((output, expr))
-            cache.add(output.name)
+            exprs_dep.append(expr)
+            cache.add(expr.lhs.name)
         else:
-            output_expr_indep.append((output, expr))
+            exprs_indep.append(expr)
 
     # Get the intermediates needed to return
     returns_dep = returns
     returns_indep: list[Tensor] = []
     initialised: set[str] = set()
-    for output, expr in output_expr_dep:
-        if output.name.startswith("tmp"):
-            initialised.add(output.name)
-        for tensor in expr.search_leaves(Tensor):
+    for expr in exprs_dep:
+        if expr.lhs.name.startswith("tmp"):
+            initialised.add(expr.lhs.name)
+        for tensor in expr.rhs.search_leaves(Tensor):
             if tensor.name.startswith("tmp") and tensor.name not in initialised:
                 returns_indep.append(tensor)
 
     # Transform the names of the intermediates
-    for i, (output, expr) in enumerate(output_expr_dep):
-        expr = expr.apply(
+    for i, expr in enumerate(exprs_dep):
+        rhs = expr.rhs.apply(
             lambda t: (
                 t.copy(name=f"ints.{t.name}")
                 if t.name.startswith("tmp") and t.name not in initialised
@@ -384,26 +383,21 @@ def optimise_eom(
             ),
             Tensor,
         )
-        output_expr_dep[i] = (output, expr)
+        exprs_dep[i] = Expression(expr.lhs, rhs)
 
     # Re-optimise the output
-    output_expr_dep: list[tuple[Tensor, Base]] = [
-        (output, expr.expand()) for output, expr in output_expr_dep
-    ]
-    output_expr_dep = substitute_expressions(output_expr_dep)
-    output_expr_dep = optimise(
-        [output for output, _ in output_expr_dep],
-        [expr for _, expr in output_expr_dep],
-        method,
-        **kwargs,
-    )
+    exprs_dep: list[Expression] = [Expression(expr.lhs, expr.rhs.expand()) for expr in exprs_dep]
+    exprs_dep = substitute_expressions(exprs_dep)
+    exprs_dep = optimise(exprs_dep, method, **kwargs)
 
     # Replace the tensor types
-    for i, (output, expr) in enumerate(output_expr_dep):
-        output_expr_dep[i] = (_replace_types(output), expr.apply(_replace_types, Tensor))
-    for i, (output, expr) in enumerate(output_expr_indep):
-        output_expr_indep[i] = (_replace_types(output), expr.apply(_replace_types, Tensor))
+    for i, expr in enumerate(exprs_dep):
+        exprs_dep[i] = Expression(_replace_types(expr.lhs), expr.rhs.apply(_replace_types, Tensor))
+    for i, expr in enumerate(exprs_indep):
+        exprs_indep[i] = Expression(
+            _replace_types(expr.lhs), expr.rhs.apply(_replace_types, Tensor)
+        )
     returns_dep = [_replace_types(tensor) for tensor in returns_dep]
     returns_indep = [_replace_types(tensor) for tensor in returns_indep]
 
-    return (returns_indep, output_expr_indep), (returns_dep, output_expr_dep)
+    return (returns_indep, exprs_indep), (returns_dep, exprs_dep)

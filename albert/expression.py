@@ -5,12 +5,14 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, TypedDict
 
 from albert.base import Base, Serialisable, SerialisedField
+from albert.tensor import Tensor
 
 if TYPE_CHECKING:
-    from typing import Iterable, Iterator
+    from typing import Iterable
 
+    from albert.algebra import _AlgebraicJSON
     from albert.index import Index
-    from albert.tensor import Tensor
+    from albert.tensor import _TensorJSON
 
 
 class _ExpressionJSON(TypedDict):
@@ -18,8 +20,8 @@ class _ExpressionJSON(TypedDict):
 
     _type: str
     _module: str
-    lhs: Tensor
-    rhs: Base
+    lhs: _TensorJSON
+    rhs: _TensorJSON | _AlgebraicJSON
 
 
 class Expression(Serialisable):
@@ -88,7 +90,7 @@ class Expression(Serialisable):
         Returns:
             Object loaded from JSON representation.
         """
-        return cls(Base.from_json(data["lhs"]), Base.from_json(data["rhs"]))
+        return cls(Tensor.from_json(data["lhs"]), Base.from_json(data["rhs"]))
 
     def _hashable_fields(self) -> Iterable[SerialisedField]:
         """Yield fields of the hashable representation."""

@@ -5,11 +5,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, cast
 
 from albert.code.base import BaseCodeGenerator
+from albert.expression import Expression
 from albert.misc import ExclusionSet
 from albert.opt.tools import _tensor_info
 from albert.scalar import Scalar
 from albert.tensor import Tensor
-from albert.expression import Expression
 
 if TYPE_CHECKING:
     from typing import Optional
@@ -293,7 +293,7 @@ class EinsumCodeGenerator(BaseCodeGenerator):
             ignore_index_slices: List of tensor types to ignore slices for.
         """
         expr = Expression(expr.lhs, expr.rhs.expand())  # guarantee Add[Mul[Tensor | Scalar]]
-        for i, mul in enumerate(expr.rhs._children):
+        for i, mul in enumerate(expr.rhs._children or []):
             # Separate the scalar and tensors
             scalars = list(mul.search_leaves(Scalar))
             tensors = list(mul.search_leaves(Tensor))

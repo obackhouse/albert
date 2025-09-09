@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from typing import Any, Callable, Iterable
 
     from albert.index import Index
-    from albert.tensor import Tensor
+    from albert.tensor import Tensor, _TensorJSON
 
 T = TypeVar("T", bound=Base)
 
@@ -59,7 +59,7 @@ class _AlgebraicJSON(TypedDict):
 
     _type: str
     _module: str
-    children: tuple[Base, ...]
+    children: tuple[_AlgebraicJSON | _TensorJSON, ...]
 
 
 class Algebraic(IAlgebraic):

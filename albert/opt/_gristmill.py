@@ -14,7 +14,6 @@ from albert.tensor import Tensor
 if TYPE_CHECKING:
     from typing import Any, Literal, Optional
 
-    from albert.base import Base
     from albert.symmetry import Symmetry
 
 # Try to find a pyspark context:
@@ -48,7 +47,7 @@ def optimise_gristmill(
     greedy_cutoff: int = -1,
     drop_cutoff: int = -1,
     **gristmill_kwargs: Any,
-) -> list[tuple[Tensor, Base]]:
+) -> list[Expression]:
     """Perform common subexpression elimination on the given expression using `gristmill`.
 
     Args:
@@ -184,7 +183,7 @@ def optimise_gristmill(
         output = cls(*inds, name=base.name, symmetry=symmetries.get(base))
 
         # Convert the RHS
-        expr = Scalar(0.0)
+        expr_i = Scalar(0.0)
         for amp in [t.amp for t in term.rhs_terms]:
             factor = Scalar(float(sympy.prod(amp.atoms(sympy.Number))))
             args: list[Tensor] = []
@@ -200,7 +199,7 @@ def optimise_gristmill(
                     for i in atom.indices
                 ]
                 args.append(cls(*inds, name=base.name, symmetry=symmetries.get(base)))
-            expr += _compose_mul(factor, *args)
-        exprs.append(Expression(output, expr))
+            expr_i += _compose_mul(factor, *args)
+        exprs.append(Expression(output, expr_i))
 
     return exprs

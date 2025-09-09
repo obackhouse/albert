@@ -233,7 +233,7 @@ def factorise(exprs: list[Expression]) -> list[Expression]:
 
         # Combine the group into sums for each unique output
         for output in set(expr.lhs for expr in group):
-            group_out = [child for out, child in group if out == output]
+            group_out = [child.rhs for child in group if child.lhs == output]
             new_exprs.append(Expression(output, Mul(factor, Add(*group_out))))
 
     return new_exprs
