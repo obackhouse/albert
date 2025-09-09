@@ -9,13 +9,12 @@ from albert.misc import ExclusionSet
 from albert.opt.tools import _tensor_info
 from albert.scalar import Scalar
 from albert.tensor import Tensor
+from albert.expression import Expression
 
 if TYPE_CHECKING:
     from typing import Optional
 
-    from albert.base import Base
     from albert.index import Index
-    from albert.expression import Expression
 
 
 def _parse_indices(*index_groups: tuple[Index, ...]) -> list[tuple[int, ...]]:
@@ -293,16 +292,15 @@ class EinsumCodeGenerator(BaseCodeGenerator):
             index_slices: Specific indices to use as slices for the tensors.
             ignore_index_slices: List of tensor types to ignore slices for.
         """
-        output, expression = expr
-        expression = expression.expand()  # guarantee Add[Mul[Tensor | Scalar]]
-        for i, mul in enumerate(expression._children):
+        expr = Expression(expr.lhs, expr.rhs.expand())  # guarantee Add[Mul[Tensor | Scalar]]
+        for i, mul in enumerate(expr.rhs._children):
             # Separate the scalar and tensors
             scalars = list(mul.search_leaves(Scalar))
             tensors = list(mul.search_leaves(Tensor))
 
             # Get the indices
             lhs = [tensor.external_indices for tensor in tensors]
-            rhs = output.external_indices
+            rhs = expr.lhs.external_indices
             indices = _parse_indices(*lhs, rhs)
             assert len(indices) == len(tensors) + 1
 
@@ -322,7 +320,7 @@ class EinsumCodeGenerator(BaseCodeGenerator):
 
             # Get the operator and LHS
             operator = "=" if i == 0 and not declared else "+="
-            output_name = self.get_name(output)
+            output_name = self.get_name(expr.lhs)
 
             # Get the factor
             factor = 1.0

@@ -11,14 +11,13 @@ from collections import defaultdict
 from typing import TYPE_CHECKING
 
 from albert import __version__
+from albert.expression import Expression
 from albert.opt.tools import _tensor_info, sort_expressions, split_expressions
 from albert.tensor import Tensor
-from albert.expression import Expression
 
 if TYPE_CHECKING:
     from typing import Any, Callable, Optional
 
-    from albert.base import Base
     from albert.index import Index
     from albert.opt.tools import TensorInfo
     from albert.scalar import Scalar
@@ -328,8 +327,8 @@ class BaseCodeGenerator(ABC):
         # Get the arguments
         done = set()
         args = []
-        for _, expr in expressions:
-            for tensor in expr.search_leaves(Tensor):
+        for expr in expressions:
+            for tensor in expr.rhs.search_leaves(Tensor):
                 if not self.ignore_argument(tensor) and tensor.name not in done:
                     args.append(tensor)
                     done.add(tensor.name)
@@ -371,8 +370,8 @@ class BaseCodeGenerator(ABC):
         # Find the last appearance of each tensor
         last_appearance: dict[TensorInfo, int] = {}
         info_tensor_map: dict[TensorInfo, Tensor] = {}
-        for i, (output, expr) in enumerate(expressions):
-            for tensor in expr.search_leaves(Tensor):
+        for i, expr in enumerate(expressions):
+            for tensor in expr.rhs.search_leaves(Tensor):
                 info = _tensor_info(tensor)
                 last_appearance[info] = i
                 info_tensor_map[info] = tensor
@@ -384,18 +383,18 @@ class BaseCodeGenerator(ABC):
                 to_cleanup[i].append(info_tensor_map[info])
 
         # Write the tensor contractions
-        for i, (output, expr) in enumerate(expressions):
+        for i, expr in enumerate(expressions):
             # Write the tensor declaration
-            info = _tensor_info(output)
+            info = _tensor_info(expr.lhs)
             already_declared = info in self._tensor_declared
             is_return = any(info[0] == ret.name for ret in returns)
             if not already_declared:
-                self.tensor_declaration(output, is_return=is_return)
+                self.tensor_declaration(expr.lhs, is_return=is_return)
                 self._tensor_declared.add(info)
 
             # Write the tensor expression
             self.tensor_expression(
-                Expression(output, expr),
+                expr,
                 declared=already_declared,
                 is_return=is_return,
                 index_slices=index_slices,

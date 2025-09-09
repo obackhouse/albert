@@ -8,9 +8,6 @@ from albert.opt._gristmill import optimise_gristmill
 
 if TYPE_CHECKING:
     from typing import Any
-
-    from albert.base import Base
-    from albert.tensor import Tensor
     from albert.expression import Expression
 
 

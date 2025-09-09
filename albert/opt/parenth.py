@@ -9,10 +9,10 @@ import opt_einsum
 from albert import _default_sizes
 from albert.algebra import Add, Mul
 from albert.base import Base
+from albert.expression import Expression
 from albert.index import Index
 from albert.scalar import Scalar
 from albert.tensor import Tensor
-from albert.expression import Expression
 
 if TYPE_CHECKING:
     from typing import Any, Optional
@@ -150,7 +150,7 @@ def parenthesise_mul(
     subscripts = [line.split()[2] for line in lines[start:] if line.strip()]
 
     # Build the contractions
-    intermediates: list[tuple[Tensor, Base]] = []
+    intermediates: list[Expression] = []
     counter = intermediate_counter
     _index_map_rev = {v: k for k, v in _index_map.items()}
     while subscripts:
@@ -166,7 +166,7 @@ def parenthesise_mul(
             output_indices = [_index_map_rev[c] for c in output_i]
             interm = Tensor(*output_indices, name=f"tmp{counter}")
             counter += 1
-            intermediates.append((interm, Mul(*tensors_i)))
+            intermediates.append(Expression(interm, Mul(*tensors_i)))
             tensors.append(interm)
 
     return expr, intermediates
@@ -186,27 +186,27 @@ def factorise(exprs: list[Expression]) -> list[Expression]:
     #  b) a non-scalar
     new_exprs: list[Expression] = []
     to_factorise: list[Expression] = []
-    for output, expr in exprs:
-        if isinstance(expr, Mul):
-            children = [child for child in expr._children if not isinstance(child, Scalar)]
+    for expr in exprs:
+        if isinstance(expr.rhs, Mul):
+            children = [child for child in expr.rhs._children if not isinstance(child, Scalar)]
             if len(children) > 2:
                 raise ValueError(
                     "Each expression must be a Mul with two non-scalar children. Try "
                     "parenthesising the expressions first.",
                 )
             if len(children) == 2:
-                to_factorise.append(Expression(output, expr))
+                to_factorise.append(expr)
             else:
-                new_exprs.append(Expression(output, expr))
+                new_exprs.append(expr)
         else:
-            new_exprs.append(Expression(output, expr))
+            new_exprs.append(expr)
 
     while to_factorise:
         # Get all the possible factors
         factors: dict[Base, int] = {}
-        for output, expr in to_factorise:
-            assert expr._children is not None
-            children = [child for child in expr._children if not isinstance(child, Scalar)]
+        for expr in to_factorise:
+            assert expr.rhs._children is not None
+            children = [child for child in expr.rhs._children if not isinstance(child, Scalar)]
             assert len(children) == 2
             for child in children:
                 if child not in factors:
@@ -219,18 +219,20 @@ def factorise(exprs: list[Expression]) -> list[Expression]:
         # For each expression that contains this factor, remove it and group them
         group: list[Expression] = []
         new_to_factorise: list[Expression] = []
-        for output, expr in to_factorise:
-            assert expr._children is not None
-            if factor in expr._children:
+        for expr in to_factorise:
+            assert expr.rhs._children is not None
+            if factor in expr.rhs._children:
                 group.append(
-                    Expression(output, Mul(*[child for child in expr._children if child != factor]))
+                    Expression(
+                        expr.lhs, Mul(*[child for child in expr.rhs._children if child != factor])
+                    )
                 )
             else:
-                new_to_factorise.append(Expression(output, expr))
+                new_to_factorise.append(expr)
         to_factorise = new_to_factorise
 
         # Combine the group into sums for each unique output
-        for output in set(output for output, _ in group):
+        for output in set(expr.lhs for expr in group):
             group_out = [child for out, child in group if out == output]
             new_exprs.append(Expression(output, Mul(factor, Add(*group_out))))
 

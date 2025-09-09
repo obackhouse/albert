@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, TypedDict
 from albert.base import Base, Serialisable, SerialisedField
 
 if TYPE_CHECKING:
-    from typing import Iterable
+    from typing import Iterable, Iterator
 
     from albert.index import Index
     from albert.tensor import Tensor
@@ -18,8 +18,8 @@ class _ExpressionJSON(TypedDict):
 
     _type: str
     _module: str
-    lhs: dict
-    rhs: dict
+    lhs: Tensor
+    rhs: Base
 
 
 class Expression(Serialisable):
@@ -102,12 +102,3 @@ class Expression(Serialisable):
             String representation.
         """
         return f"{self._lhs} = {self._rhs}"
-
-    def __iter__(self):
-        """Unpack the expression into its left- and right-hand sides.
-
-        Returns:
-            An iterator over the left- and right-hand sides.
-        """
-        yield self._lhs
-        yield self._rhs

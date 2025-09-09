@@ -6,10 +6,10 @@ from typing import TYPE_CHECKING
 
 from albert import _default_sizes
 from albert.algebra import _compose_mul
+from albert.expression import Expression
 from albert.index import Index
 from albert.scalar import Scalar
 from albert.tensor import Tensor
-from albert.expression import Expression
 
 if TYPE_CHECKING:
     from typing import Any, Literal, Optional
@@ -78,8 +78,8 @@ def optimise_gristmill(
 
     # Find all the indices in the expressions
     indices: set[Index] = set()
-    for _, expr in exprs:
-        for node in expr.search_leaves(Tensor):
+    for expr in exprs:
+        for node in expr.rhs.search_leaves(Tensor):
             indices.update(node.indices)
 
     # Set the indices
@@ -111,16 +111,16 @@ def optimise_gristmill(
     done: set[sympy.Symbol] = set()
     classes: dict[sympy.Symbol, type[Tensor]] = {}
     symmetries: dict[sympy.Symbol, Optional[Symmetry]] = {}
-    for output, expr in exprs:
+    for expr in exprs:
         # Convert the expression to sympy
-        output_sympy = output.as_sympy()
-        if output.rank == 0:
+        output_sympy = expr.lhs.as_sympy()
+        if expr.lhs.rank == 0:
             output_base = output_sympy
             output_indices = []
         else:
             output_base = output_sympy.base
             output_indices = output_sympy.indices
-        expr_sympy = expr.expand().as_sympy()
+        expr_sympy = expr.rhs.expand().as_sympy()
 
         # Get the ranges on the LHS
         ranges_lhs = [
@@ -133,7 +133,7 @@ def optimise_gristmill(
         terms.append(dr.define(output_base, *ranges_lhs, rhs))
 
         # Record the permutations and symbols
-        tensors = [output] + list(expr.search_leaves(Tensor))
+        tensors = [expr.lhs] + list(expr.rhs.search_leaves(Tensor))
         done = set()
         for tensor in tensors:
             base = tensor.as_sympy().base if tensor.rank else tensor.as_sympy()
