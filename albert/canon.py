@@ -7,9 +7,10 @@ import itertools
 from collections import defaultdict
 from typing import TYPE_CHECKING, Literal, Protocol, TypeVar
 
-from albert.base import IAlgebraic, IMul
+from albert.algebra import Algebraic, Mul
 from albert.index import Index
 from albert.scalar import Scalar
+from albert.tensor import Tensor
 
 if TYPE_CHECKING:
     from typing import Any, Callable, Generator, Optional
@@ -37,8 +38,6 @@ def iter_equivalent_forms(expr: Base) -> Generator[Base, None, None]:
     Yields:
         All equivalent forms of the tensor expression.
     """
-    from albert.scalar import Scalar
-    from albert.tensor import Tensor  # FIXME
 
     @functools.lru_cache(maxsize=None)
     def _symmetry(node: Tensor) -> list[Base]:
@@ -89,7 +88,7 @@ def canonicalise_exhaustive(
 
         def key(e: Base) -> SupportsDunderLT[Any]:
             """Key function for canonicalisation."""
-            if isinstance(e, IAlgebraic):
+            if isinstance(e, Algebraic):
                 return tuple(sorted(filter(lambda x: not isinstance(x, Scalar), e._children or [])))
             return e
 
@@ -113,8 +112,6 @@ def canonicalise_indices(
     Returns:
         The canonicalised tensor expression.
     """
-    from albert.tensor import Tensor  # FIXME
-
     # Get the indices, grouped by spin and space
     index_groups = defaultdict(set)
     for leaf in expr.search_leaves(Tensor):  # type: ignore[type-abstract]
@@ -139,7 +136,7 @@ def canonicalise_indices(
             if index_flip in index_lists.get((index_flip.spin, index_flip.space), []):
                 index_lists[(index_flip.spin, index_flip.space)].remove(index_flip)
 
-    def _canonicalise_node(node: IMul) -> Base:
+    def _canonicalise_node(node: Mul) -> Base:
         """Canonicalise a node."""
         index_map_node = index_map.copy()
         index_lists_node = {key: indices.copy() for key, indices in index_lists.items()}
@@ -176,6 +173,6 @@ def canonicalise_indices(
 
     # Find the canonical internal indices for each term
     expr = expr.expand()
-    expr = expr.apply(_canonicalise_node, IMul)
+    expr = expr.apply(_canonicalise_node, Mul)
 
     return expr

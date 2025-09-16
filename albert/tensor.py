@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, TypedDict, TypeVar, cast
 
 from albert.algebra import Add, ExpandedAddLayer, ExpandedMulLayer, Mul, _compose_add, _compose_mul
 from albert.base import Base, ITensor
-from albert.canon import canonicalise_indices
 from albert.index import Index
 from albert.scalar import Scalar
 
@@ -172,8 +171,12 @@ class Tensor(Base):
             best = min(self._symmetry(self))
         else:
             best = self
+
         if indices:
+            from albert.canon import canonicalise_indices
+
             best = canonicalise_indices(best)
+
         return best
 
     def expand(self) -> ExpandedAddLayer:

@@ -458,7 +458,12 @@ class Base(Serialisable):
 
 
 class IBase(Base):
-    """Interface class."""
+    """Interface class.
+
+    Note:
+        This class is entirely abstract and is only used to indicate the type of the object within
+        the ``Base`` class itself.
+    """
 
     pass
 
@@ -468,6 +473,10 @@ class IScalar(IBase):
 
     Args:
         value: Value of the scalar.
+
+    Note:
+        This class is entirely abstract and is only used to indicate the type of the object within
+        the ``Base`` class itself.
     """
 
     _value: float
@@ -479,6 +488,10 @@ class ITensor(IBase):
     Args:
         indices: Indices of the tensor.
         name: Name of the tensor.
+
+    Note:
+        This class is entirely abstract and is only used to indicate the type of the object within
+        the ``Base`` class itself.
     """
 
     _indices: tuple[Index, ...]
@@ -491,19 +504,33 @@ class IAlgebraic(IBase):
 
     Args:
         children: Children to the operation.
+
+    Note:
+        This class is entirely abstract and is only used to indicate the type of the object within
+        the ``Base`` class itself.
     """
 
     pass
 
 
 class IAdd(IAlgebraic):
-    """Interface class for addition."""
+    """Interface class for addition.
+
+    Note:
+        This class is entirely abstract and is only used to indicate the type of the object within
+        the ``Base`` class itself.
+    """
 
     pass
 
 
 class IMul(IAlgebraic):
-    """Interface class for multiplication."""
+    """Interface class for multiplication.
+
+    Note:
+        This class is entirely abstract and is only used to indicate the type of the object within
+        the ``Base`` class itself.
+    """
 
     pass
 

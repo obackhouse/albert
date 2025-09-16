@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING, TypedDict, TypeVar, cast
 
 from albert import ALLOW_NON_EINSTEIN_NOTATION
 from albert.base import Base, IAdd, IAlgebraic, IMul
-from albert.canon import canonicalise_indices
 from albert.scalar import Scalar, _compose_scalar
 
 if TYPE_CHECKING:
@@ -174,8 +173,12 @@ class Algebraic(IAlgebraic):
         """
         children = sorted([child.canonicalise(indices=False) for child in self._children])
         expr = self._compose(*children)
+
         if indices:
+            from albert.canon import canonicalise_indices
+
             expr = canonicalise_indices(expr)
+
         return expr.squeeze()
 
     def as_json(self) -> _AlgebraicJSON:

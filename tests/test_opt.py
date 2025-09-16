@@ -1,3 +1,4 @@
+from albert.expression import Expression
 from albert.opt.tools import substitute_expressions
 from albert.tensor import Tensor
 
@@ -7,7 +8,7 @@ def test_substitute_expressions():
     z_expr = Tensor.from_string("x(i,j) * y(j)")
     x_output = Tensor.from_string("x(i,j)")
     x_expr = Tensor.from_string("a(i,k,l) * b(k,l,j)")
-    output_expr = [(z_output, z_expr), (x_output, x_expr)]
+    output_expr = [Expression(z_output, z_expr), Expression(x_output, x_expr)]
     output_expr_sub = substitute_expressions(output_expr)
     assert len(output_expr_sub) == 1
     assert output_expr_sub[0].lhs == z_output
@@ -22,10 +23,10 @@ def test_substitute_expressions():
     v_output = Tensor.from_string("v(i,j)")
     v_expr = Tensor.from_string("y(i,j) + z(i,j)")
     output_expr = [
-        (x_output, x_expr),
-        (y_output, y_expr),
-        (u_output, u_expr),
-        (v_output, v_expr),
+        Expression(x_output, x_expr),
+        Expression(y_output, y_expr),
+        Expression(u_output, u_expr),
+        Expression(v_output, v_expr),
     ]
     output_expr_sub = substitute_expressions(output_expr)
     assert len(output_expr_sub) == 2
@@ -43,10 +44,10 @@ def test_substitute_expressions():
     v_output = Tensor.from_string("v(i,j)")
     v_expr = Tensor.from_string("x(i,j) + y(i,j) + z(i,j)")
     output_expr = [
-        (x_output, x_expr),
-        (y_output, y_expr),
-        (u_output, u_expr),
-        (v_output, v_expr),
+        Expression(x_output, x_expr),
+        Expression(y_output, y_expr),
+        Expression(u_output, u_expr),
+        Expression(v_output, v_expr),
     ]
     output_expr_sub = substitute_expressions(output_expr)
     assert len(output_expr_sub) == 2
