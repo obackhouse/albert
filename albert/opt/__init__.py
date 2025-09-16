@@ -19,9 +19,9 @@ def optimise(
     """Perform common subexpression elimination on the given expression.
 
     Args:
-        outputs: The output tensors for each expression.
         exprs: The expressions to be optimised.
         method: The optimisation method to use. Options are `"auto"`, `"gristmill"`.
+        **kwargs: Additional keyword arguments to pass to the optimisation method.
 
     Returns:
         The optimised expressions, as tuples of the output tensor and the expression.

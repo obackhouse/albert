@@ -253,6 +253,7 @@ def _amplitude_as_rhf(
 
     Args:
         amp: UHF amplitude tensor.
+        type_rhf: RHF amplitude tensor type.
         covariant: Number of covariant indices.
         contravariant: Number of contravariant indices.
 
@@ -285,7 +286,8 @@ def _amplitude_as_rhf(
     for i, amp in enumerate(amps):
         indices = tuple(index.copy(spin="r") for index in amp.external_indices)
         amps[i] = amp.apply(
-            lambda tensor: type_rhf(*indices, name=tensor.name), Tensor  # noqa: B023
+            lambda tensor: type_rhf(*indices, name=tensor.name),
+            Tensor,  # noqa: B023
         )
 
     return sum(amps, Scalar(0.0))
@@ -304,6 +306,7 @@ def _t4_as_rhf(
 
     Args:
         amp: UHF amplitude tensor.
+        type_rhf: RHF amplitude tensor type.
         covariant: Number of covariant indices.
         contravariant: Number of contravariant indices.
 
@@ -349,7 +352,8 @@ def _t4_as_rhf(
             raise ValueError("Invalid spin configuration for T4 amplitude.")
         indices = tuple(index.copy(spin="r") for index in amp.external_indices)
         amps[i] = amp.apply(
-            lambda tensor: type_rhf(*indices, name=tensor.name + extra), Tensor  # noqa: B023
+            lambda tensor: type_rhf(*indices, name=tensor.name + extra),
+            Tensor,  # noqa: B023
         )
 
     return sum(amps, Scalar(0.0))

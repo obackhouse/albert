@@ -380,6 +380,7 @@ def _amplitude_as_uhf(
 
     Args:
         amp: GHF amplitude tensor.
+        type_uhf: UHF tensor class to use for the output.
         covariant: Number of covariant indices.
         contravariant: Number of contravariant indices.
         target_rhf: Whether the target is RHF tensors, which changes the desired

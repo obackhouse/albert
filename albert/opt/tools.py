@@ -278,6 +278,7 @@ def optimise_eom(
         returns: The return tensors.
         exprs: The tensor expressions to be optimised.
         method: The optimisation method to use. Options are `"auto"`, `"gristmill"`.
+        **kwargs: Additional keyword arguments to pass to the optimiser.
 
     Returns:
         The returned tensors and optimised tensor expressions, split into those that depend on the

@@ -69,6 +69,8 @@ def canonicalise_exhaustive(
 
     Args:
         expr: The tensor expression to canonicalise.
+        key: A key function to use for canonicalisation. If ``None``, a default key function is
+            used that sorts algebraic sums by their children, ignoring scalar factors.
 
     Returns:
         The canonicalised tensor expression.
@@ -105,6 +107,8 @@ def canonicalise_indices(
 
     Args:
         expr: The tensor expression to canonicalise.
+        extra_indices: Extra indices to consider when canonicalising.
+        which: Which indices to canonicalise.
 
     Returns:
         The canonicalised tensor expression.

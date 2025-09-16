@@ -70,7 +70,7 @@ class EinsumCodeGenerator(BaseCodeGenerator):
         _add_spins = _add_spins and any(i.spin in ("a", "b") for i in tensor.external_indices)
         if _add_spins:
             spins = tuple(i.spin for i in tensor.external_indices if i.spin in ("a", "b"))
-            if len(spins):
+            if spins:
                 string += spin_delimiter + "".join(spins)
 
         # Add the spaces
@@ -79,7 +79,7 @@ class EinsumCodeGenerator(BaseCodeGenerator):
         _add_spaces = _add_spaces and all(i.space for i in tensor.external_indices)
         if _add_spaces:
             spaces = tuple(cast(str, i.space) for i in tensor.external_indices)
-            if len(spaces):
+            if spaces:
                 string += space_delimiter + "".join(spaces)
 
         return string

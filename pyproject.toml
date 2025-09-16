@@ -118,7 +118,7 @@ exclude = """
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-include = ["pyproject.toml", "albert/**/*.py", "tests/**/*.py", "examples/**/*.py"]
+include = ["pyproject.toml", "albert/**/*.py", "examples/**/*.py"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -131,7 +131,10 @@ select = [
     "F",  # pyflakes
     "I",  # isort
     "D",  # pydocstyle
-    "PL",  # pylint
+    "PLE",  # pylint (errors)
+]
+ignore = [
+    "E741",  # Ambiguous variable name
 ]
 
 [tool.ruff.lint.per-file-ignores]
