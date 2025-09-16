@@ -37,14 +37,7 @@ build-backend = "setuptools.build_meta"
 
 [project.optional-dependencies]
 dev = [
-    "black>=22.6.0",
-    "isort>=5.10.1",
-    "flake8>=3.8.4",
-    "flake8-pyproject>=1.2.3",
-    "flake8-bugbear>=23.0.0",
-    "flake8-docstrings>=1.6.0",
-    "unimport>=1.0.0",
-    "isort>=5.0.0",
+    "ruff>=0.12.0",
     "coverage[toml]>=5.5.0",
     "pytest>=6.2.4",
     "pytest-cov>=4.0.0",
@@ -121,6 +114,37 @@ exclude = """
     | build
 )/
 """
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+include = ["pyproject.toml", "albert/**/*.py", "tests/**/*.py", "examples/**/*.py"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle
+    "F",  # pyflakes
+    "I",  # isort
+    "D",  # pydocstyle
+    "PL",  # pylint
+]
+
+[tool.ruff.lint.per-file-ignores]
+"albert/**/__init__.py" = [
+    "I001",  # unsorted-imports
+    "F401",  # unused-import
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.isort]
+known-first-party = ["albert"]
 
 [tools.mypy]
 python_version = "3.10"

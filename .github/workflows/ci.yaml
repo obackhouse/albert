@@ -37,10 +37,8 @@ jobs:
           python -m pip install .[dev,drudge]
       - name: Linting
         run: |
-          python -m unimport . --diff --check
-          python -m isort . --diff --check-only --verbose
-          python -m black . --diff --check --verbose
-          python -m flake8 . --verbose
+          ruff check .
+          ruff format --check .
           python -m mypy albert/ --verbose
       - name: Run unit tests
         run: |
