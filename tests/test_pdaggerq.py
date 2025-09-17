@@ -6,6 +6,7 @@ from albert.algebra import Mul
 from albert.base import Base
 from albert.index import Index
 from albert.qc._pdaggerq import import_from_pdaggerq, remove_reference_energy
+from albert.qc.spin import ghf_to_uhf
 from albert.scalar import Scalar
 from albert.tensor import Tensor
 
@@ -73,7 +74,7 @@ def test_ccsd_energy():
 
         return _project
 
-    expr_uhf = expr_ghf.as_uhf()[0]
+    expr_uhf = ghf_to_uhf(expr_ghf)[0]
 
     expr_uhf_aaaa = expr_uhf.apply(
         _project_onto_indices(

@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import itertools
 from collections import defaultdict
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from albert.algebra import _compose_mul
 from albert.index import Index
+from albert.qc.tensor import QTensor
 from albert.scalar import Scalar
 
 if TYPE_CHECKING:
@@ -45,7 +46,7 @@ def ghf_to_uhf(
             if isinstance(leaf, Scalar):
                 scalars.append(leaf)
             else:
-                leaf_as_uhf = leaf.as_uhf(target_rhf=target_rhf)
+                leaf_as_uhf = cast(QTensor, leaf).as_uhf(target_rhf=target_rhf)
                 if canonicalise:
                     leaf_as_uhf = tuple(e.canonicalise() for e in leaf_as_uhf)
                 tensors.append(leaf_as_uhf)
@@ -92,7 +93,7 @@ def uhf_to_rhf(expr: Base, canonicalise: bool = True) -> Base:
             if isinstance(leaf, Scalar):
                 leaves.append(leaf)
             else:
-                leaf_as_rhf = leaf.as_rhf()
+                leaf_as_rhf = cast(QTensor, leaf).as_rhf()
                 if canonicalise:
                     leaf_as_rhf = leaf_as_rhf.canonicalise()
                 leaves.append(leaf_as_rhf)

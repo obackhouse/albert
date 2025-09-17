@@ -227,44 +227,22 @@ class Algebraic(IAlgebraic):
 
         return cls(*children)
 
-    def as_uhf(self, target_rhf: bool = False) -> tuple[Base, ...]:
-        """Convert the indices without spin to indices with spin.
 
-        Indices that start without spin are assumed to be spin orbitals.
-
-        Args:
-            target_rhf: Whether the target is RHF. For some tensors, the intermediate conversion
-                to UHF is different depending on the target.
-
-        Returns:
-            Tuple of expressions resulting from the conversion.
-        """
-        from albert.qc.spin import ghf_to_uhf
-
-        return ghf_to_uhf(self, target_rhf=target_rhf)
-
-    def as_rhf(self) -> Base:
-        """Convert the indices with spin to indices without spin.
-
-        Indices that are returned without spin are spatial orbitals.
-
-        Returns:
-            Expression resulting from the conversion.
-        """
-        from albert.qc.spin import ghf_to_rhf
-
-        return ghf_to_rhf(self)
-
-
-def _compose_add(*children: Base) -> Base:
+def _compose_add(*children: Base, cls: type[Add] | None = None) -> Base:
     """Compose an addition. May not return an addition if unnecessary.
 
     Args:
         children: Children to add.
+        cls: Class to use for addition.
 
     Returns:
         Composed object.
     """
+    if cls is None:
+        cls = Add
+    if not issubclass(cls, Add):
+        raise ValueError("cls must be a subclass of Add.")
+
     # If there are no arguments, it's zero
     if len(children) == 0:
         return Scalar(0.0)
@@ -294,37 +272,50 @@ def _compose_add(*children: Base) -> Base:
     if scalar._value == 0.0:
         if len(other) == 1:
             return other[0]
-        return Add(*other)
+        return cls(*other)
 
     # Otherwise, include the scalar
-    return Add(scalar, *other)
+    return cls(scalar, *other)
 
 
-def _compose_mul(*children: Base) -> Base:
+def _compose_mul(
+    *children: Base, cls: type[Mul] | None = None, cls_scalar: type[Scalar] | None = None
+) -> Base:
     """Compose a multiplication. May not return a multiplication if unnecessary.
 
     Args:
         children: Children to multiply.
+        cls: Class to use for multiplication.
+        cls_scalar: Class to use for scalars.
 
     Returns:
         Composed object.
     """
+    if cls is None:
+        cls = Mul
+    if cls_scalar is None:
+        cls_scalar = Scalar
+    if not issubclass(cls, Mul):
+        raise ValueError("cls must be a subclass of Mul.")
+    if not issubclass(cls_scalar, Scalar):
+        raise ValueError("cls_scalar must be a subclass of Scalar.")
+
     # If there are no arguments, it's one
     if len(children) == 0:
-        return Scalar(1.0)
+        return cls_scalar(1.0)
 
     # Collect scalars
-    scalar = Scalar(1.0)
+    scalar = cls_scalar(1.0)
     other: list[Base] = []
     for child in children:
         if isinstance(child, Scalar):
-            scalar = Scalar(scalar._value * child._value)
+            scalar = cls_scalar(scalar._value * child._value)
         elif isinstance(child, Mul):
             inner = _compose_mul(*child._children)
             if inner._children:
                 for child in inner._children:
                     if isinstance(child, Scalar):
-                        scalar = Scalar(scalar._value * child._value)
+                        scalar = cls_scalar(scalar._value * child._value)
                     else:
                         other.append(child)
         else:
@@ -332,7 +323,7 @@ def _compose_mul(*children: Base) -> Base:
 
     # If the product of scalars is zero, return zero
     if scalar._value == 0.0:
-        return Scalar(0.0)
+        return cls_scalar(0.0)
 
     # If there are no other arguments, return the scalar
     if not other:
@@ -342,10 +333,10 @@ def _compose_mul(*children: Base) -> Base:
     if scalar._value == 1.0:
         if len(other) == 1:
             return other[0]
-        return Mul(*other)
+        return cls(*other)
 
     # Otherwise, include the scalar
-    return Mul(scalar, *other)
+    return cls(scalar, *other)
 
 
 class Add(IAdd, Algebraic):

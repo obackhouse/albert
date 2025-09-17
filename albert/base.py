@@ -392,32 +392,6 @@ class Base(Serialisable):
         pass
 
     @abstractmethod
-    def as_uhf(self, target_rhf: bool = False) -> tuple[Base, ...]:
-        """Convert the indices without spin to indices with spin.
-
-        Indices that start without spin are assumed to be spin orbitals.
-
-        Args:
-            target_rhf: Whether the target is RHF. For some tensors, the intermediate conversion
-                to UHF is different depending on the target.
-
-        Returns:
-            Tuple of expressions resulting from the conversion.
-        """
-        pass
-
-    @abstractmethod
-    def as_rhf(self) -> Base:
-        """Convert the indices with spin to indices without spin.
-
-        Indices that are returned without spin are spatial orbitals.
-
-        Returns:
-            Expression resulting from the conversion.
-        """
-        pass
-
-    @abstractmethod
     def __repr__(self) -> str:
         """Return a string representation.
 
