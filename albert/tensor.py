@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from functools import cached_property
 from typing import TYPE_CHECKING, TypedDict, TypeVar, cast
 
 from albert.algebra import Add, ExpandedAddLayer, ExpandedMulLayer, Mul, _compose_add, _compose_mul
@@ -37,6 +36,8 @@ class Tensor(Base):
         name: Name of the tensor.
     """
 
+    __slots__ = ("_indices", "_name", "_symmetry", "_hash", "_children")
+
     _interface = ITensor
 
     def __init__(
@@ -67,12 +68,12 @@ class Tensor(Base):
         """Get the symmetry of the object."""
         return self._symmetry
 
-    @cached_property
+    @property
     def external_indices(self) -> tuple[Index, ...]:
         """Get the external indices (those that are not summed over)."""
         return tuple(index for index in self._indices if self._indices.count(index) == 1)
 
-    @cached_property
+    @property
     def internal_indices(self) -> tuple[Index, ...]:
         """Get the internal indices (those that are summed over)."""
         return tuple(index for index in self._indices if self._indices.count(index) > 1)

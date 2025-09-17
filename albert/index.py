@@ -60,6 +60,8 @@ class Index(Serialisable):
         space: The space of the index.
     """
 
+    __slots__ = ("_name", "_spin", "_space", "_hash")
+
     _name: str
     _spin: Optional[str]
     _space: Optional[str]

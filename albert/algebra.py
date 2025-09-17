@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import itertools
 from collections import defaultdict
-from functools import cached_property, reduce
+from functools import reduce
 from typing import TYPE_CHECKING, TypedDict, TypeVar, cast
 
 from albert import ALLOW_NON_EINSTEIN_NOTATION
@@ -67,6 +67,8 @@ class Algebraic(IAlgebraic):
     Args:
         children: Children to operate on.
     """
+
+    __slots__ = ("_hash", "_children")
 
     _interface = IAlgebraic
     _children: tuple[Base, ...]
@@ -346,6 +348,8 @@ class Add(IAdd, Algebraic):
         children: Children to add.
     """
 
+    __slots__ = ("_hash", "_children")
+
     _interface = IAdd
     _compose = staticmethod(_compose_add)
 
@@ -424,6 +428,8 @@ class Mul(IMul, Algebraic):
         children: Children to multiply
     """
 
+    __slots__ = ("_hash", "_children")
+
     _interface = IMul
     _compose = staticmethod(_compose_mul)
 
@@ -432,7 +438,7 @@ class Mul(IMul, Algebraic):
         _check_indices(children)
         super().__init__(*children)
 
-    @cached_property
+    @property
     def external_indices(self) -> tuple[Index, ...]:
         """Get the external indices (those that are not summed over)."""
         counts: dict[Index, int] = defaultdict(int)
@@ -441,7 +447,7 @@ class Mul(IMul, Algebraic):
                 counts[index] += 1
         return tuple(index for index, count in counts.items() if count == 1)
 
-    @cached_property
+    @property
     def internal_indices(self) -> tuple[Index, ...]:
         """Get the internal indices (those that are summed over)."""
         counts: dict[Index, int] = defaultdict(int)
