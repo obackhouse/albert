@@ -5,11 +5,29 @@ from __future__ import annotations
 from abc import abstractmethod
 from typing import TYPE_CHECKING
 
-from albert.base import Base
+from albert.base import Base, _sign_penalty
 from albert.tensor import Tensor
 
 if TYPE_CHECKING:
     pass
+
+
+def _spin_penalty(base: Base) -> int:
+    """Return a penalty for the configuration of spins in a base object.
+
+    Args:
+        base: Base object to check.
+
+    Returns:
+        Penalty for the configuration of spins.
+    """
+    spins = tuple(index.spin if index.spin else "" for index in base.external_indices)
+    penalty = 0
+    for i in range(len(spins) - 1):
+        penalty += int(spins[i] == spins[i + 1]) * 2
+    if spins and spins[0] != min(spins):
+        penalty += 1
+    return penalty
 
 
 class SpinMixin:
@@ -49,6 +67,8 @@ class QTensor(Tensor, SpinMixin):
         indices: Indices of the tensor.
         name: Name of the tensor.
     """
+
+    _penalties = (_spin_penalty, _sign_penalty)
 
     def as_uhf(self, target_rhf: bool = False) -> tuple[Base, ...]:
         """Convert the indices without spin to indices with spin.
