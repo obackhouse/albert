@@ -2,6 +2,7 @@ from albert.algebra import Mul
 from albert.canon import canonicalise_indices
 from albert.index import Index
 from albert.qc.ghf import ERI
+from albert.qc.spin import ghf_to_rhf
 from albert.scalar import Scalar
 
 
@@ -31,7 +32,7 @@ def test_ghf_to_rhf():
         ),
     )
 
-    expr_rhf = expr_ghf.as_rhf()  # All have no external indices
+    expr_rhf = ghf_to_rhf(expr_ghf)  # All have no external indices
     expr_rhf = canonicalise_indices(expr_rhf.expand().canonicalise()).collect()
     assert expr_rhf == expr_rhf.canonicalise()
     assert repr(expr_rhf) == "(2 * v(i,a,j,b) * v(i,a,j,b)) + (-1 * v(i,a,j,b) * v(i,b,j,a))"

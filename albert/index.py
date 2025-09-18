@@ -60,6 +60,8 @@ class Index(Serialisable):
         space: The space of the index.
     """
 
+    __slots__ = ("_name", "_spin", "_space", "_hash")
+
     _name: str
     _spin: Optional[str]
     _space: Optional[str]
@@ -85,6 +87,13 @@ class Index(Serialisable):
     def space(self) -> Optional[str]:
         """Get the space of the index."""
         return self._space
+
+    @property
+    def category(self) -> tuple[str, str]:
+        """Get the category of the index, a compound of space and spin."""
+        space = self._space if self._space is not None else ""
+        spin = self._spin if self._spin is not None else ""
+        return (space, spin)
 
     def copy(
         self, name: Optional[str] = None, spin: Optional[str] = None, space: Optional[str] = None

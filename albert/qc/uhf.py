@@ -2,21 +2,21 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
-from albert.base import Base
 from albert.qc import rhf
+from albert.qc.tensor import QTensor
 from albert.scalar import Scalar
 from albert.symmetry import Permutation, Symmetry, fully_antisymmetric_group, symmetric_group
-from albert.tensor import Tensor
 
 if TYPE_CHECKING:
     from typing import Optional
 
+    from albert.base import Base
     from albert.index import Index
 
 
-class Fock(Tensor):
+class Fock(QTensor):
     """Class for the Fock matrix.
 
     Args:
@@ -38,7 +38,7 @@ class Fock(Tensor):
             name = "f"
         if symmetry is None:
             symmetry = symmetric_group((0, 1), (1, 0))
-        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
+        QTensor.__init__(self, *indices, name=name, symmetry=symmetry)
 
     def as_rhf(self) -> Base:
         """Convert the indices with spin to indices without spin.
@@ -74,7 +74,7 @@ class RDM1(Fock):
             name = "d"
         if symmetry is None:
             symmetry = symmetric_group((0, 1), (1, 0))
-        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
+        QTensor.__init__(self, *indices, name=name, symmetry=symmetry)
 
     def as_rhf(self) -> Base:
         """Convert the indices with spin to indices without spin.
@@ -110,7 +110,7 @@ class Delta(Fock):
             name = "δ"
         if symmetry is None:
             symmetry = symmetric_group((0, 1), (1, 0))
-        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
+        QTensor.__init__(self, *indices, name=name, symmetry=symmetry)
 
     def as_rhf(self) -> Base:
         """Convert the indices with spin to indices without spin.
@@ -124,7 +124,7 @@ class Delta(Fock):
         return rhf.Delta(*indices, name=self.name)
 
 
-class ERI(Tensor):
+class ERI(QTensor):
     """Class for the electron repulsion integral tensor.
 
     Args:
@@ -155,7 +155,7 @@ class ERI(Tensor):
                 (2, 3, 1, 0),
                 (3, 2, 1, 0),
             )
-        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
+        QTensor.__init__(self, *indices, name=name, symmetry=symmetry)
 
     def as_rhf(self) -> Base:
         """Convert the indices with spin to indices without spin.
@@ -169,7 +169,7 @@ class ERI(Tensor):
         return rhf.ERI(*indices, name=self.name)
 
 
-class CDERI(Tensor):
+class CDERI(QTensor):
     """Class for the CDERI tensor.
 
     Args:
@@ -193,7 +193,7 @@ class CDERI(Tensor):
             symmetry = symmetric_group((0, 1, 2), (0, 2, 1))
         if indices[0].space != "x":
             raise ValueError("First index of CDERI must be in auxiliary (x) space.")
-        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
+        QTensor.__init__(self, *indices, name=name, symmetry=symmetry)
 
     def as_rhf(self) -> Base:
         """Convert the indices with spin to indices without spin.
@@ -207,7 +207,7 @@ class CDERI(Tensor):
         return rhf.CDERI(*indices, name=self.name)
 
 
-class RDM2(Tensor):
+class RDM2(QTensor):
     """Class for the two-particle reduced density matrix.
 
     Args:
@@ -229,7 +229,7 @@ class RDM2(Tensor):
             name = "Γ"
         if symmetry is None:
             symmetry = symmetric_group((0, 1, 2, 3))
-        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
+        QTensor.__init__(self, *indices, name=name, symmetry=symmetry)
 
     def as_rhf(self) -> Base:
         """Convert the indices with spin to indices without spin.
@@ -244,8 +244,8 @@ class RDM2(Tensor):
 
 
 def _amplitude_as_rhf(
-    amp: Tensor,
-    type_rhf: type[Tensor],
+    amp: QTensor,
+    type_rhf: type[QTensor],
     covariant: int,
     contravariant: int,
 ) -> Base:
@@ -253,6 +253,7 @@ def _amplitude_as_rhf(
 
     Args:
         amp: UHF amplitude tensor.
+        type_rhf: RHF amplitude tensor type.
         covariant: Number of covariant indices.
         contravariant: Number of contravariant indices.
 
@@ -264,7 +265,7 @@ def _amplitude_as_rhf(
     nb = sum(index.spin == "b" for index in amp.external_indices)
     if nb > na:
         indices = tuple(index.spin_flip() for index in amp.external_indices)
-        amp = amp.copy(*indices)
+        amp = cast(QTensor, amp.copy(*indices))
 
     # Expand same spin amplitudes as linear combination of mixed spin amplitudes
     amps: list[Base] = [amp]
@@ -285,15 +286,16 @@ def _amplitude_as_rhf(
     for i, amp in enumerate(amps):
         indices = tuple(index.copy(spin="r") for index in amp.external_indices)
         amps[i] = amp.apply(
-            lambda tensor: type_rhf(*indices, name=tensor.name), Tensor  # noqa: B023
+            lambda tensor: type_rhf(*indices, name=tensor.name),
+            QTensor,  # noqa: B023
         )
 
     return sum(amps, Scalar(0.0))
 
 
 def _t4_as_rhf(
-    amp: Tensor,
-    type_rhf: type[Tensor],
+    amp: QTensor,
+    type_rhf: type[QTensor],
     covariant: int,
     contravariant: int,
 ) -> Base:
@@ -304,6 +306,7 @@ def _t4_as_rhf(
 
     Args:
         amp: UHF amplitude tensor.
+        type_rhf: RHF amplitude tensor type.
         covariant: Number of covariant indices.
         contravariant: Number of contravariant indices.
 
@@ -315,7 +318,7 @@ def _t4_as_rhf(
     nb = sum(index.spin == "b" for index in amp.external_indices)
     if nb > na:
         indices = tuple(index.spin_flip() for index in amp.external_indices)
-        amp = amp.copy(*indices)
+        amp = cast(QTensor, amp.copy(*indices))
 
     # Expand same spin amplitudes as linear combination of mixed spin amplitudes
     amps: list[Base] = [amp]
@@ -349,13 +352,14 @@ def _t4_as_rhf(
             raise ValueError("Invalid spin configuration for T4 amplitude.")
         indices = tuple(index.copy(spin="r") for index in amp.external_indices)
         amps[i] = amp.apply(
-            lambda tensor: type_rhf(*indices, name=tensor.name + extra), Tensor  # noqa: B023
+            lambda tensor: type_rhf(*indices, name=tensor.name + extra),
+            QTensor,  # noqa: B023
         )
 
     return sum(amps, Scalar(0.0))
 
 
-class T1(Tensor):
+class T1(QTensor):
     """Class for the T1 amplitude tensor.
 
     Args:
@@ -377,7 +381,7 @@ class T1(Tensor):
             name = "t1"
         if symmetry is None:
             symmetry = symmetric_group((0, 1))
-        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
+        QTensor.__init__(self, *indices, name=name, symmetry=symmetry)
 
     def as_rhf(self) -> Base:
         """Convert the indices with spin to indices without spin.
@@ -391,7 +395,7 @@ class T1(Tensor):
         return rhf.T1(*indices, name=self.name)
 
 
-class T2(Tensor):
+class T2(QTensor):
     """Class for the T2 amplitude tensor.
 
     Args:
@@ -418,7 +422,7 @@ class T2(Tensor):
                 Permutation((1, 0, 2, 3), -1),
                 Permutation((1, 0, 3, 2), +1),
             )
-        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
+        QTensor.__init__(self, *indices, name=name, symmetry=symmetry)
 
     def as_rhf(self) -> Base:
         """Convert the indices with spin to indices without spin.
@@ -431,7 +435,7 @@ class T2(Tensor):
         return _amplitude_as_rhf(self, rhf.T2, 2, 2)
 
 
-class T3(Tensor):
+class T3(QTensor):
     """Class for the T3 amplitude tensor.
 
     Args:
@@ -459,7 +463,7 @@ class T3(Tensor):
                     for perm_bra in fully_antisymmetric_group(3).permutations
                 )
             )
-        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
+        QTensor.__init__(self, *indices, name=name, symmetry=symmetry)
 
     def as_rhf(self) -> Base:
         """Convert the indices with spin to indices without spin.
@@ -496,7 +500,7 @@ class T3(Tensor):
             return 10
 
 
-class T4(Tensor):
+class T4(QTensor):
     """Class for the T4 amplitude tensor.
 
     Args:
@@ -521,7 +525,7 @@ class T4(Tensor):
                     for perm_bra in fully_antisymmetric_group(4).permutations
                 )
             )
-        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
+        QTensor.__init__(self, *indices, name=name, symmetry=symmetry)
 
     def as_rhf(self) -> Base:
         """Convert the indices with spin to indices without spin.
@@ -696,7 +700,7 @@ class L4(T4):
         return T4._spin_penalty(indices)
 
 
-class R0(Tensor):
+class R0(QTensor):
     """Class for the R0 amplitude tensor.
 
     Args:
@@ -716,7 +720,7 @@ class R0(Tensor):
             raise ValueError("R0 amplitude tensor must have zero indices.")
         if name is None:
             name = "r0"
-        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
+        QTensor.__init__(self, *indices, name=name, symmetry=symmetry)
 
     def as_rhf(self) -> Base:
         """Convert the indices without spin to indices with spin.
@@ -727,7 +731,7 @@ class R0(Tensor):
         return rhf.R0(name=self.name)
 
 
-class R1ip(Tensor):
+class R1ip(QTensor):
     """Class for the R1ip amplitude tensor.
 
     Args:
@@ -749,7 +753,7 @@ class R1ip(Tensor):
             name = "r1"
         if symmetry is None:
             symmetry = symmetric_group((0,))
-        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
+        QTensor.__init__(self, *indices, name=name, symmetry=symmetry)
 
     def as_rhf(self) -> Base:
         """Convert the indices with spin to indices without spin.
@@ -762,7 +766,7 @@ class R1ip(Tensor):
         return _amplitude_as_rhf(self, rhf.R1ip, 1, 0)
 
 
-class R2ip(Tensor):
+class R2ip(QTensor):
     """Class for the R2ip amplitude tensor.
 
     Args:
@@ -790,7 +794,7 @@ class R2ip(Tensor):
                     for perm_bra in fully_antisymmetric_group(2).permutations
                 )
             )
-        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
+        QTensor.__init__(self, *indices, name=name, symmetry=symmetry)
 
     def as_rhf(self) -> Base:
         """Convert the indices with spin to indices without spin.
@@ -803,7 +807,7 @@ class R2ip(Tensor):
         return _amplitude_as_rhf(self, rhf.R2ip, 2, 1)
 
 
-class R3ip(Tensor):
+class R3ip(QTensor):
     """Class for the R3ip amplitude tensor.
 
     Args:
@@ -831,7 +835,7 @@ class R3ip(Tensor):
                     for perm_bra in fully_antisymmetric_group(3).permutations
                 )
             )
-        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
+        QTensor.__init__(self, *indices, name=name, symmetry=symmetry)
 
     def as_rhf(self) -> Base:
         """Convert the indices with spin to indices without spin.
@@ -844,7 +848,7 @@ class R3ip(Tensor):
         return _amplitude_as_rhf(self, rhf.R3ip, 3, 2)
 
 
-class R1ea(Tensor):
+class R1ea(QTensor):
     """Class for the R1ea amplitude tensor.
 
     Args:
@@ -866,7 +870,7 @@ class R1ea(Tensor):
             name = "r1"
         if symmetry is None:
             symmetry = symmetric_group((0,))
-        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
+        QTensor.__init__(self, *indices, name=name, symmetry=symmetry)
 
     def as_rhf(self) -> Base:
         """Convert the indices with spin to indices without spin.
@@ -879,7 +883,7 @@ class R1ea(Tensor):
         return _amplitude_as_rhf(self, rhf.R1ea, 0, 1)
 
 
-class R2ea(Tensor):
+class R2ea(QTensor):
     """Class for the R2ea amplitude tensor.
 
     Args:
@@ -907,7 +911,7 @@ class R2ea(Tensor):
                     for perm_bra in fully_antisymmetric_group(1).permutations
                 )
             )
-        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
+        QTensor.__init__(self, *indices, name=name, symmetry=symmetry)
 
     def as_rhf(self) -> Base:
         """Convert the indices with spin to indices without spin.
@@ -920,7 +924,7 @@ class R2ea(Tensor):
         return _amplitude_as_rhf(self, rhf.R2ea, 1, 2)
 
 
-class R3ea(Tensor):
+class R3ea(QTensor):
     """Class for the R3ea amplitude tensor.
 
     Args:
@@ -948,7 +952,7 @@ class R3ea(Tensor):
                     for perm_bra in fully_antisymmetric_group(2).permutations
                 )
             )
-        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
+        QTensor.__init__(self, *indices, name=name, symmetry=symmetry)
 
     def as_rhf(self) -> Base:
         """Convert the indices with spin to indices without spin.

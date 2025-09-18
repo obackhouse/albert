@@ -102,45 +102,31 @@ class Serialisable(ABC):
         return False
 
 
+def _sign_penalty(base: Base) -> int:
+    """Return a penalty for the sign in scalars in a base object.
+
+    Args:
+        base: Base object to check.
+
+    Returns:
+        Penalty for the sign.
+    """
+    if not base._children:
+        return 0
+    penalty = 1
+    if base._children:
+        for child in base._children:
+            if isinstance(child, IScalar):
+                penalty *= 1 if child._value < 0 else -1
+    return -penalty
+
+
 class Base(Serialisable):
     """Base class for algebraic types."""
 
     _interface: type[IBase]
     _children: Optional[tuple[Base, ...]]
-
-    @staticmethod
-    def _spin_penalty(indices: tuple[Index, ...]) -> int:
-        """Return a penalty for the configuration of spins in a set of indices.
-
-        Args:
-            indices: Indices to check.
-
-        Returns:
-            Penalty for the configuration of spins.
-        """
-        spins = tuple(index.spin if index.spin else "" for index in indices)
-        penalty = 0
-        for i in range(len(spins) - 1):
-            penalty += int(spins[i] == spins[i + 1]) * 2
-        if spins and spins[0] != min(spins):
-            penalty += 1
-        return penalty
-
-    @staticmethod
-    def _sign_penalty(children: tuple[Base, ...]) -> int:
-        """Return a penalty for the sign in scalars.
-
-        Args:
-            children: Children to check.
-
-        Returns:
-            Penalty for the sign.
-        """
-        penalty = 1
-        for child in children:
-            if isinstance(child, IScalar):
-                penalty *= 1 if child._value < 0 else -1
-        return -penalty
+    _penalties: tuple[Callable[[Base], int], ...] = (_sign_penalty,)
 
     def search_leaves(self, type_filter: type[T]) -> Iterable[T]:
         """Depth-first search through leaves.
@@ -371,10 +357,11 @@ class Base(Serialisable):
     def _hashable_fields(self) -> Iterable[SerialisedField]:
         """Yield fields of the hashable representation."""
         yield self.rank
-        yield self._spin_penalty(self.external_indices)
         yield self.external_indices
         yield self.internal_indices
-        yield self._sign_penalty(self._children) if self._children else 0
+        yield len(self._penalties)
+        for penalty in self._penalties:
+            yield penalty(self)
         yield _SCORES[self._interface]
         yield getattr(self, "name", "~")
         yield len(self._children) if self._children is not None else 0
@@ -388,32 +375,6 @@ class Base(Serialisable):
 
         Returns:
             Object loaded from JSON representation.
-        """
-        pass
-
-    @abstractmethod
-    def as_uhf(self, target_rhf: bool = False) -> tuple[Base, ...]:
-        """Convert the indices without spin to indices with spin.
-
-        Indices that start without spin are assumed to be spin orbitals.
-
-        Args:
-            target_rhf: Whether the target is RHF. For some tensors, the intermediate conversion
-                to UHF is different depending on the target.
-
-        Returns:
-            Tuple of expressions resulting from the conversion.
-        """
-        pass
-
-    @abstractmethod
-    def as_rhf(self) -> Base:
-        """Convert the indices with spin to indices without spin.
-
-        Indices that are returned without spin are spatial orbitals.
-
-        Returns:
-            Expression resulting from the conversion.
         """
         pass
 
@@ -458,7 +419,12 @@ class Base(Serialisable):
 
 
 class IBase(Base):
-    """Interface class."""
+    """Interface class.
+
+    Note:
+        This class is entirely abstract and is only used to indicate the type of the object within
+        the ``Base`` class itself.
+    """
 
     pass
 
@@ -468,6 +434,10 @@ class IScalar(IBase):
 
     Args:
         value: Value of the scalar.
+
+    Note:
+        This class is entirely abstract and is only used to indicate the type of the object within
+        the ``Base`` class itself.
     """
 
     _value: float
@@ -479,6 +449,10 @@ class ITensor(IBase):
     Args:
         indices: Indices of the tensor.
         name: Name of the tensor.
+
+    Note:
+        This class is entirely abstract and is only used to indicate the type of the object within
+        the ``Base`` class itself.
     """
 
     _indices: tuple[Index, ...]
@@ -491,19 +465,33 @@ class IAlgebraic(IBase):
 
     Args:
         children: Children to the operation.
+
+    Note:
+        This class is entirely abstract and is only used to indicate the type of the object within
+        the ``Base`` class itself.
     """
 
     pass
 
 
 class IAdd(IAlgebraic):
-    """Interface class for addition."""
+    """Interface class for addition.
+
+    Note:
+        This class is entirely abstract and is only used to indicate the type of the object within
+        the ``Base`` class itself.
+    """
 
     pass
 
 
 class IMul(IAlgebraic):
-    """Interface class for multiplication."""
+    """Interface class for multiplication.
+
+    Note:
+        This class is entirely abstract and is only used to indicate the type of the object within
+        the ``Base`` class itself.
+    """
 
     pass
 

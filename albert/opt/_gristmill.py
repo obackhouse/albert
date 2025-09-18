@@ -54,12 +54,13 @@ def optimise_gristmill(
         exprs: The tensor expressions to be optimised.
         sizes: The sizes of the indices.
         strategy: The optimisation strategy to use.
-        transpose: The handling of transposed intermediate terms.
+        transposes: The handling of transposed intermediate terms.
         greedy_cutoff: The depth cutoff for the greedy strategy. Negative values mean full
             Bron-Kerbosch backtracking.
         drop_cutoff: The depth cutoff for picking a saving in the greedy strategy. Negative
             values delegate to `greedy_cutoff`. Gives a better acceleration than `greedy_cutoff`,
             a value of `2` is recommended for very large expressions.
+        **gristmill_kwargs: Additional keyword arguments to pass to `gristmill.optimize`.
 
     Returns:
         The optimised expressions, as tuples of the output tensor and the expression.
