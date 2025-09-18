@@ -9,6 +9,7 @@ import opt_einsum
 from albert import _default_sizes
 from albert.algebra import Add, Mul
 from albert.base import Base
+from albert.expression import Expression
 from albert.index import Index
 from albert.scalar import Scalar
 from albert.tensor import Tensor
@@ -23,7 +24,7 @@ def parenthesise_mul(
     scaling_limit_cpu: dict[tuple[str, ...], int] | None = None,
     scaling_limit_ram: dict[tuple[str, ...], int] | None = None,
     intermediate_counter: int = 0,
-) -> tuple[Mul, list[tuple[Tensor, Base]]]:
+) -> tuple[Mul, list[Expression]]:
     """Parenthesise a product.
 
     Converts the `Mul` of given children into a nested `Mul` of groups of said children.
@@ -38,8 +39,8 @@ def parenthesise_mul(
         intermediate_counter: The starting counter for naming intermediate tensors.
 
     Returns:
-        The parenthesised contraction represented by a non-nested product, and a list of
-        `(Tensor, Base)` pairs defining the intermediates to resolve the nested product.
+        The parenthesised contraction represented by a non-nested product, and a list of tensor
+        expressions defining the intermediates to resolve the nested product.
     """
     if sizes is None:
         sizes = _default_sizes
@@ -149,7 +150,7 @@ def parenthesise_mul(
     subscripts = [line.split()[2] for line in lines[start:] if line.strip()]
 
     # Build the contractions
-    intermediates: list[tuple[Tensor, Base]] = []
+    intermediates: list[Expression] = []
     counter = intermediate_counter
     _index_map_rev = {v: k for k, v in _index_map.items()}
     while subscripts:
@@ -165,48 +166,47 @@ def parenthesise_mul(
             output_indices = [_index_map_rev[c] for c in output_i]
             interm = Tensor(*output_indices, name=f"tmp{counter}")
             counter += 1
-            intermediates.append((interm, Mul(*tensors_i)))
+            intermediates.append(Expression(interm, Mul(*tensors_i)))
             tensors.append(interm)
 
     return expr, intermediates
 
 
-def factorise(output_exprs: list[tuple[Tensor, Base]]) -> list[tuple[Tensor, Base]]:
+def factorise(exprs: list[Expression]) -> list[Expression]:
     """Factorise expressions that differ by at most one tensor and the scalar factor.
 
     Args:
-        output_exprs: The output and expression pairs to identify common subexpressions in, as
-            `(Tensor, Base)` pairs.
+        exprs: The tensor expressions to identify common subexpressions in.
 
     Returns:
-        The factorised expressions as `(Tensor, Base)` pairs.
+        The factorised tensor expressions.
     """
     # Check that each expression is either:
     #  a) a Mul with at most two non-scalar children
     #  b) a non-scalar
-    new_output_exprs: list[tuple[Tensor, Base]] = []
-    to_factorise: list[tuple[Tensor, Base]] = []
-    for output, expr in output_exprs:
-        if isinstance(expr, Mul):
-            children = [child for child in expr._children if not isinstance(child, Scalar)]
+    new_exprs: list[Expression] = []
+    to_factorise: list[Expression] = []
+    for expr in exprs:
+        if isinstance(expr.rhs, Mul):
+            children = [child for child in expr.rhs._children if not isinstance(child, Scalar)]
             if len(children) > 2:
                 raise ValueError(
                     "Each expression must be a Mul with two non-scalar children. Try "
                     "parenthesising the expressions first.",
                 )
             if len(children) == 2:
-                to_factorise.append((output, expr))
+                to_factorise.append(expr)
             else:
-                new_output_exprs.append((output, expr))
+                new_exprs.append(expr)
         else:
-            new_output_exprs.append((output, expr))
+            new_exprs.append(expr)
 
     while to_factorise:
         # Get all the possible factors
         factors: dict[Base, int] = {}
-        for output, expr in to_factorise:
-            assert expr._children is not None
-            children = [child for child in expr._children if not isinstance(child, Scalar)]
+        for expr in to_factorise:
+            assert expr.rhs._children is not None
+            children = [child for child in expr.rhs._children if not isinstance(child, Scalar)]
             assert len(children) == 2
             for child in children:
                 if child not in factors:
@@ -217,19 +217,23 @@ def factorise(output_exprs: list[tuple[Tensor, Base]]) -> list[tuple[Tensor, Bas
         factor = max(factors, key=lambda k: factors[k])
 
         # For each expression that contains this factor, remove it and group them
-        group: list[tuple[Tensor, Base]] = []
-        new_to_factorise: list[tuple[Tensor, Base]] = []
-        for output, expr in to_factorise:
-            assert expr._children is not None
-            if factor in expr._children:
-                group.append((output, Mul(*[child for child in expr._children if child != factor])))
+        group: list[Expression] = []
+        new_to_factorise: list[Expression] = []
+        for expr in to_factorise:
+            assert expr.rhs._children is not None
+            if factor in expr.rhs._children:
+                group.append(
+                    Expression(
+                        expr.lhs, Mul(*[child for child in expr.rhs._children if child != factor])
+                    )
+                )
             else:
-                new_to_factorise.append((output, expr))
+                new_to_factorise.append(expr)
         to_factorise = new_to_factorise
 
         # Combine the group into sums for each unique output
-        for output in set(output for output, _ in group):
-            group_out = [child for out, child in group if out == output]
-            new_output_exprs.append((output, Mul(factor, Add(*group_out))))
+        for output in set(expr.lhs for expr in group):
+            group_out = [child.rhs for child in group if child.lhs == output]
+            new_exprs.append(Expression(output, Mul(factor, Add(*group_out))))
 
-    return new_output_exprs
+    return new_exprs

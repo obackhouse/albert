@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from albert import _default_sizes
 from albert.algebra import _compose_mul
+from albert.expression import Expression
 from albert.index import Index
 from albert.scalar import Scalar
 from albert.tensor import Tensor
@@ -13,7 +14,6 @@ from albert.tensor import Tensor
 if TYPE_CHECKING:
     from typing import Any, Literal, Optional
 
-    from albert.base import Base
     from albert.symmetry import Symmetry
 
 # Try to find a pyspark context:
@@ -40,28 +40,27 @@ except ImportError:
 
 
 def optimise_gristmill(
-    outputs: list[Tensor],
-    exprs: list[Base],
+    exprs: list[Expression],
     sizes: Optional[dict[str | None, float]] = None,
     strategy: Literal["exhaust", "opt", "trav", "greedy"] = "exhaust",
     transposes: Literal["skip", "natural", "ignore"] = "natural",
     greedy_cutoff: int = -1,
     drop_cutoff: int = -1,
     **gristmill_kwargs: Any,
-) -> list[tuple[Tensor, Base]]:
+) -> list[Expression]:
     """Perform common subexpression elimination on the given expression using `gristmill`.
 
     Args:
-        outputs: The output tensors for each expression.
-        exprs: The expressions to be optimised.
+        exprs: The tensor expressions to be optimised.
         sizes: The sizes of the indices.
         strategy: The optimisation strategy to use.
-        transpose: The handling of transposed intermediate terms.
+        transposes: The handling of transposed intermediate terms.
         greedy_cutoff: The depth cutoff for the greedy strategy. Negative values mean full
             Bron-Kerbosch backtracking.
         drop_cutoff: The depth cutoff for picking a saving in the greedy strategy. Negative
             values delegate to `greedy_cutoff`. Gives a better acceleration than `greedy_cutoff`,
             a value of `2` is recommended for very large expressions.
+        **gristmill_kwargs: Additional keyword arguments to pass to `gristmill.optimize`.
 
     Returns:
         The optimised expressions, as tuples of the output tensor and the expression.
@@ -80,8 +79,8 @@ def optimise_gristmill(
     # Find all the indices in the expressions
     indices: set[Index] = set()
     for expr in exprs:
-        for node in expr.search_leaves(Tensor):
-            indices.update(node.external_indices)
+        for node in expr.rhs.search_leaves(Tensor):
+            indices.update(node.indices)
 
     # Set the indices
     substs: dict[sympy.Symbol, float] = {}
@@ -112,16 +111,16 @@ def optimise_gristmill(
     done: set[sympy.Symbol] = set()
     classes: dict[sympy.Symbol, type[Tensor]] = {}
     symmetries: dict[sympy.Symbol, Optional[Symmetry]] = {}
-    for output, expr in zip(outputs, exprs):
+    for expr in exprs:
         # Convert the expression to sympy
-        output_sympy = output.as_sympy()
-        if output.rank == 0:
+        output_sympy = expr.lhs.as_sympy()
+        if expr.lhs.rank == 0:
             output_base = output_sympy
             output_indices = []
         else:
             output_base = output_sympy.base
             output_indices = output_sympy.indices
-        expr_sympy = expr.expand().as_sympy()
+        expr_sympy = expr.rhs.expand().as_sympy()
 
         # Get the ranges on the LHS
         ranges_lhs = [
@@ -134,7 +133,7 @@ def optimise_gristmill(
         terms.append(dr.define(output_base, *ranges_lhs, rhs))
 
         # Record the permutations and symbols
-        tensors = [output] + list(expr.search_leaves(type_filter=Tensor))
+        tensors = [expr.lhs] + list(expr.rhs.search_leaves(Tensor))
         done = set()
         for tensor in tensors:
             base = tensor.as_sympy().base if tensor.rank else tensor.as_sympy()
@@ -173,8 +172,7 @@ def optimise_gristmill(
     )
 
     # Convert the terms back to expressions
-    outputs: list[Tensor] = []
-    exprs: list[Base] = []
+    exprs: list[Expression] = []
     for term in terms:
         # Convert the LHS
         base = term.lhs if isinstance(term.lhs, sympy.Symbol) else term.lhs.base
@@ -183,10 +181,10 @@ def optimise_gristmill(
             Index(index_reference[i][0], space=index_reference[i][1], spin=index_reference[i][2])
             for i in ([] if isinstance(term.lhs, sympy.Symbol) else term.lhs.indices)
         ]
-        outputs.append(cls(*inds, name=base.name, symmetry=symmetries.get(base)))
+        output = cls(*inds, name=base.name, symmetry=symmetries.get(base))
 
         # Convert the RHS
-        expr = Scalar(0.0)
+        expr_i = Scalar(0.0)
         for amp in [t.amp for t in term.rhs_terms]:
             factor = Scalar(float(sympy.prod(amp.atoms(sympy.Number))))
             args: list[Tensor] = []
@@ -202,7 +200,7 @@ def optimise_gristmill(
                     for i in atom.indices
                 ]
                 args.append(cls(*inds, name=base.name, symmetry=symmetries.get(base)))
-            expr += _compose_mul(factor, *args)
-        exprs.append(expr)
+            expr_i += _compose_mul(factor, *args)
+        exprs.append(Expression(output, expr_i))
 
-    return list(zip(outputs, exprs))
+    return exprs

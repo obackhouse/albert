@@ -13,6 +13,7 @@ from albert.opt import optimise as _optimise
 from albert.qc._pdaggerq import import_from_pdaggerq, remove_reference_energy
 from albert.qc.spin import ghf_to_uhf
 from albert.tensor import Tensor
+from albert.expression import Expression
 
 
 def _kwargs(strategy, transposes, greedy_cutoff, drop_cutoff):
@@ -61,16 +62,11 @@ def _test_uccsd_einsum(helper, file, optimise, canonicalise, kwargs):
         energy = tuple(e.canonicalise(indices=True).collect() for e in energy)
     output = tuple(Tensor(name="e_cc") for _ in energy)
 
+    exprs = [Expression(o, e) for o, e in zip(output, energy)]
     if optimise:
-        output_expr = _optimise(output, energy, **kwargs)
-    else:
-        output_expr = list(zip(output, energy))
+        exprs = _optimise(exprs, **kwargs)
 
-    codegen(
-        "energy",
-        output,
-        output_expr,
-    )
+    codegen("energy", output, exprs)
 
     pq.clear()
     pq.set_left_operators([["e1(i,a)"]])
@@ -105,18 +101,11 @@ def _test_uccsd_einsum(helper, file, optimise, canonicalise, kwargs):
         for i, t in enumerate(t2)
     )
 
-    outputs = output_t1 + output_t2
+    exprs = [Expression(o, t) for o, t in zip(output_t1 + output_t2, t1 + t2)]
     if optimise:
-        output_expr = _optimise(outputs, t1 + t2, **kwargs)
-    else:
-        output_expr = list(zip(outputs, t1 + t2))
+        exprs = _optimise(exprs, **kwargs)
 
-    codegen(
-        "update_amplitudes",
-        outputs,
-        output_expr,
-        as_dict=True,
-    )
+    codegen("update_amplitudes", output_t1 + output_t2, exprs, as_dict=True)
 
     module = importlib.import_module(f"_test_uccsd")
     energy = module.energy

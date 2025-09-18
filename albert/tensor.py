@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-from functools import cached_property
 from typing import TYPE_CHECKING, TypedDict, TypeVar, cast
 
 from albert.algebra import Add, ExpandedAddLayer, ExpandedMulLayer, Mul, _compose_add, _compose_mul
 from albert.base import Base, ITensor
-from albert.canon import canonicalise_indices
 from albert.index import Index
 from albert.scalar import Scalar
 
@@ -37,6 +35,8 @@ class Tensor(Base):
         indices: Indices of the tensor.
         name: Name of the tensor.
     """
+
+    __slots__ = ("_indices", "_name", "_symmetry", "_hash", "_children")
 
     _interface = ITensor
 
@@ -68,12 +68,12 @@ class Tensor(Base):
         """Get the symmetry of the object."""
         return self._symmetry
 
-    @cached_property
+    @property
     def external_indices(self) -> tuple[Index, ...]:
         """Get the external indices (those that are not summed over)."""
         return tuple(index for index in self._indices if self._indices.count(index) == 1)
 
-    @cached_property
+    @property
     def internal_indices(self) -> tuple[Index, ...]:
         """Get the internal indices (those that are summed over)."""
         return tuple(index for index in self._indices if self._indices.count(index) > 1)
@@ -172,8 +172,12 @@ class Tensor(Base):
             best = min(self._symmetry(self))
         else:
             best = self
+
         if indices:
+            from albert.canon import canonicalise_indices
+
             best = canonicalise_indices(best)
+
         return best
 
     def expand(self) -> ExpandedAddLayer:
@@ -257,36 +261,6 @@ class Tensor(Base):
         if data["symmetry"]:
             symmetry = Symmetry.from_json(data["symmetry"])
         return cls(*indices, name=data["name"], symmetry=symmetry)
-
-    def as_uhf(self, target_rhf: bool = False) -> tuple[Base, ...]:
-        """Convert the indices without spin to indices with spin.
-
-        Indices that start without spin are assumed to be spin orbitals.
-
-        Args:
-            target_rhf: Whether the target is RHF. For some tensors, the intermediate conversion
-                to UHF is different depending on the target.
-
-        Returns:
-            Tuple of expressions resulting from the conversion.
-        """
-        raise NotImplementedError(
-            "Conversion methods `as_rhf` and `as_uhf` are implemented for the subclasses of "
-            "`Tensor` in `albert.qc` modules."
-        )
-
-    def as_rhf(self) -> Base:
-        """Convert the indices with spin to indices without spin.
-
-        Indices that are returned without spin are spatial orbitals.
-
-        Returns:
-            Expression resulting from the conversion.
-        """
-        raise NotImplementedError(
-            "Conversion methods `as_rhf` and `as_uhf` are implemented for the subclasses of "
-            "`Tensor` in `albert.qc` modules."
-        )
 
     def __repr__(self) -> str:
         """Return a string representation.
