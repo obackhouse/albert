@@ -387,6 +387,49 @@ class Base(Serialisable):
         """
         pass
 
+    def tree_repr(
+        self,
+        connectors: tuple[str, str, str] = ("─", "│", "├", "└"),
+        indent: int = 4,
+    ) -> str:
+        """Return a string representation of the tree structure.
+
+        Args:
+            connectors: Characters to use for drawing the tree structure. The characters are:
+                - Horizontal connection
+                - Vertical connection
+                - Vertical connection with horizontal branch
+                - Vertical terminus with horizontal branch
+
+        Returns:
+            String representation of the tree structure.
+        """
+        # Minimum indent of 2 to fit the connectors
+        indent = max(indent, 2)
+
+        def to_str(node: Base) -> str:
+            if node._children:
+                return node.__class__.__name__
+            return str(node)
+
+        def walk(node: Base, prefix: str = "", is_last: bool = True) -> str:
+            nonlocal result
+            connector = connectors[3 if is_last else 2] + connectors[0] * (indent - 2) + " "
+            result += f"{prefix}{connector}{to_str(node)}\n"
+            if not node._children:
+                return
+            spacing = (connectors[1] if not is_last else " ") + " " * (indent - 1)
+            next_prefix = f"{prefix}{spacing}"
+            for i, child in enumerate(node._children):
+                walk(child, next_prefix, i == len(node._children) - 1)
+
+        # Build the string representation
+        result = f"{to_str(self)}\n"
+        for i, child in enumerate(self._children or []):
+            walk(child, "", i == len(self._children) - 1)
+
+        return result.rstrip()
+
     @abstractmethod
     def __add__(self, other: Base) -> Base:
         """Add two objects."""

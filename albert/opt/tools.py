@@ -25,9 +25,6 @@ if TYPE_CHECKING:
 def substitute_expressions(exprs: list[Expression]) -> list[Expression]:
     """Substitute expressions resulting from common subexpression elimination.
 
-    The return value is a list of tuples, where the first element is the output tensor and the
-    second element is the expression, for each distinct output tensor.
-
     Args:
         exprs: The tensor expressions.
 
