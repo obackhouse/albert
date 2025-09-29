@@ -206,9 +206,12 @@ def generate_paths(
     if num_tensors < 40:
         yield find_optimal_path(expr, sizes=sizes)
         max_samples -= 1
-    if num_tensors < 5:
-        yield from generate_paths_exhaustive(expr, sizes=sizes)
-    else:
+    if num_tensors < 6 and max_samples > 0:
+        trees = list(generate_paths_exhaustive(expr, sizes=sizes))
+        costs = [tree.total_cost(log=None) for tree in trees]
+        for _, tree in sorted(zip(costs, trees), key=lambda x: x[0])[:max_samples]:
+            yield tree
+    elif max_samples > 0:
         yield from generate_paths_approximate(
             expr, sizes=sizes, max_samples=max_samples, **opt_kwargs
         )

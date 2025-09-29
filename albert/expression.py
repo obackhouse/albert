@@ -39,6 +39,7 @@ class Expression(Serialisable):
         """Initialise the expression."""
         if set(lhs.indices) != set(rhs.external_indices):
             raise ValueError("LHS indices must match RHS external indices.")
+        self._hash = None
         self._lhs = lhs
         self._rhs = rhs
 

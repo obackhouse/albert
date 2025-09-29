@@ -15,6 +15,7 @@ from albert import _default_sizes
 from albert.base import SerialisedField, _SCORES
 from albert.algebra import Mul, Add
 from albert.opt.parenth import generate_paths
+from albert.opt.tools import count_flops
 from albert.scalar import Scalar
 from albert.tensor import Tensor
 from albert.expression import Expression
@@ -28,6 +29,8 @@ if TYPE_CHECKING:
     from albert.index import Index
 
     Path = tuple[tuple[int, int], ...]
+    Memo = dict[Base, Tensor]
+    Intermediates = dict[Tensor, Expression]
 
 
 @dataclass(frozen=True, slots=True)
@@ -219,15 +222,15 @@ def final_contraction_vertices(expr: Mul, path: Path) -> tuple[Vertex | None, Ve
 
 
 def build_bipartite_subgraphs(
-    expr: Expression,
+    *exprs: Expression,
     sizes: dict[str | None, int] | None = None,
     max_samples: int = 8,
     **opt_kwargs,
 ) -> dict[IndexPartition, nx.Graph]:
-    """Build bipartite graphs for each partition of indices from the expression.
+    """Build bipartite graphs for each partition of indices from the expressions.
 
     Args:
-        expr: The expression.
+        *exprs: The expressions to build the graphs from.
         sizes: The sizes of the spaces in the expression.
         max_samples: The maximum number of samples to use when building the graphs.
         **opt_kwargs: Additional keyword arguments for the optimization.
@@ -236,50 +239,51 @@ def build_bipartite_subgraphs(
         A mapping from index partitions to bipartite graphs.
     """
     graphs: dict[IndexPartition, nx.Graph] = {}
-    for mul in expr.rhs.expand()._children:
-        num_tensors = len(list(mul.search_leaves(Tensor)))
-        if num_tensors < 2:
-            continue
-        scalar = prod([s.value for s in mul.search_leaves(Scalar)])
-
-        # Get the contraction trees
-        trees = list(generate_paths(mul, sizes=sizes, max_samples=max_samples, **opt_kwargs))
-        paths = [tree.get_path() for tree in trees]
-        costs = [tree.total_flops(log=None) for tree in trees]
-        best_cost = min(costs) if costs else 0.0
-
-        # Sample paths
-        for tree, path, cost in zip(trees, paths, costs):
-            excess_cost = cost - best_cost
-
-            # Get the final contraction vertices
-            left, right = final_contraction_vertices(mul, path)
-            if left is None or right is None:
+    for expr in exprs:
+        for mul in expr.rhs.expand()._children:
+            num_tensors = len(list(mul.search_leaves(Tensor)))
+            if num_tensors < 2:
                 continue
-            if right < left:
-                left, right = right, left
+            scalar = prod([s.value for s in mul.search_leaves(Scalar)])
 
-            # Get the index partition
-            partition = IndexPartition.from_vertices(mul, left, right)
+            # Get the contraction trees
+            trees = list(generate_paths(mul, sizes=sizes, max_samples=max_samples, **opt_kwargs))
+            paths = [tree.get_path() for tree in trees]
+            costs = [tree.total_flops(log=None) for tree in trees]
+            best_cost = min(costs) if costs else 0.0
 
-            # Add to the appropriate graph
-            if partition not in graphs:
-                graphs[partition] = nx.Graph()
-            graph = graphs[partition]
+            # Sample paths
+            for tree, path, cost in zip(trees, paths, costs):
+                excess_cost = cost - best_cost
 
-            # Add the nodes
-            u = (left, 0)
-            v = (right, 1)
-            if u not in graph:
-                graph.add_node(u, bipartite=0, vertex=left)
-            if v not in graph:
-                graph.add_node(v, bipartite=1, vertex=right)
+                # Get the final contraction vertices
+                left, right = final_contraction_vertices(mul, path)
+                if left is None or right is None:
+                    continue
+                if right < left:
+                    left, right = right, left
 
-            # Add the edge
-            if graph.has_edge(u, v):
-                graph[u][v]["excess"] = min(graph[u][v]["excess"], excess_cost)
-            else:
-                graph.add_edge(u, v, excess=excess_cost, term=mul, coefficient=scalar)
+                # Get the index partition
+                partition = IndexPartition.from_vertices(mul, left, right)
+
+                # Add to the appropriate graph
+                if partition not in graphs:
+                    graphs[partition] = nx.Graph()
+                graph = graphs[partition]
+
+                # Add the nodes
+                u = (left, 0)
+                v = (right, 1)
+                if u not in graph:
+                    graph.add_node(u, bipartite=0, vertex=left)
+                if v not in graph:
+                    graph.add_node(v, bipartite=1, vertex=right)
+
+                # Add the edge
+                if graph.has_edge(u, v):
+                    graph[u][v]["excess"] = min(graph[u][v]["excess"], excess_cost)
+                else:
+                    graph.add_edge(u, v, excess=excess_cost, term=mul, coefficient=scalar)
 
     return graphs
 
@@ -416,20 +420,22 @@ def find_constrictable_bicliques(
         yield cb
 
 
-def select_constrictable_biclique(
-    graphs: dict[IndexPartition, nx.Graph], sizes: dict[str | None, int]
-) -> ConstrictableBiclique | None:
-    """Select the most profitable constrictable biclique from a set of bipartite graphs.
+def select_constrictable_bicliques(
+    graphs: dict[IndexPartition, nx.Graph], sizes: dict[str | None, int], number: int = 1,
+) -> list[ConstrictableBiclique]:
+    """Select the most profitable constrictable bicliques from a set of bipartite graphs.
 
     Args:
         graphs: A mapping from index partitions to bipartite graphs.
         sizes: The sizes of the spaces.
+        number: The number of bicliques to select.
 
     Returns:
-        The most profitable constrictable biclique, or ``None`` if none found.
+        The most profitable constrictable bicliques.
     """
-    best: ConstrictableBiclique | None = None
-    best_score = -1  # Allow zero-score bicliques for complete parenthesisation
+    # Find the best N bicliques
+    best: list[ConstrictableBiclique] = []
+    best_scores: list[int] = []
     for partition, graph in graphs.items():
         for cb in find_constrictable_bicliques(graph, partition):
             gross_saving = cb.gross_saving(sizes)
@@ -438,9 +444,18 @@ def select_constrictable_biclique(
                 for u in cb.left.vertices for v in cb.right.vertices if graph.has_edge(u, v)
             )
             score = gross_saving - excess
-            if score > best_score:
-                best = cb
-                best_score = score
+            if len(best) < number:
+                best.append(cb)
+                best_scores.append(score)
+            else:
+                min_index = best_scores.index(min(best_scores))
+                if score > best_scores[min_index]:
+                    best[min_index] = cb
+                    best_scores[min_index] = score
+
+    # Sort by score and prune non-profitable bicliques
+    best = [cb for cb, score in sorted(zip(best, best_scores), key=lambda x: -x[1]) if score > -1]
+
     return best
 
 
@@ -496,10 +511,16 @@ def rewrite_with_constriction(
     }
 
     # Rewrite the expression
-    terms: list[Mul] = [term]
+    terms: list[Mul] = []
+    complete = True
     for mul in expr.rhs.expand().search_nodes(Mul):
         if mul not in covered:
             terms.append(mul)
+        else:
+            complete = False
+    if not complete:
+        # TODO: just return expr if complete?
+        terms.append(term)
 
     return Expression(expr.lhs, Add(*terms))
 
@@ -580,16 +601,20 @@ def renumber_intermediates(
 
 
 def optimise(
-    expression: Expression,
+    expressions: list[Expression],
     sizes: dict[str | None, int] | None = None,
     intermediate_format: str = "__im{}__",
+    max_path_samples: int = 16,
+    max_bicliques: int = 4,
 ) -> list[Expression]:
     """Optimise an expression by identifying and factoring out common subexpressions.
 
     Args:
-        expression: The expression to optimise.
+        expressions: The expressions to optimise.
         sizes: The sizes of the spaces in the expression.
         intermediate_format: The format string for naming intermediate tensors.
+        max_path_samples: The maximum number of samples to use when building the graphs.
+        max_bicliques: The maximum number of bicliques to check.
 
     Returns:
         A list of expressions including the original expression rewritten in terms of
@@ -598,16 +623,32 @@ def optimise(
     if sizes is None:
         sizes = _default_sizes
 
-    memo: dict[Base, Tensor] = {}
-    intermediates: dict[Tensor, Expression] = {}
-
     # Get all the indices
     indices: set[Index] = set()
-    for tensor in expression.rhs.search_leaves(Tensor):
-        indices.update(tensor.indices)
+    for expression in expressions:
+        for tensor in expression.rhs.search_leaves(Tensor):
+            indices.update(tensor.indices)
 
-    def _check_memo(expr: Expression, intermediate: Tensor) -> Tensor:
-        key = canonicalise_indices(expr.rhs, extra_indices=indices)
+    def _canonicalise_expr(expr: Expression) -> Expression:
+        # TODO move
+        rhs_canon = canonicalise_indices(expr.rhs.canonicalise(), extra_indices=indices)
+        rhs_canon = sum(
+            [
+                canonicalise_exhaustive(mul, key=_canonicalisation_key)
+                for mul in rhs_canon.expand()._children
+            ]
+        )
+        index_map = dict(zip(expr.lhs.external_indices, rhs_canon.external_indices))
+        lhs_canon = expr.lhs.map_indices(index_map)
+        return Expression(lhs_canon, rhs_canon.collect())
+
+    def _check_memo(
+        intermediates: Intermediates,
+        intermediate: Tensor,
+        memo: Memo,
+    ) -> Tensor:
+        expression = intermediates[intermediate]
+        key = canonicalise_indices(expression.rhs, extra_indices=indices)
         if key in memo:
             memo_mapped = memo[key].copy(*intermediate.indices)
             intermediates[intermediate] = Expression(intermediate, memo_mapped)
@@ -615,59 +656,103 @@ def optimise(
         memo[key] = intermediate
         return intermediate
 
-    def _optimise(expr: Expression) -> Expression:
-        while True:
-            # Build bipartite graphs and select a constrictable biclique
-            graphs = build_bipartite_subgraphs(expr)
-            biclique = select_constrictable_biclique(graphs, sizes)
-            if biclique is None:
-                break
-            partition = biclique.get_index_partition()
-            graph = graphs[partition]
+    def _cost(expressions: list[Expression], intermediates: Intermediates) -> int:
+        cost = 0
+        for expr in expressions:
+            cost += sum(count_flops(mul) for mul in expr.rhs.expand()._children)
+        for intermediate in intermediates.values():
+            cost += sum(count_flops(mul) for mul in intermediate.rhs.expand()._children)
+        return cost
 
-            # Initialise intermediate tensors
-            n = len(intermediates)
-            left = Tensor(*partition.indices_left, name=intermediate_format.format(n))
-            right = Tensor(*partition.indices_right, name=intermediate_format.format(n + 1))
+    def _optimise_biclique(
+        expressions: list[Expression],
+        intermediates: Intermediates,
+        memo: Memo,
+        graphs: dict[IndexPartition, nx.Graph],
+        biclique: ConstrictableBiclique,
+    ) -> list[Expression]:
+        # Get the index partition and graph
+        partition = biclique.get_index_partition()
+        graph = graphs[partition]
 
-            # Build the intermediate expressions
-            intermediates[left], intermediates[right] = build_intermediates(
-                graph, biclique, (left, right)
+        # Initialise intermediate tensors
+        n = len(intermediates)
+        left = Tensor(*partition.indices_left, name=intermediate_format.format(n))
+        right = Tensor(*partition.indices_right, name=intermediate_format.format(n + 1))
+
+        # Build the intermediate expressions
+        intermediates[left], intermediates[right] = build_intermediates(
+            graph, biclique, (left, right)
+        )
+
+        # Canonicalise the intermediates
+        intermediates[left] = _canonicalise_expr(intermediates[left])
+        intermediates[right] = _canonicalise_expr(intermediates[right])
+
+        # Recursively optimise the intermediates
+        intermediates[left], intermediates[right] = _optimise(
+            [intermediates[left], intermediates[right]], intermediates, memo
+        )
+
+        # Check the memo to avoid duplicates
+        left = _check_memo(intermediates, left, memo)
+        right = _check_memo(intermediates, right, memo)
+
+        # Rewrite the expression
+        term = biclique.coefficient * left * right
+        term = canonicalise_exhaustive(term, key=_canonicalisation_key)
+        expressions = [rewrite_with_constriction(e, graph, biclique, term) for e in expressions]
+        for tensor in intermediates:
+            intermediates[tensor] = rewrite_with_constriction(
+                intermediates[tensor], graph, biclique, term
             )
 
-            # Recursively optimise the intermediates
-            intermediates[left] = _optimise(intermediates[left])
-            intermediates[right] = _optimise(intermediates[right])
+        return expressions
 
-            # Check the memo to avoid duplicates
-            left = _check_memo(intermediates[left], left)
-            right = _check_memo(intermediates[right], right)
+    def _optimise(
+        expressions: list[Expression], intermediates: Intermediates, memo: Memo
+    ) -> list[Expression]:
+        while True:
+            # Build bipartite graphs and select profitable constrictable bicliques
+            graphs = build_bipartite_subgraphs(
+                *expressions, sizes=sizes, max_samples=max_path_samples
+            )
+            bicliques = select_constrictable_bicliques(graphs, sizes, number=max_bicliques)
+            if not bicliques:
+                break
 
-            # Rewrite the expression
-            term = biclique.coefficient * left * right
-            term = canonicalise_exhaustive(term, key=_canonicalisation_key)
-            expr = rewrite_with_constriction(expr, graph, biclique, term)
+            # Optimise for the selected bicliques
+            results: list[tuple[list[Expression], Intermediates, Memo]] = []
+            for biclique in bicliques[:max_bicliques]:
+                intermediates_new = intermediates.copy()
+                memo_new = memo.copy()
+                expressions_new = _optimise_biclique(
+                    expressions, intermediates_new, memo_new, graphs, biclique
+                )
+                results.append((expressions_new, intermediates_new.copy(), memo_new.copy()))
 
-        return expr
+            # Select the best result
+            expressions, intermediates_new, memo_new = min(results, key=lambda x: _cost(*x[:2]))
+            intermediates.clear()
+            intermediates.update(intermediates_new)
+            memo.clear()
+            memo.update(memo_new)
 
-    # Canonicalise the terms in the expression
-    rhs_canon = canonicalise_indices(expression.rhs.canonicalise(), extra_indices=indices)
-    rhs_canon = sum([canonicalise_exhaustive(mul, key=_canonicalisation_key) for mul in rhs_canon.expand()._children])
-    index_map = dict(zip(expression.lhs.external_indices, rhs_canon.external_indices))
-    lhs_canon = expression.lhs.map_indices(index_map)
-    expression = Expression(lhs_canon, rhs_canon.collect())
+        return expressions
+
+    # Canonicalise the terms in the expressions
+    for i, expression in enumerate(expressions):
+        expressions[i] = _canonicalise_expr(expression)
 
     # Recursively optimise the expression
-    expression = _optimise(expression)
-    expressions = [expression] + list(intermediates.values())
+    intermediates: Intermediates = {}
+    expressions = _optimise(expressions, intermediates, {})
+    expressions = [*expressions] + list(intermediates.values())
     expressions = remove_trivial(expressions)
     expressions = renumber_intermediates(expressions, format_str=intermediate_format)
 
     # Canonicalise the final expressions
     for i, expr in enumerate(expressions):
-        rhs_canon = canonicalise_indices(expr.rhs, extra_indices=indices)
-        index_map = dict(zip(expr.lhs.external_indices, rhs_canon.external_indices))
-        lhs_canon = expr.lhs.map_indices(index_map)
-        expressions[i] = Expression(lhs_canon, rhs_canon)
+        expressions[i] = _canonicalise_expr(expr)
 
     return expressions
