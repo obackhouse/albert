@@ -2,26 +2,16 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, TypedDict
+from typing import TYPE_CHECKING
 
-from albert.base import Base, Serialisable, SerialisedField
+from albert.base import Base, Serialisable
 from albert.tensor import Tensor
 
 if TYPE_CHECKING:
     from typing import Iterable
 
-    from albert.algebra import _AlgebraicJSON
     from albert.index import Index
-    from albert.tensor import _TensorJSON
-
-
-class _ExpressionJSON(TypedDict):
-    """Type for JSON representation of an expression."""
-
-    _type: str
-    _module: str
-    lhs: _TensorJSON
-    rhs: _TensorJSON | _AlgebraicJSON
+    from albert.types import SerialisedField, _ExpressionJSON
 
 
 class Expression(Serialisable):
