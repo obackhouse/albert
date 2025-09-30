@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from albert.opt._gristmill import optimise_gristmill
-from albert.opt.cse import optimise
+from albert.opt.cse import optimise as optimise_albert
 
 if TYPE_CHECKING:
     from typing import Any
@@ -30,6 +30,6 @@ def optimise(
     if method == "gristmill" or method == "auto":
         return optimise_gristmill(exprs, **kwargs)
     elif method == "albert":
-        return optimise(exprs, **kwargs)
+        return optimise_albert(exprs, **kwargs)
     else:
         raise ValueError(f"Unknown optimisation method: {method!r}")

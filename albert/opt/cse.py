@@ -6,25 +6,23 @@ import itertools
 import re
 from dataclasses import dataclass
 from functools import lru_cache
-from math import prod, isclose
+from math import isclose, prod
 from typing import TYPE_CHECKING
 
 import networkx as nx
 from frozendict import frozendict
 
 from albert import _default_sizes
-from albert.base import SerialisedField, _SCORES
-from albert.algebra import Mul, Add
+from albert.algebra import Add, Mul
+from albert.canon import canonicalise_exhaustive, canonicalise_indices
+from albert.expression import Expression
 from albert.opt.parenth import generate_paths
 from albert.opt.tools import count_flops
 from albert.scalar import Scalar
 from albert.tensor import Tensor
-from albert.expression import Expression
-from albert.canon import canonicalise_exhaustive, canonicalise_indices
 
 if TYPE_CHECKING:
-    from typing import Generator
-    from numbers import Number
+    from typing import Any, Generator
 
     from albert.base import Base
     from albert.index import Index
@@ -75,7 +73,7 @@ class Subset:
     """
 
     vertices: frozenset[Vertex]
-    coefficients: frozendict[Vertex, Number]
+    coefficients: frozendict[Vertex, float]
     external_indices: tuple[Index, ...]
 
 
@@ -142,7 +140,7 @@ class ConstrictableBiclique:
 
     left: Subset
     right: Subset
-    coefficient: Number
+    coefficient: float
     internal_indices: tuple[Index, ...]
 
     def get_index_partition(self) -> IndexPartition:
@@ -211,7 +209,7 @@ def build_bipartite_subgraphs(
     *exprs: Expression,
     sizes: dict[str | None, int] | None = None,
     max_samples: int = 8,
-    **opt_kwargs,
+    **opt_kwargs: Any,
 ) -> dict[IndexPartition, nx.Graph]:
     """Build bipartite graphs for each partition of indices from the expressions.
 
@@ -276,7 +274,7 @@ def build_bipartite_subgraphs(
 
 def decompose_edge_coefficients(
     graph: nx.Graph, left: list[Vertex], right: list[Vertex]
-) -> tuple[Number, frozendict[Vertex, Number], frozendict[Vertex, Number]]:
+) -> tuple[float, frozendict[Vertex, float], frozendict[Vertex, float]]:
     r"""Attempt rank-1 decomposition of the coefficient matrix from the edges of a bipartite graph.
 
     .. math::
@@ -368,8 +366,7 @@ def find_constrictable_bicliques(
 
         # Ensure edges are unique
         ids = [
-            graph[u][v]["term"]
-            for u, v in itertools.product(left, right) if graph.has_edge(u, v)
+            graph[u][v]["term"] for u, v in itertools.product(left, right) if graph.has_edge(u, v)
         ]
         if len(ids) != len(set(ids)):
             continue
@@ -431,7 +428,9 @@ def select_constrictable_bicliques(
             gross_saving = cb.gross_saving(sizes)
             excess = sum(
                 graph[u][v]["excess"]
-                for u in cb.left.vertices for v in cb.right.vertices if graph.has_edge(u, v)
+                for u in cb.left.vertices
+                for v in cb.right.vertices
+                if graph.has_edge(u, v)
             )
             score = gross_saving - excess
             if len(best) < number:
@@ -445,9 +444,10 @@ def select_constrictable_bicliques(
 
     # Sort by score and prune non-profitable bicliques
     if filter_non_profitable:
-        best, best_scores = zip(
-            *[(cb, score) for cb, score in zip(best, best_scores) if score > -1]
-        ) if best else ([], [])
+        for i in range(len(best) - 1, -1, -1):
+            if best_scores[i] <= 0:
+                del best[i]
+                del best_scores[i]
     best = [cb for cb, score in sorted(zip(best, best_scores), key=lambda x: -x[1])]
 
     return best
@@ -474,7 +474,7 @@ def build_intermediates(
         expr = Scalar(0.0)
         for key in side.vertices:
             vertex: Vertex = graph.nodes[key]["vertex"]
-            expr += side.coefficients[key] * prod(vertex.tensors)  # infers externals
+            expr += Scalar(float(side.coefficients[key])) * Mul(*vertex.tensors)  # infers externals
         return Expression(tensor, expr)
 
     return _build(biclique.left, tensors[0]), _build(biclique.right, tensors[1])
@@ -505,7 +505,7 @@ def rewrite_with_constriction(
     }
 
     # Rewrite the expression
-    terms: list[Mul] = []
+    terms: list[Base] = []
     complete = True
     for mul in expr.rhs.expand().search_nodes(Mul):
         if mul not in covered:
@@ -530,6 +530,7 @@ def rename_tensors(expr: Expression, old: str, new: str) -> Expression:
     Returns:
         The expression with tensors renamed.
     """
+
     def _rename(tensor: Tensor) -> Tensor:
         if tensor.name == old:
             return tensor.copy(name=new)
@@ -551,7 +552,7 @@ def remove_trivial(exprs: list[Expression]) -> list[Expression]:
     for i in range(len(exprs) - 1, -1, -1):
         rhs = exprs[i].rhs.expand()
         tensors = list(rhs.search_leaves(Tensor))
-        scalar = prod(list(rhs.search_leaves(Scalar)))
+        scalar = prod([scalar.value for scalar in rhs.search_leaves(Scalar)])
         if len(tensors) == 1 and isclose(scalar, 1.0):
             name_old = exprs[i].lhs.name
             name_new = tensors[0].name
@@ -582,7 +583,10 @@ def renumber_intermediates(
     # Filter for intermediate tensors
     pattern = re.compile(re.escape(format_str).replace(r"\{\}", r"(\d+)"))
     tensors = {t for t in tensors if pattern.fullmatch(t)}
-    tensors = sorted(tensors, key=lambda t: int(pattern.fullmatch(t).group(1)))
+    tensors = sorted(
+        tensors,
+        key=lambda tensor: int(pattern.fullmatch(tensor).group(1)),  # type: ignore[union-attr]
+    )
 
     # Build mapping
     mapping: dict[str, str] = {name: format_str.format(i) for i, name in enumerate(tensors)}
@@ -594,16 +598,16 @@ def renumber_intermediates(
     return exprs
 
 
-def _canonicalise_expression(expr: Expression, indices: set[Index]) -> Expression:
+def _canonicalise_expression(expr: Expression, indices: list[Index]) -> Expression:
     """Canonicalise an expression."""
     rhs_canon = canonicalise_indices(expr.rhs.canonicalise(), extra_indices=indices)
-    rhs_canon = sum([canonicalise_exhaustive(mul) for mul in rhs_canon.expand()._children])
+    rhs_canon = Add(*[canonicalise_exhaustive(mul) for mul in rhs_canon.expand()._children])
     index_map = dict(zip(expr.lhs.external_indices, rhs_canon.external_indices))
     lhs_canon = expr.lhs.map_indices(index_map)
     return Expression(lhs_canon, rhs_canon.collect())
 
 
-@lru_cache(maxsize=2 ** 14)
+@lru_cache(maxsize=2**14)
 def _count_flops_expression(expr: Expression) -> int:
     """Count the number of floating point operations in an expression."""
     return sum(count_flops(mul) for mul in expr.rhs.expand()._children)
@@ -647,12 +651,17 @@ def optimise(
     """
     if sizes is None:
         sizes = _default_sizes
+    assert sizes is not None  # for mypy
 
     # Get all the indices
-    indices: set[Index] = set()
+    indices: list[Index] = []
+    seen: set[Index] = set()
     for expression in expressions:
         for tensor in expression.rhs.search_leaves(Tensor):
-            indices.update(tensor.indices)
+            for index in tensor.indices:
+                if index not in seen:
+                    seen.add(index)
+                    indices.append(index)
 
     def _cost(expressions: list[Expression], intermediates: Intermediates) -> int:
         cost = 0
@@ -697,7 +706,7 @@ def optimise(
         right = _check_memo(intermediates, right, memo)
 
         # Rewrite the expression
-        term = biclique.coefficient * left * right
+        term = Scalar(float(biclique.coefficient)) * left * right
         term = canonicalise_exhaustive(term)
         expressions = [rewrite_with_constriction(e, graph, biclique, term) for e in expressions]
         for tensor in intermediates:

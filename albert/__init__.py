@@ -19,7 +19,7 @@ from __future__ import annotations
 
 __version__ = "0.0.0"
 
-_default_sizes: dict[str | None, float] = {
+_default_sizes: dict[str | None, int] = {
     "o": 200,  # occupied, correlated
     "O": 20,  # occupied, active
     "i": 180,  # occupied, inactive

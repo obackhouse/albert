@@ -389,17 +389,16 @@ class Base(Serialisable):
 
     def tree_repr(
         self,
-        connectors: tuple[str, str, str] = ("─", "│", "├", "└"),
+        connectors: tuple[str, str, str, str] = ("─", "│", "├", "└"),
         indent: int = 4,
     ) -> str:
         """Return a string representation of the tree structure.
 
         Args:
-            connectors: Characters to use for drawing the tree structure. The characters are:
-                - Horizontal connection
-                - Vertical connection
-                - Vertical connection with horizontal branch
-                - Vertical terminus with horizontal branch
+            connectors: Characters to use for drawing the tree structure. The characters are, in
+                order: (0) horizontal connection, (1) vertical connection, (2) vertical connection
+                with horizontal branch, (3) vertical terminus with horizontal branch.
+            indent: Number of spaces to use for indentation.
 
         Returns:
             String representation of the tree structure.
@@ -412,8 +411,8 @@ class Base(Serialisable):
                 return node.__class__.__name__
             return str(node)
 
-        def walk(node: Base, prefix: str = "", is_last: bool = True) -> str:
-            nonlocal result
+        def walk(node: Base, prefix: str = "", is_last: bool = True) -> None:
+            nonlocal result  # type: ignore[misc]
             connector = connectors[3 if is_last else 2] + connectors[0] * (indent - 2) + " "
             result += f"{prefix}{connector}{to_str(node)}\n"
             if not node._children:
@@ -426,7 +425,7 @@ class Base(Serialisable):
         # Build the string representation
         result = f"{to_str(self)}\n"
         for i, child in enumerate(self._children or []):
-            walk(child, "", i == len(self._children) - 1)
+            walk(child, "", i == len(self._children or []) - 1)
 
         return result.rstrip()
 

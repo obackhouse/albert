@@ -7,11 +7,11 @@ import warnings
 from typing import TYPE_CHECKING
 
 from albert import _default_sizes
-from albert.tensor import Tensor
 from albert.algebra import Mul
+from albert.tensor import Tensor
 
 if TYPE_CHECKING:
-    from typing import Any, Optional, Generator
+    from typing import Any, Generator, Optional
 
     import cotengra
 
@@ -30,8 +30,8 @@ def _format_mul(expr: Mul) -> Mul:
 
 def _get_inputs_and_output(
     expr: Mul,
-    sizes: dict[str | None, float],
-) -> tuple[tuple[T, ...], T, dict[int, float]]:
+    sizes: dict[str | None, int],
+) -> tuple[tuple[T, ...], T, dict[int, int]]:
     """Get the einsum inputs and output from a tensor product.
 
     Args:
@@ -80,7 +80,7 @@ def find_optimal_path(
     # Expand the product
     if not isinstance(expr, Mul):
         raise TypeError("Expression must be a Mul.")
-    expr, = expr.expand()._children
+    (expr,) = expr.expand()._children
 
     # Optimise the contraction path
     inputs, output, sizes = _get_inputs_and_output(expr, sizes)
@@ -110,16 +110,16 @@ def generate_paths_exhaustive(
         warnings.warn(
             "Generating all possible paths scales extremely poorly. Use with caution.",
             RuntimeWarning,
-            sacklevel=2,
+            stacklevel=2,
         )
     if sizes is None:
         sizes = _default_sizes
 
     import cotengra
 
-    def _recurse(path: list[T], n: int) -> None:
+    def _recurse(path: list[T], n: int) -> Generator[list[T], None, None]:
         if n == 1:
-            yield tuple(path)
+            yield list(path)
             return
         for i, j in itertools.combinations(range(n), 2):
             path.append((i, j))
@@ -127,15 +127,15 @@ def generate_paths_exhaustive(
             path.pop()
 
     # Get all paths
-    inputs, output, sizes = _get_inputs_and_output(expr, sizes)
+    inputs, output, index_sizes = _get_inputs_and_output(expr, sizes)
     for path in _recurse([], num_tensors):
-        tree = cotengra.ContractionTree.from_path(inputs, output, sizes, path=path)
+        tree = cotengra.ContractionTree.from_path(inputs, output, index_sizes, path=path)
         yield tree
 
 
 def generate_paths_approximate(
     expr: Mul,
-    sizes: Optional[dict[str | None, float]] = None,
+    sizes: Optional[dict[str | None, int]] = None,
     max_samples: int = 8,
     **opt_kwargs: Any,
 ) -> Generator[cotengra.ContractionTree, None, None]:

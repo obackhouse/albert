@@ -190,6 +190,10 @@ module = "opt_einsum.*"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
+module = "cotengra.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 module = "pyspark.*"
 ignore_missing_imports = true
 
