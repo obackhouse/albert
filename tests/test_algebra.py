@@ -83,9 +83,6 @@ def test_mul():
     tensor3 = Tensor(i, name="o")
     assert (tensor1 * tensor3).external_indices == (j,)
 
-    with pytest.raises(ValueError):
-        tensor3 * tensor3 * tensor1
-
     k = Index("k")
     tensor4 = Tensor(j, k, name="p")
     mul2 = Mul(tensor1, tensor4)

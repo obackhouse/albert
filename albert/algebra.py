@@ -7,7 +7,6 @@ from collections import defaultdict
 from functools import reduce
 from typing import TYPE_CHECKING, TypedDict, TypeVar, cast
 
-from albert import ALLOW_NON_EINSTEIN_NOTATION
 from albert.base import Base, IAdd, IAlgebraic, IMul
 from albert.scalar import Scalar, _compose_scalar
 
@@ -20,23 +19,20 @@ if TYPE_CHECKING:
 T = TypeVar("T", bound=Base)
 
 
-def _check_indices(children: Iterable[Base]) -> None:
-    """Check for Einstein notation.
+def _infer_external_indices(children: Iterable[Base]) -> tuple[Index, ...]:
+    """Infer the external indices from a list of children.
 
     Args:
-        children: Children to check.
+        children: Children to infer from.
+
+    Returns:
+        External indices.
     """
     counts: dict[Index, int] = defaultdict(int)
     for child in children:
-        for index in child.internal_indices:
-            counts[index] += 1
         for index in child.external_indices:
             counts[index] += 1
-    if any(count > 2 for count in counts.values()) and not ALLOW_NON_EINSTEIN_NOTATION:
-        raise ValueError(
-            "Input arguments are not a valid Einstein notation.  Each index must appear at most "
-            "twice."
-        )
+    return tuple(index for index, count in counts.items() if count == 1)
 
 
 def _repr_brackets(obj: Base) -> str:
@@ -74,18 +70,7 @@ class Algebraic(IAlgebraic):
     _children: tuple[Base, ...]
     _compose: Callable[..., Base]
 
-    def __init__(self, *children: Base):
-        """Initialise the addition."""
-        self._hash = None
-        self._children = children
-
-    def copy(self, *children: Base) -> Algebraic:
-        """Return a copy of the object with optionally updated attributes."""
-        if not children:
-            children = self._children
-        return self.__class__(*children)
-
-    def map_indices(self, mapping: dict[Index, Index]) -> Algebraic:
+    def map_indices(self, mapping: dict[Index, Index]) -> Base:
         """Return a copy of the object with the indices mapped according to some dictionary.
 
         Args:
@@ -281,7 +266,10 @@ def _compose_add(*children: Base, cls: type[Add] | None = None) -> Base:
 
 
 def _compose_mul(
-    *children: Base, cls: type[Mul] | None = None, cls_scalar: type[Scalar] | None = None
+    *children: Base,
+    cls: type[Mul] | None = None,
+    cls_scalar: type[Scalar] | None = None,
+    external_indices: tuple[Index, ...] | None = None,
 ) -> Base:
     """Compose a multiplication. May not return a multiplication if unnecessary.
 
@@ -289,6 +277,7 @@ def _compose_mul(
         children: Children to multiply.
         cls: Class to use for multiplication.
         cls_scalar: Class to use for scalars.
+        external_indices: External indices to use (if not inferred).
 
     Returns:
         Composed object.
@@ -335,10 +324,10 @@ def _compose_mul(
     if scalar._value == 1.0:
         if len(other) == 1:
             return other[0]
-        return cls(*other)
+        return cls(*other, external_indices=external_indices)
 
     # Otherwise, include the scalar
-    return cls(scalar, *other)
+    return cls(scalar, *other, external_indices=external_indices)
 
 
 class Add(IAdd, Algebraic):
@@ -357,7 +346,8 @@ class Add(IAdd, Algebraic):
         """Initialise the addition."""
         if len(set(tuple(sorted(child.external_indices)) for child in children)) > 1:
             raise ValueError("External indices in additions must be equal.")
-        super().__init__(*children)
+        self._hash = None
+        self._children = children
 
     @property
     def external_indices(self) -> tuple[Index, ...]:
@@ -396,6 +386,12 @@ class Add(IAdd, Algebraic):
         """
         return sum(child.as_sympy() for child in self._children)
 
+    def copy(self, *children: Base) -> Add:
+        """Return a copy of the object with optionally updated attributes."""
+        if not children:
+            children = self._children
+        return self.__class__(*children)
+
     def __repr__(self) -> str:
         """Return a string representation.
 
@@ -428,33 +424,37 @@ class Mul(IMul, Algebraic):
         children: Children to multiply
     """
 
-    __slots__ = ("_hash", "_children")
+    __slots__ = ("_hash", "_children", "_external_indices")
 
     _interface = IMul
     _compose = staticmethod(_compose_mul)
+    _external_indices: tuple[Index, ...]
 
-    def __init__(self, *children: Base):
+    def __init__(self, *children: Base, external_indices: tuple[Index, ...] | None = None):
         """Initialise the multiplication."""
-        _check_indices(children)
-        super().__init__(*children)
+        self._hash = None
+        self._children = children
+        self._external_indices = external_indices or _infer_external_indices(children)
 
     @property
     def external_indices(self) -> tuple[Index, ...]:
         """Get the external indices (those that are not summed over)."""
-        counts: dict[Index, int] = defaultdict(int)
-        for child in self._children:
-            for index in child.external_indices:
-                counts[index] += 1
-        return tuple(index for index, count in counts.items() if count == 1)
+        return self._external_indices
 
     @property
     def internal_indices(self) -> tuple[Index, ...]:
         """Get the internal indices (those that are summed over)."""
-        counts: dict[Index, int] = defaultdict(int)
+        external = set(self.external_indices)
+        internal: list[Index] = []
+        seen: set[Index] = set()
         for child in self._children:
             for index in child.external_indices:
-                counts[index] += 1
-        return tuple(index for index, count in counts.items() if count > 1)
+                if index in external:
+                    continue
+                if index in seen and index not in internal:
+                    internal.append(index)
+                seen.add(index)
+        return tuple(internal)
 
     @property
     def disjoint(self) -> bool:
@@ -464,7 +464,7 @@ class Mul(IMul, Algebraic):
     def expand(self) -> ExpandedAddLayer:
         """Expand the object into the minimally nested format.
 
-        Output has the form Add[Mul[Tensor | Scalar]].
+        Output has the form ``Add[Mul[Tensor | Scalar]]``.
 
         Returns:
             Object in expanded format.
@@ -477,7 +477,9 @@ class Mul(IMul, Algebraic):
                 children.extend(list(inner_children))
             else:
                 children = [
-                    cast(ExpandedMulLayer, a * b)
+                    ExpandedMulLayer(
+                        *a._children, *b._children, external_indices=self.external_indices
+                    )
                     for a, b in itertools.product(children, inner_children)
                 ]
         return ExpandedAddLayer(*children)
@@ -488,7 +490,17 @@ class Mul(IMul, Algebraic):
         Returns:
             Object in sympy format.
         """
+        if self.external_indices != _infer_external_indices(self._children):
+            raise NotImplementedError("Cannot convert non-Einstein notation Mul to sympy.")
         return reduce(lambda x, y: x * y, (child.as_sympy() for child in self._children))
+
+    def copy(self, *children: Base, external_indices: tuple[Index, ...] | None = None) -> Mul:
+        """Return a copy of the object with optionally updated attributes."""
+        if not children:
+            children = self._children
+        if external_indices is None:
+            external_indices = self._external_indices
+        return self.__class__(*children, external_indices=external_indices)
 
     def __repr__(self) -> str:
         """Return a string representation.
