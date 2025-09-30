@@ -5,6 +5,7 @@ from __future__ import annotations
 import itertools
 import re
 from dataclasses import dataclass
+from functools import lru_cache
 from math import prod, isclose
 from typing import TYPE_CHECKING
 
@@ -173,21 +174,6 @@ class ConstrictableBiclique:
         naive = l * r * el * er * s
         factored = l * el * s + r * er * s + el * er * s
         return max(0, naive - factored)
-
-
-def _canonicalisation_key(expr: Base) -> SerialisedField:
-    """Key function for canonicalisation."""
-    return (
-        expr.rank,
-        getattr(expr, "name", "~"),
-        expr.external_indices,
-        expr.internal_indices,
-        len(expr._penalties),
-        tuple(penalty(expr) for penalty in expr._penalties),
-        _SCORES[expr._interface],
-        len(expr._children) if expr._children is not None else 0,
-        expr._children or (),
-    )
 
 
 def final_contraction_vertices(expr: Mul, path: Path) -> tuple[Vertex | None, Vertex | None]:
@@ -421,7 +407,10 @@ def find_constrictable_bicliques(
 
 
 def select_constrictable_bicliques(
-    graphs: dict[IndexPartition, nx.Graph], sizes: dict[str | None, int], number: int = 1,
+    graphs: dict[IndexPartition, nx.Graph],
+    sizes: dict[str | None, int],
+    number: int = 1,
+    filter_non_profitable: bool = False,
 ) -> list[ConstrictableBiclique]:
     """Select the most profitable constrictable bicliques from a set of bipartite graphs.
 
@@ -429,6 +418,7 @@ def select_constrictable_bicliques(
         graphs: A mapping from index partitions to bipartite graphs.
         sizes: The sizes of the spaces.
         number: The number of bicliques to select.
+        filter_non_profitable: Whether to filter out non-profitable bicliques.
 
     Returns:
         The most profitable constrictable bicliques.
@@ -454,7 +444,11 @@ def select_constrictable_bicliques(
                     best_scores[min_index] = score
 
     # Sort by score and prune non-profitable bicliques
-    best = [cb for cb, score in sorted(zip(best, best_scores), key=lambda x: -x[1]) if score > -1]
+    if filter_non_profitable:
+        best, best_scores = zip(
+            *[(cb, score) for cb, score in zip(best, best_scores) if score > -1]
+        ) if best else ([], [])
+    best = [cb for cb, score in sorted(zip(best, best_scores), key=lambda x: -x[1])]
 
     return best
 
@@ -518,9 +512,9 @@ def rewrite_with_constriction(
             terms.append(mul)
         else:
             complete = False
-    if not complete:
-        # TODO: just return expr if complete?
-        terms.append(term)
+    if complete:
+        return expr
+    terms.append(term)
 
     return Expression(expr.lhs, Add(*terms))
 
@@ -600,6 +594,37 @@ def renumber_intermediates(
     return exprs
 
 
+def _canonicalise_expression(expr: Expression, indices: set[Index]) -> Expression:
+    """Canonicalise an expression."""
+    rhs_canon = canonicalise_indices(expr.rhs.canonicalise(), extra_indices=indices)
+    rhs_canon = sum([canonicalise_exhaustive(mul) for mul in rhs_canon.expand()._children])
+    index_map = dict(zip(expr.lhs.external_indices, rhs_canon.external_indices))
+    lhs_canon = expr.lhs.map_indices(index_map)
+    return Expression(lhs_canon, rhs_canon.collect())
+
+
+@lru_cache(maxsize=2 ** 14)
+def _count_flops_expression(expr: Expression) -> int:
+    """Count the number of floating point operations in an expression."""
+    return sum(count_flops(mul) for mul in expr.rhs.expand()._children)
+
+
+def _check_memo(
+    intermediates: Intermediates,
+    intermediate: Tensor,
+    memo: Memo,
+) -> Tensor:
+    """Check the memo to avoid duplicate intermediates."""
+    expression = intermediates[intermediate]
+    key = canonicalise_indices(expression.rhs)
+    if key in memo:
+        memo_mapped = memo[key].copy(*intermediate.indices)
+        intermediates[intermediate] = Expression(intermediate, memo_mapped)
+        return memo_mapped
+    memo[key] = intermediate
+    return intermediate
+
+
 def optimise(
     expressions: list[Expression],
     sizes: dict[str | None, int] | None = None,
@@ -629,39 +654,12 @@ def optimise(
         for tensor in expression.rhs.search_leaves(Tensor):
             indices.update(tensor.indices)
 
-    def _canonicalise_expr(expr: Expression) -> Expression:
-        # TODO move
-        rhs_canon = canonicalise_indices(expr.rhs.canonicalise(), extra_indices=indices)
-        rhs_canon = sum(
-            [
-                canonicalise_exhaustive(mul, key=_canonicalisation_key)
-                for mul in rhs_canon.expand()._children
-            ]
-        )
-        index_map = dict(zip(expr.lhs.external_indices, rhs_canon.external_indices))
-        lhs_canon = expr.lhs.map_indices(index_map)
-        return Expression(lhs_canon, rhs_canon.collect())
-
-    def _check_memo(
-        intermediates: Intermediates,
-        intermediate: Tensor,
-        memo: Memo,
-    ) -> Tensor:
-        expression = intermediates[intermediate]
-        key = canonicalise_indices(expression.rhs, extra_indices=indices)
-        if key in memo:
-            memo_mapped = memo[key].copy(*intermediate.indices)
-            intermediates[intermediate] = Expression(intermediate, memo_mapped)
-            return memo_mapped
-        memo[key] = intermediate
-        return intermediate
-
     def _cost(expressions: list[Expression], intermediates: Intermediates) -> int:
         cost = 0
         for expr in expressions:
-            cost += sum(count_flops(mul) for mul in expr.rhs.expand()._children)
+            cost += _count_flops_expression(expr)
         for intermediate in intermediates.values():
-            cost += sum(count_flops(mul) for mul in intermediate.rhs.expand()._children)
+            cost += _count_flops_expression(intermediate)
         return cost
 
     def _optimise_biclique(
@@ -685,14 +683,14 @@ def optimise(
             graph, biclique, (left, right)
         )
 
-        # Canonicalise the intermediates
-        intermediates[left] = _canonicalise_expr(intermediates[left])
-        intermediates[right] = _canonicalise_expr(intermediates[right])
-
         # Recursively optimise the intermediates
         intermediates[left], intermediates[right] = _optimise(
             [intermediates[left], intermediates[right]], intermediates, memo
         )
+
+        # Canonicalise the intermediates
+        intermediates[left] = _canonicalise_expression(intermediates[left], indices)
+        intermediates[right] = _canonicalise_expression(intermediates[right], indices)
 
         # Check the memo to avoid duplicates
         left = _check_memo(intermediates, left, memo)
@@ -700,7 +698,7 @@ def optimise(
 
         # Rewrite the expression
         term = biclique.coefficient * left * right
-        term = canonicalise_exhaustive(term, key=_canonicalisation_key)
+        term = canonicalise_exhaustive(term)
         expressions = [rewrite_with_constriction(e, graph, biclique, term) for e in expressions]
         for tensor in intermediates:
             intermediates[tensor] = rewrite_with_constriction(
@@ -742,17 +740,17 @@ def optimise(
 
     # Canonicalise the terms in the expressions
     for i, expression in enumerate(expressions):
-        expressions[i] = _canonicalise_expr(expression)
+        expressions[i] = _canonicalise_expression(expression, indices)
 
     # Recursively optimise the expression
     intermediates: Intermediates = {}
     expressions = _optimise(expressions, intermediates, {})
-    expressions = [*expressions] + list(intermediates.values())
+    expressions = list(intermediates.values()) + [*expressions]
     expressions = remove_trivial(expressions)
     expressions = renumber_intermediates(expressions, format_str=intermediate_format)
 
     # Canonicalise the final expressions
     for i, expr in enumerate(expressions):
-        expressions[i] = _canonicalise_expr(expr)
+        expressions[i] = _canonicalise_expression(expr, indices)
 
     return expressions
