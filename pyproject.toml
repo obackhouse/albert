@@ -27,6 +27,8 @@ classifiers = [
 dependencies = [
     "networkx>=2.6.2",
     "opt_einsum>=3.0.0",
+    "frozendict>=2.3.0",
+    "cotengra>=0.6.0",
 ]
 
 [build-system]

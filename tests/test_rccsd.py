@@ -33,6 +33,7 @@ def _kwargs(strategy, transposes, greedy_cutoff, drop_cutoff):
         (True, "gristmill", True, _kwargs("opt", "natural", -1, -1)),
         (True, "gristmill", False, _kwargs("greedy", "ignore", -1, 2)),
         (True, "gristmill", True, _kwargs("greedy", "ignore", 2, 2)),
+        (True, "albert", True, {}),
     ],
 )
 def test_rccsd_einsum(helper, optimise, method, canonicalise, kwargs):
