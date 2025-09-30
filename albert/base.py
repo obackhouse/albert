@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 
     from albert.algebra import ExpandedAddLayer
     from albert.index import Index
-    from albert.symmetry import Permutation, Symmetry
+    from albert.symmetry import Permutation
 
     T = TypeVar("T", bound="Base")
 
@@ -116,15 +116,15 @@ def _sign_penalty(base: Base) -> int:
     penalty = 1
     if base._children:
         for child in base._children:
-            if isinstance(child, IScalar):
+            if hasattr(child, "_value"):
                 penalty *= 1 if child._value < 0 else -1
-    return -penalty
+    return penalty
 
 
 class Base(Serialisable):
     """Base class for algebraic types."""
 
-    _interface: type[IBase]
+    _score: int
     _children: Optional[tuple[Base, ...]]
     _penalties: tuple[Callable[[Base], int], ...] = (_sign_penalty,)
 
@@ -342,10 +342,8 @@ class Base(Serialisable):
                 - External indices of the object.
                 - Internal indices of the object.
                 - Score of the interface class. This is used to distinguish between subclasses of
-                    `Base`, however subclasses of i.e. `Tensor` will all have the same interface
-                    class (i.e. `ITensor`) unless `_interface` is overridden. The score is used to
-                    define the order of precedence in the interface hierarchy (`ITensor` < `IScalar`
-                    < `IAdd` < `IMul`).
+                    `Base`. The score is used to define the order of precedence in the interface
+                    hierarchy (`Tensor` < `Scalar` < `Add` < `Mul`).
                 - Name of the object.
                 - Number of children.
                 - Children of the object.
@@ -362,7 +360,7 @@ class Base(Serialisable):
         yield len(self._penalties)
         for penalty in self._penalties:
             yield penalty(self)
-        yield _SCORES[self._interface]
+        yield self._score
         yield getattr(self, "name", "~")
         yield len(self._children) if self._children is not None else 0
         if self._children:
@@ -458,91 +456,3 @@ class Base(Serialisable):
     def __neg__(self) -> Base:
         """Negate the object."""
         return -1 * self
-
-
-class IBase(Base):
-    """Interface class.
-
-    Note:
-        This class is entirely abstract and is only used to indicate the type of the object within
-        the ``Base`` class itself.
-    """
-
-    pass
-
-
-class IScalar(IBase):
-    """Interface class for scalar types.
-
-    Args:
-        value: Value of the scalar.
-
-    Note:
-        This class is entirely abstract and is only used to indicate the type of the object within
-        the ``Base`` class itself.
-    """
-
-    _value: float
-
-
-class ITensor(IBase):
-    """Interface class for a tensor.
-
-    Args:
-        indices: Indices of the tensor.
-        name: Name of the tensor.
-
-    Note:
-        This class is entirely abstract and is only used to indicate the type of the object within
-        the ``Base`` class itself.
-    """
-
-    _indices: tuple[Index, ...]
-    _name: str
-    _symmetry: Optional[Symmetry]
-
-
-class IAlgebraic(IBase):
-    """Interface class for an algebraic operations.
-
-    Args:
-        children: Children to the operation.
-
-    Note:
-        This class is entirely abstract and is only used to indicate the type of the object within
-        the ``Base`` class itself.
-    """
-
-    pass
-
-
-class IAdd(IAlgebraic):
-    """Interface class for addition.
-
-    Note:
-        This class is entirely abstract and is only used to indicate the type of the object within
-        the ``Base`` class itself.
-    """
-
-    pass
-
-
-class IMul(IAlgebraic):
-    """Interface class for multiplication.
-
-    Note:
-        This class is entirely abstract and is only used to indicate the type of the object within
-        the ``Base`` class itself.
-    """
-
-    pass
-
-
-# Precedence scores for ordering
-_SCORES = {
-    ITensor: 0,
-    IScalar: 1,
-    IAdd: 2,
-    IMul: 3,
-}
-_SCORES_REVERSE = {v: k for k, v in _SCORES.items()}

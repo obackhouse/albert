@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, TypedDict, TypeVar, cast
 
 from albert.algebra import Add, ExpandedAddLayer, ExpandedMulLayer, Mul, _compose_add, _compose_mul
-from albert.base import Base, ITensor
+from albert.base import Base
 from albert.index import Index
 from albert.scalar import Scalar
 
@@ -38,7 +38,7 @@ class Tensor(Base):
 
     __slots__ = ("_indices", "_name", "_symmetry", "_hash", "_children")
 
-    _interface = ITensor
+    _score = 0
 
     def __init__(
         self,
@@ -151,7 +151,7 @@ class Tensor(Base):
         Returns:
             Object after applying function (if applicable).
         """
-        if isinstance(self, node_type) or self._interface == node_type:
+        if isinstance(self, node_type):
             return function(cast(T, self))
         return self
 

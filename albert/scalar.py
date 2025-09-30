@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, TypedDict, TypeVar, cast
 
-from albert.base import Base, IScalar
+from albert.base import Base
 
 if TYPE_CHECKING:
     from typing import Any, Callable, Optional
@@ -41,7 +41,7 @@ class Scalar(Base):
         value: Value of the scalar.
     """
 
-    _interface = IScalar
+    _score = 1
 
     def __init__(self, value: float = 0.0):
         """Initialise the tensor."""
@@ -107,7 +107,7 @@ class Scalar(Base):
         Returns:
             Object after applying function (if applicable).
         """
-        if isinstance(self, node_type) or self._interface == node_type:
+        if isinstance(self, node_type):
             return function(cast(T, self))
         return self
 
