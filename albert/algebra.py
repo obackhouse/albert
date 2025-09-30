@@ -8,7 +8,7 @@ from functools import reduce
 from typing import TYPE_CHECKING, TypedDict, TypeVar, cast
 
 from albert import ALLOW_NON_EINSTEIN_NOTATION
-from albert.base import Base, IAdd, IAlgebraic, IMul
+from albert.base import Base
 from albert.scalar import Scalar, _compose_scalar
 
 if TYPE_CHECKING:
@@ -61,7 +61,7 @@ class _AlgebraicJSON(TypedDict):
     children: tuple[_AlgebraicJSON | _TensorJSON, ...]
 
 
-class Algebraic(IAlgebraic):
+class Algebraic(Base):
     """Base class for algebraic operations.
 
     Args:
@@ -70,7 +70,6 @@ class Algebraic(IAlgebraic):
 
     __slots__ = ("_hash", "_children")
 
-    _interface = IAlgebraic
     _children: tuple[Base, ...]
     _compose: Callable[..., Base]
 
@@ -115,7 +114,7 @@ class Algebraic(IAlgebraic):
             The function is applied to the children first, and then to the object itself.
         """
         children = [child.apply(function, node_type) for child in self._children]
-        if isinstance(self, node_type) or self._interface == node_type:
+        if isinstance(self, node_type):
             return function(cast(T, self.copy(*children)))
         return self.copy(*children)
 
@@ -341,7 +340,7 @@ def _compose_mul(
     return cls(scalar, *other)
 
 
-class Add(IAdd, Algebraic):
+class Add(Algebraic):
     """Class for an addition.
 
     Args:
@@ -350,7 +349,7 @@ class Add(IAdd, Algebraic):
 
     __slots__ = ("_hash", "_children")
 
-    _interface = IAdd
+    _score = 2
     _compose = staticmethod(_compose_add)
 
     def __init__(self, *children: Base):
@@ -421,7 +420,7 @@ class Add(IAdd, Algebraic):
         return _compose_mul(self, other)
 
 
-class Mul(IMul, Algebraic):
+class Mul(Algebraic):
     """Class for an multiplication.
 
     Args:
@@ -430,7 +429,7 @@ class Mul(IMul, Algebraic):
 
     __slots__ = ("_hash", "_children")
 
-    _interface = IMul
+    _score = 3
     _compose = staticmethod(_compose_mul)
 
     def __init__(self, *children: Base):
