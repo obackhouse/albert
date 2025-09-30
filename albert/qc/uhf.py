@@ -285,7 +285,7 @@ def _amplitude_as_rhf(
     # Relabel the indices
     for i, amp in enumerate(amps):
         indices = tuple(index.copy(spin="r") for index in amp.external_indices)
-        amps[i] = amp.apply(
+        amps[i] = amp.map_indices(dict(zip(amp.external_indices, indices))).apply(
             lambda tensor: type_rhf(*indices, name=tensor.name),
             QTensor,  # noqa: B023
         )

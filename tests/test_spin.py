@@ -33,7 +33,7 @@ def test_ghf_to_rhf():
     )
 
     expr_rhf = ghf_to_rhf(expr_ghf)  # All have no external indices
-    expr_rhf = canonicalise_indices(expr_rhf.expand().canonicalise()).collect()
+    expr_rhf = canonicalise_indices(expr_rhf.expand()).canonicalise().collect()
     assert expr_rhf == expr_rhf.canonicalise()
     assert repr(expr_rhf) == "(2 * v(i,a,j,b) * v(i,a,j,b)) + (-1 * v(i,a,j,b) * v(i,b,j,a))"
     assert all(i.spin == "r" for i in expr_rhf.internal_indices)

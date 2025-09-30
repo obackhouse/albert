@@ -367,7 +367,7 @@ class Add(IAdd, Algebraic):
     def expand(self) -> ExpandedAddLayer:
         """Expand the object into the minimally nested format.
 
-        Output has the form Add[Mul[Tensor | Scalar]].
+        Output has the form ``Add[Mul[Tensor | Scalar]]``.
 
         Returns:
             Object in expanded format.
@@ -432,6 +432,10 @@ class Mul(IMul, Algebraic):
 
     def __init__(self, *children: Base, external_indices: tuple[Index, ...] | None = None):
         """Initialise the multiplication."""
+        if external_indices is not None:
+            indices = set.union(*(set(child.external_indices) for child in children))
+            if set(external_indices) - indices:
+                raise ValueError("External indices must be a subset of the children's indices.")
         self._hash = None
         self._children = children
         self._external_indices = external_indices or _infer_external_indices(children)
@@ -455,6 +459,19 @@ class Mul(IMul, Algebraic):
                     internal.append(index)
                 seen.add(index)
         return tuple(internal)
+
+    def map_indices(self, mapping: dict[Index, Index]) -> Base:
+        """Return a copy of the object with the indices mapped according to some dictionary.
+
+        Args:
+            mapping: map between old indices and new indices.
+
+        Returns:
+            Object with mapped indices.
+        """
+        children = [child.map_indices(mapping) for child in self._children]
+        external_indices = tuple(mapping.get(index, index) for index in self.external_indices)
+        return self.copy(*children, external_indices=external_indices)
 
     @property
     def disjoint(self) -> bool:
