@@ -41,7 +41,7 @@ except ImportError:
 
 def optimise_gristmill(
     exprs: list[Expression],
-    sizes: Optional[dict[str | None, float]] = None,
+    sizes: Optional[dict[str | None, int]] = None,
     strategy: Literal["exhaust", "opt", "trav", "greedy"] = "exhaust",
     transposes: Literal["skip", "natural", "ignore"] = "natural",
     greedy_cutoff: int = -1,

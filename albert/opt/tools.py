@@ -9,7 +9,6 @@ from albert import _default_sizes
 from albert.canon import canonicalise_indices
 from albert.expression import Expression
 from albert.index import Index
-from albert.opt import optimise
 from albert.scalar import Scalar
 from albert.symmetry import Permutation, Symmetry
 from albert.tensor import Tensor
@@ -24,9 +23,6 @@ if TYPE_CHECKING:
 
 def substitute_expressions(exprs: list[Expression]) -> list[Expression]:
     """Substitute expressions resulting from common subexpression elimination.
-
-    The return value is a list of tuples, where the first element is the output tensor and the
-    second element is the expression, for each distinct output tensor.
 
     Args:
         exprs: The tensor expressions.
@@ -235,7 +231,7 @@ def sort_expressions(exprs: list[Expression]) -> list[Expression]:
     return new_exprs
 
 
-def count_flops(expr: Base, sizes: Optional[dict[str | None, float]] = None) -> float:
+def count_flops(expr: Base, sizes: Optional[dict[str | None, int]] = None) -> int:
     """Count the number of FLOPs required to evaluate an expression.
 
     Args:
@@ -249,7 +245,7 @@ def count_flops(expr: Base, sizes: Optional[dict[str | None, float]] = None) -> 
         sizes = _default_sizes
 
     # Find the FLOPs of the current expression
-    flops = 1.0
+    flops = 1
     for index in expr.external_indices:
         flops *= sizes[index.space]
     for index in expr.internal_indices:
@@ -284,6 +280,7 @@ def optimise_eom(
         The returned tensors and optimised tensor expressions, split into those that depend on the
         EOM vectors and those that do not.
     """
+    from albert.opt import optimise
 
     def _is_eom_vector(tensor: Tensor) -> bool:
         """Check if a tensor is an EOM vector."""

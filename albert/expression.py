@@ -39,6 +39,7 @@ class Expression(Serialisable):
         """Initialise the expression."""
         if set(lhs.indices) != set(rhs.external_indices):
             raise ValueError("LHS indices must match RHS external indices.")
+        self._hash = None
         self._lhs = lhs
         self._rhs = rhs
 
@@ -61,6 +62,16 @@ class Expression(Serialisable):
     def internal_indices(self) -> tuple[Index, ...]:
         """Get the internal indices of the expression."""
         return self._rhs.internal_indices
+
+    def expand(self) -> Expression:
+        """Expand the RHS into the minimally nested format.
+
+        Output RHS has the form Add[Mul[Tensor | Scalar]].
+
+        Returns:
+            Object in expanded format.
+        """
+        return Expression(self.lhs, self.rhs.expand())
 
     def copy(self) -> Expression:
         """Return a copy of the object.
