@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, TypedDict, TypeVar, cast
+from typing import TYPE_CHECKING, TypeVar, cast
 
 from albert.algebra import Add, ExpandedAddLayer, ExpandedMulLayer, Mul, _compose_add, _compose_mul
 from albert.base import Base
@@ -12,20 +12,10 @@ from albert.scalar import Scalar
 if TYPE_CHECKING:
     from typing import Any, Callable, Optional
 
-    from albert.index import _IndexJSON
-    from albert.symmetry import Permutation, Symmetry, _SymmetryJSON
+    from albert.symmetry import Permutation, Symmetry
+    from albert.types import _TensorJSON
 
 T = TypeVar("T", bound=Base)
-
-
-class _TensorJSON(TypedDict):
-    """Type for JSON representation of a tensor."""
-
-    _type: str
-    _module: str
-    indices: tuple[_IndexJSON, ...]
-    name: str
-    symmetry: Optional[_SymmetryJSON]
 
 
 class Tensor(Base):

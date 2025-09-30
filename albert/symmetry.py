@@ -3,31 +3,15 @@
 from __future__ import annotations
 
 import itertools
-from typing import TYPE_CHECKING, TypedDict
+from typing import TYPE_CHECKING
 
 from albert.base import Serialisable
 
 if TYPE_CHECKING:
     from typing import Iterable
 
-    from albert.base import Base, SerialisedField
-
-
-class _PermutationJSON(TypedDict):
-    """Type for JSON representation of a permutation."""
-
-    _type: str
-    _module: str
-    permutation: tuple[int, ...]
-    sign: int
-
-
-class _SymmetryJSON(TypedDict):
-    """Type for JSON representation of a symmetry group."""
-
-    _type: str
-    _module: str
-    permutations: tuple[_PermutationJSON, ...]
+    from albert.base import Base
+    from albert.types import SerialisedField, _PermutationJSON, _SymmetryJSON
 
 
 class Permutation(Serialisable):

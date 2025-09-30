@@ -5,7 +5,7 @@ from __future__ import annotations
 import itertools
 from collections import defaultdict
 from functools import reduce
-from typing import TYPE_CHECKING, TypedDict, TypeVar, cast
+from typing import TYPE_CHECKING, TypeVar, cast
 
 from albert import ALLOW_NON_EINSTEIN_NOTATION
 from albert.base import Base
@@ -15,7 +15,8 @@ if TYPE_CHECKING:
     from typing import Any, Callable, Iterable
 
     from albert.index import Index
-    from albert.tensor import Tensor, _TensorJSON
+    from albert.tensor import Tensor
+    from albert.types import _AlgebraicJSON
 
 T = TypeVar("T", bound=Base)
 
@@ -51,14 +52,6 @@ def _repr_brackets(obj: Base) -> str:
     if isinstance(obj, (Add, Mul)):
         return f"({obj})"
     return str(obj)
-
-
-class _AlgebraicJSON(TypedDict):
-    """Type for JSON representation of an algebraic operation."""
-
-    _type: str
-    _module: str
-    children: tuple[_AlgebraicJSON | _TensorJSON, ...]
 
 
 class Algebraic(Base):

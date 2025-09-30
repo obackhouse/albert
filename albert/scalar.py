@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, TypedDict, TypeVar, cast
+from typing import TYPE_CHECKING, TypeVar, cast
 
 from albert.base import Base
 
@@ -11,18 +11,11 @@ if TYPE_CHECKING:
 
     from albert.algebra import ExpandedAddLayer
     from albert.index import Index
+    from albert.types import _ScalarJSON
 
 T = TypeVar("T", bound=Base)
 
 _ZERO = 1e-12
-
-
-class _ScalarJSON(TypedDict):
-    """Type for JSON representation of a scalar."""
-
-    _type: str
-    _module: str
-    value: float
 
 
 def _compose_scalar(value: float) -> Scalar:

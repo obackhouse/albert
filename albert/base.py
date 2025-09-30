@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Hashable, Protocol
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from typing import Any, Callable, Iterable, Optional, TypeVar
@@ -11,26 +11,9 @@ if TYPE_CHECKING:
     from albert.algebra import ExpandedAddLayer
     from albert.index import Index
     from albert.symmetry import Permutation
+    from albert.types import SerialisedField
 
     T = TypeVar("T", bound="Base")
-
-
-class Comparable(Protocol):
-    """Protocol for comparable objects."""
-
-    def __eq__(self, other: Any) -> bool:
-        """Check if two objects are equal."""
-        pass
-
-    def __lt__(self, other: Any) -> bool:
-        """Check if an object precedes another."""
-        pass
-
-
-class SerialisedField(Comparable, Hashable, Protocol):
-    """Protocol for the fields of serialised formats."""
-
-    pass
 
 
 class Serialisable(ABC):

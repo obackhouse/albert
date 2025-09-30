@@ -2,27 +2,19 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, TypedDict
+from typing import TYPE_CHECKING
 
-from albert.base import Serialisable, SerialisedField
+from albert.base import Serialisable
 
 if TYPE_CHECKING:
     from typing import Any, Iterable, Optional
+
+    from albert.types import SerialisedField, _IndexJSON
 
 
 def _to_greek(name: str) -> str:
     """Convert a spin channel name to a greek letter."""
     return chr(0x3B1 + ord(name) - ord("a"))
-
-
-class _IndexJSON(TypedDict):
-    """Type for JSON representation of an index."""
-
-    _type: str
-    _module: str
-    name: str
-    spin: Optional[str]
-    space: Optional[str]
 
 
 def from_list(
