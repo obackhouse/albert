@@ -79,7 +79,7 @@ def optimise_gristmill(
     # Find all the indices in the expressions
     indices: set[Index] = set()
     for expr in exprs:
-        for node in expr.rhs.search_leaves(Tensor):
+        for node in expr.rhs.search(Tensor):
             indices.update(node.indices)
 
     # Set the indices
@@ -133,7 +133,7 @@ def optimise_gristmill(
         terms.append(dr.define(output_base, *ranges_lhs, rhs))
 
         # Record the permutations and symbols
-        tensors = [expr.lhs] + list(expr.rhs.search_leaves(Tensor))
+        tensors = [expr.lhs] + list(expr.rhs.search(Tensor))
         done = set()
         for tensor in tensors:
             base = tensor.as_sympy().base if tensor.rank else tensor.as_sympy()

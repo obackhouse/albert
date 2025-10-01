@@ -41,7 +41,7 @@ class Permutation(Serialisable):
     @property
     def rank(self) -> int:
         """Get the rank."""
-        return len(self._permutation)
+        return len(self.permutation)
 
     def __call__(self, obj: Base) -> Base:
         """Apply the permutation to the object.
@@ -52,14 +52,14 @@ class Permutation(Serialisable):
         Returns:
             Permuted object.
         """
-        return obj.permute_indices(self._permutation) * self._sign
+        return obj.permute_indices(self.permutation) * self.sign
 
     def _hashable_fields(self) -> Iterable[SerialisedField]:
         """Yield fields of the hashable representation."""
         yield self.__class__.__name__
         yield self.rank
-        yield from self._permutation
-        yield self._sign
+        yield from self.permutation
+        yield self.sign
 
     def as_json(self) -> _PermutationJSON:
         """Return a JSON representation of the object.
@@ -70,8 +70,8 @@ class Permutation(Serialisable):
         return {
             "_type": self.__class__.__name__,
             "_module": self.__class__.__module__,
-            "permutation": self._permutation,
-            "sign": self._sign,
+            "permutation": self.permutation,
+            "sign": self.sign,
         }
 
     @classmethod
@@ -89,18 +89,18 @@ class Permutation(Serialisable):
         Returns:
             String representation.
         """
-        return f"{self.__class__.__name__}({self._permutation}, {self._sign})"
+        return f"{self.__class__.__name__}({self.permutation}, {self.sign})"
 
     def __add__(self, other: Permutation) -> Permutation:
         """Append permutations."""
-        perm = self._permutation + tuple(p + len(self._permutation) for p in other._permutation)
-        sign = self._sign * other._sign
+        perm = self.permutation + tuple(p + len(self.permutation) for p in other.permutation)
+        sign = self.sign * other.sign
         return Permutation(perm, sign)
 
     def __mul__(self, other: Permutation) -> Permutation:
         """Compose permutations."""
-        perm = tuple(self._permutation[p] for p in other._permutation)
-        sign = self._sign * other._sign
+        perm = tuple(self.permutation[p] for p in other.permutation)
+        sign = self.sign * other.sign
         return Permutation(perm, sign)
 
 
@@ -129,14 +129,14 @@ class Symmetry(Serialisable):
         Yields:
             Permuted objects.
         """
-        for permutation in self._permutations:
+        for permutation in self.permutations:
             yield permutation(obj)
 
     def _hashable_fields(self) -> Iterable[SerialisedField]:
         """Yield fields of the hashable representation."""
         yield self.__class__.__name__
-        yield len(self._permutations)
-        yield from self._permutations
+        yield len(self.permutations)
+        yield from self.permutations
 
     def as_json(self) -> _SymmetryJSON:
         """Return a JSON representation of the object.
@@ -147,7 +147,7 @@ class Symmetry(Serialisable):
         return {
             "_type": self.__class__.__name__,
             "_module": self.__class__.__module__,
-            "permutations": tuple(p.as_json() for p in self._permutations),
+            "permutations": tuple(p.as_json() for p in self.permutations),
         }
 
     @classmethod
@@ -165,15 +165,15 @@ class Symmetry(Serialisable):
         Returns:
             String representation.
         """
-        return f"{self.__class__.__name__}({', '.join(map(str, self._permutations))})"
+        return f"{self.__class__.__name__}({', '.join(map(str, self.permutations))})"
 
     def __add__(self, other: Symmetry) -> Symmetry:
         """Append permutations."""
-        return Symmetry(*(self._permutations + other._permutations))
+        return Symmetry(*(self.permutations + other.permutations))
 
     def __mul__(self, other: Symmetry) -> Symmetry:
         """Compose permutations."""
-        return Symmetry(*(p * q for p, q in zip(self._permutations, other._permutations)))
+        return Symmetry(*(p * q for p, q in zip(self.permutations, other.permutations)))
 
 
 def symmetric_group(*permutations: tuple[int, ...]) -> Symmetry:

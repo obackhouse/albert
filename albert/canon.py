@@ -41,9 +41,9 @@ def iter_equivalent_forms(expr: Base) -> Generator[Base, None, None]:
 
     @functools.lru_cache(maxsize=None)
     def _symmetry(node: Tensor) -> list[Base]:
-        if node._symmetry is None:
+        if node.symmetry is None:
             return [node]
-        return list(node._symmetry(node))
+        return list(node.symmetry(node))
 
     def _iter_variants(node: Base) -> Generator[Base, None, None]:
         if isinstance(node, Scalar):
@@ -52,8 +52,8 @@ def iter_equivalent_forms(expr: Base) -> Generator[Base, None, None]:
         if isinstance(node, Tensor):
             yield from _symmetry(node)
             return
-        assert node._children is not None
-        variants = [list(_iter_variants(child)) if child else [] for child in node._children]
+        assert node.children is not None
+        variants = [list(_iter_variants(child)) if child else [] for child in node.children]
         for combo in itertools.product(*variants):
             yield node.copy(*combo)
 
@@ -89,7 +89,7 @@ def canonicalise_exhaustive(
         def key(e: Base) -> SupportsDunderLT[Any]:
             """Key function for canonicalisation."""
             if isinstance(e, Algebraic):
-                return tuple(sorted(filter(lambda x: not isinstance(x, Scalar), e._children or [])))
+                return tuple(sorted(filter(lambda x: not isinstance(x, Scalar), e.children or [])))
             return e
 
     expr = min(_iter_equivalent_forms(expr), key=key)
@@ -114,7 +114,7 @@ def canonicalise_indices(
     """
     # Get the indices, grouped by category
     index_groups = defaultdict(set)
-    for leaf in expr.search_leaves(Tensor):  # type: ignore[type-abstract]
+    for leaf in expr.search(Tensor):
         for index in leaf.external_indices:
             index_groups[index.category].add(index)
             index_flip = index.spin_flip()

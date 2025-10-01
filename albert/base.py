@@ -3,17 +3,21 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
+from enum import Enum
+from typing import TYPE_CHECKING, Callable, Optional, TypeVar, cast
 
 if TYPE_CHECKING:
-    from typing import Any, Callable, Iterable, Optional, TypeVar
+    from typing import Any, Iterable
 
-    from albert.algebra import ExpandedAddLayer
+    from typing_extensions import Self
+
     from albert.index import Index
     from albert.symmetry import Permutation
     from albert.types import SerialisedField
 
-    T = TypeVar("T", bound="Base")
+T = TypeVar("T", bound="Base")
+Tchild = TypeVar("Tchild", bound="Base")
+TypeOrFilter = Optional[type[T] | tuple[type[T], ...] | Callable[["Base"], bool]]
 
 
 class Serialisable(ABC):
@@ -85,6 +89,33 @@ class Serialisable(ABC):
         return False
 
 
+class Traversal(Enum):
+    """Enum for traversal."""
+
+    PREORDER = 0
+    """Pre-order traversal (node before children)."""
+
+    POSTORDER = 1
+    """Post-order traversal (children before node)."""
+
+
+def _matches_filter(node: Base, type_filter: TypeOrFilter[Base]) -> bool:
+    """Check if a node matches a type filter.
+
+    Args:
+        node: Node to check.
+        type_filter: Type filter to check against.
+
+    Returns:
+        Whether the node matches the type filter.
+    """
+    if type_filter is None:
+        return True
+    if isinstance(type_filter, tuple) or isinstance(type_filter, type):
+        return isinstance(node, type_filter)
+    return type_filter(node)  # type: ignore
+
+
 def _sign_penalty(base: Base) -> int:
     """Return a penalty for the sign in scalars in a base object.
 
@@ -99,8 +130,8 @@ def _sign_penalty(base: Base) -> int:
     penalty = 1
     if base._children:
         for child in base._children:
-            if hasattr(child, "_value"):
-                penalty *= 1 if child._value < 0 else -1
+            if hasattr(child, "value"):
+                penalty *= 1 if getattr(child, "value") < 0 else -1
     return penalty
 
 
@@ -111,54 +142,101 @@ class Base(Serialisable):
     _children: Optional[tuple[Base, ...]]
     _penalties: tuple[Callable[[Base], int], ...] = (_sign_penalty,)
 
-    def search_leaves(self, type_filter: type[T]) -> Iterable[T]:
-        """Depth-first search through leaves.
+    @property
+    def is_leaf(self) -> bool:
+        """Get whether the object is a leaf in a tree."""
+        return self.children is None
+
+    @property
+    def children(self) -> tuple[Base, ...]:
+        """Get the children of the node."""
+        return self._children or ()
+
+    def _search(
+        self,
+        level: int,
+        type_filter: TypeOrFilter[T],
+        order: Traversal,
+    ) -> Iterable[tuple[T, int]]:
+        """Depth-first search through the tree.
+
+        Args:
+            level: Current level in the tree.
+            type_filter: Type to filter by.
+            order: Order to traverse the tree.
+
+        Yields:
+            Elements of the `_children` tuple, recursively, along with their level in the tree.
+        """
+        if order == Traversal.PREORDER and _matches_filter(self, type_filter):
+            yield cast(T, self), level
+        if self.children is not None:
+            for child in self.children:
+                yield from child._search(level + 1, type_filter, order)
+        if order == Traversal.POSTORDER and _matches_filter(self, type_filter):
+            yield cast(T, self), level
+
+    def search(
+        self,
+        type_filter: TypeOrFilter[T],
+        order: Traversal = Traversal.PREORDER,
+        depth: Optional[int] = None,
+    ) -> Iterable[T]:
+        """Depth-first search through the tree.
 
         Args:
             type_filter: Type to filter by.
+            order: Order to traverse the tree.
+            depth: Maximum (relative) depth to search to.
 
         Yields:
             Elements of the `_children` tuple, recursively.
         """
-        if self._children is not None:
-            for child in self._children:
-                yield from child.search_leaves(type_filter)
-        elif isinstance(self, type_filter):
-            yield self
+        for node, level in self._search(0, type_filter, order):
+            if depth is not None and level > depth:
+                continue
+            yield node
 
-    def search_nodes(self, type_filter: type[T]) -> Iterable[T]:
-        """Depth-first search through nodes.
-
-        Args:
-            type_filter: Type to filter by.
-
-        Yields:
-            Nodes and elements of the `_children` tuple, recursively.
-        """
-        if isinstance(self, type_filter):
-            yield self
-        if self._children is not None:
-            for child in self._children:
-                yield from child.search_nodes(type_filter)
-
-    def search_children(self, type_filter: type[T]) -> Iterable[T]:
-        """Search through direct children.
+    def find(
+        self,
+        type_filter: TypeOrFilter[T],
+        order: Traversal = Traversal.PREORDER,
+        depth: Optional[int] = None,
+    ) -> Optional[T]:
+        """Find the first node matching a type filter.
 
         Args:
             type_filter: Type to filter by.
+            order: Order to traverse the tree.
+            depth: Maximum (relative) depth to search to.
 
-        Yields:
-            Elements of the `_children` tuple.
+        Returns:
+            First element of the `_children` tuple matching the type filter, recursively.
         """
-        if self._children is not None:
-            for child in self._children:
-                if isinstance(child, type_filter):
-                    yield child
+        for node in self.search(type_filter=type_filter, order=order, depth=depth):
+            return node
+        return None
 
-    @property
-    def is_leaf(self) -> bool:
-        """Get whether the object is a leaf in a tree."""
-        return self._children is None
+    def apply(
+        self,
+        function: Callable[[T], Base],
+        type_filter: TypeOrFilter[T],
+    ) -> Base:
+        """Apply a function to nodes.
+
+        Args:
+            function: Functon to apply.
+            type_filter: Type of node to apply to.
+
+        Returns:
+            Object after applying function (if applicable).
+        """
+        if self.children:
+            children = tuple(child.apply(function, type_filter) for child in self.children)
+            self = self.copy(*children)
+        if _matches_filter(self, type_filter):
+            return function(cast(T, self))
+        return self
 
     @property
     @abstractmethod
@@ -184,12 +262,7 @@ class Base(Serialisable):
         pass
 
     @abstractmethod
-    def copy(self, *args: Any, **kwargs: Any) -> Base:
-        """Return a copy of the object with optionally updated attributes."""
-        pass
-
-    @abstractmethod
-    def map_indices(self, mapping: dict[Index, Index]) -> Base:
+    def map_indices(self, mapping: dict[Index, Index]) -> Self:
         """Return a copy of the object with the indices mapped according to some dictionary.
 
         Args:
@@ -220,23 +293,6 @@ class Base(Serialisable):
         return sign * self.map_indices(mapping)
 
     @abstractmethod
-    def apply(
-        self,
-        function: Callable[[T], Base],
-        node_type: type[T] | tuple[type[T], ...],
-    ) -> Base:
-        """Apply a function to nodes.
-
-        Args:
-            function: Functon to apply.
-            node_type: Type of node to apply to.
-
-        Returns:
-            Object after applying function (if applicable).
-        """
-        pass
-
-    @abstractmethod
     def canonicalise(self, indices: bool = False) -> Base:
         """Canonicalise the object.
 
@@ -253,7 +309,7 @@ class Base(Serialisable):
         pass
 
     @abstractmethod
-    def expand(self) -> ExpandedAddLayer:
+    def expand(self) -> Base:
         """Expand the object into the minimally nested format.
 
         Output has the form Add[Mul[Tensor | Scalar]].
@@ -366,6 +422,11 @@ class Base(Serialisable):
         Returns:
             String representation.
         """
+        pass
+
+    @abstractmethod
+    def copy(self, *args: Any, **kwargs: Any) -> Base:
+        """Return a copy of the object with optionally updated attributes."""
         pass
 
     def tree_repr(
