@@ -328,7 +328,7 @@ class BaseCodeGenerator(ABC):
         done = set()
         args = []
         for expr in expressions:
-            for tensor in expr.rhs.search_leaves(Tensor):
+            for tensor in expr.rhs.search(Tensor):
                 if not self.ignore_argument(tensor) and tensor.name not in done:
                     args.append(tensor)
                     done.add(tensor.name)
@@ -371,7 +371,7 @@ class BaseCodeGenerator(ABC):
         last_appearance: dict[TensorInfo, int] = {}
         info_tensor_map: dict[TensorInfo, Tensor] = {}
         for i, expr in enumerate(expressions):
-            for tensor in expr.rhs.search_leaves(Tensor):
+            for tensor in expr.rhs.search(Tensor):
                 info = _tensor_info(tensor)
                 last_appearance[info] = i
                 info_tensor_map[info] = tensor

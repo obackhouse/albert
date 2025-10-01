@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, TypeVar, cast
+from typing import TYPE_CHECKING, TypeVar
 
-from albert.algebra import Add, ExpandedAddLayer, ExpandedMulLayer, Mul, _compose_add, _compose_mul
+from albert.algebra import Add, Mul, _compose_add, _compose_mul
 from albert.base import Base
 from albert.index import Index
 from albert.scalar import Scalar
 
 if TYPE_CHECKING:
-    from typing import Any, Callable, Optional
+    from typing import Any, Optional
 
     from albert.symmetry import Permutation, Symmetry
     from albert.types import _TensorJSON
@@ -61,12 +61,12 @@ class Tensor(Base):
     @property
     def external_indices(self) -> tuple[Index, ...]:
         """Get the external indices (those that are not summed over)."""
-        return tuple(index for index in self._indices if self._indices.count(index) == 1)
+        return tuple(index for index in self.indices if self.indices.count(index) == 1)
 
     @property
     def internal_indices(self) -> tuple[Index, ...]:
         """Get the internal indices (those that are summed over)."""
-        return tuple(index for index in self._indices if self._indices.count(index) > 1)
+        return tuple(index for index in self.indices if self.indices.count(index) > 1)
 
     @property
     def disjoint(self) -> bool:
@@ -90,11 +90,11 @@ class Tensor(Base):
             Copy of the object.
         """
         if not indices:
-            indices = self._indices
+            indices = self.indices
         if name is None:
-            name = self._name
+            name = self.name
         if symmetry is None:
-            symmetry = self._symmetry
+            symmetry = self.symmetry
         return self.__class__(*indices, name=name, symmetry=symmetry)
 
     def map_indices(self, mapping: dict[Index, Index]) -> Tensor:
@@ -106,7 +106,7 @@ class Tensor(Base):
         Returns:
             Object with mapped indices.
         """
-        indices = tuple(mapping.get(index, index) for index in self._indices)
+        indices = tuple(mapping.get(index, index) for index in self.indices)
         return self.copy(*indices)
 
     def permute_indices(self, permutation: tuple[int, ...] | Permutation) -> Base:
@@ -124,26 +124,8 @@ class Tensor(Base):
         else:
             perm = permutation.permutation
             sign = permutation.sign
-        indices = tuple(self._indices[i] for i in perm)
+        indices = tuple(self.indices[i] for i in perm)
         return sign * self.copy(*indices)
-
-    def apply(
-        self,
-        function: Callable[[T], Base],
-        node_type: type[T] | tuple[type[T], ...],
-    ) -> Base:
-        """Apply a function to nodes.
-
-        Args:
-            function: Functon to apply.
-            node_type: Type of node to apply to.
-
-        Returns:
-            Object after applying function (if applicable).
-        """
-        if isinstance(self, node_type):
-            return function(cast(T, self))
-        return self
 
     def canonicalise(self, indices: bool = False) -> Base:
         """Canonicalise the object.
@@ -158,8 +140,8 @@ class Tensor(Base):
         Returns:
             Object in canonical format.
         """
-        if self._symmetry is not None:
-            best = min(self._symmetry(self))
+        if self.symmetry is not None:
+            best = min(self.symmetry(self))
         else:
             best = self
 
@@ -170,7 +152,7 @@ class Tensor(Base):
 
         return best
 
-    def expand(self) -> ExpandedAddLayer:
+    def expand(self) -> Base:
         """Expand the object into the minimally nested format.
 
         Output has the form Add[Mul[Tensor | Scalar]].
@@ -178,9 +160,7 @@ class Tensor(Base):
         Returns:
             Object in expanded format.
         """
-        mul = cast(ExpandedMulLayer, Mul(self))
-        add = cast(ExpandedAddLayer, Add(mul))
-        return add
+        return Add(Mul(self))
 
     def collect(self) -> Tensor:
         """Collect like terms in the top layer of the object.
@@ -206,8 +186,8 @@ class Tensor(Base):
         """
         import sympy
 
-        name = self._name
-        indices = [index.as_sympy() for index in self._indices]
+        name = self.name
+        indices = [index.as_sympy() for index in self.indices]
 
         if len(indices) == 0:
             return sympy.Symbol(name)
@@ -234,9 +214,9 @@ class Tensor(Base):
         return {
             "_type": self.__class__.__name__,
             "_module": self.__class__.__module__,
-            "indices": tuple(index.as_json() for index in self._indices),
-            "name": self._name,
-            "symmetry": self._symmetry.as_json() if self._symmetry else None,
+            "indices": tuple(index.as_json() for index in self.indices),
+            "name": self.name,
+            "symmetry": self.symmetry.as_json() if self.symmetry else None,
         }
 
     @classmethod
@@ -259,15 +239,15 @@ class Tensor(Base):
             String representation.
         """
         if len(self._indices) == 0:
-            return self._name
-        return f"{self._name}({','.join(map(str, self._indices))})"
+            return self.name
+        return f"{self.name}({','.join(map(str, self.indices))})"
 
     def __add__(self, other: Base | float) -> Base:
         """Add two objects."""
         if isinstance(other, (int, float)):
             other = Scalar(other)
         if isinstance(other, Add):
-            return _compose_add(self, *other._children)
+            return _compose_add(self, *other.children)
         return _compose_add(self, other)
 
     def __mul__(self, other: Base | float) -> Base:
@@ -275,5 +255,5 @@ class Tensor(Base):
         if isinstance(other, (int, float)):
             other = Scalar(other)
         if isinstance(other, Mul):
-            return _compose_mul(self, *other._children)
+            return _compose_mul(self, *other.children)
         return _compose_mul(self, other)

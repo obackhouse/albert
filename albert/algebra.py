@@ -5,7 +5,7 @@ from __future__ import annotations
 import itertools
 from collections import defaultdict
 from functools import reduce
-from typing import TYPE_CHECKING, TypeVar, cast
+from typing import TYPE_CHECKING, TypeVar
 
 from albert import ALLOW_NON_EINSTEIN_NOTATION
 from albert.base import Base
@@ -15,7 +15,6 @@ if TYPE_CHECKING:
     from typing import Any, Callable, Iterable
 
     from albert.index import Index
-    from albert.tensor import Tensor
     from albert.types import _AlgebraicJSON
 
 T = TypeVar("T", bound=Base)
@@ -74,7 +73,7 @@ class Algebraic(Base):
     def copy(self, *children: Base) -> Algebraic:
         """Return a copy of the object with optionally updated attributes."""
         if not children:
-            children = self._children
+            children = self.children
         return self.__class__(*children)
 
     def map_indices(self, mapping: dict[Index, Index]) -> Algebraic:
@@ -86,29 +85,7 @@ class Algebraic(Base):
         Returns:
             Object with mapped indices.
         """
-        children = [child.map_indices(mapping) for child in self._children]
-        return self.copy(*children)
-
-    def apply(
-        self,
-        function: Callable[[T], Base],
-        node_type: type[T] | tuple[type[T], ...],
-    ) -> Base:
-        """Apply a function to nodes.
-
-        Args:
-            function: Functon to apply.
-            node_type: Type of node to apply to.
-
-        Returns:
-            Object after applying function (if applicable).
-
-        Note:
-            The function is applied to the children first, and then to the object itself.
-        """
-        children = [child.apply(function, node_type) for child in self._children]
-        if isinstance(self, node_type):
-            return function(cast(T, self.copy(*children)))
+        children = [child.map_indices(mapping) for child in self.children]
         return self.copy(*children)
 
     def collect(self) -> Base:
@@ -122,11 +99,11 @@ class Algebraic(Base):
 
         # Collect like terms
         collected: dict[tuple[Base, ...], Scalar] = defaultdict(Scalar)
-        for mul in expanded._children:
+        for mul in expanded.children:
             parts: list[Base] = []
             factor = Scalar(1.0)
-            if mul._children:
-                for child in mul._children:
+            if mul.children:
+                for child in mul.children:
                     if isinstance(child, Scalar):
                         factor *= child
                     else:
@@ -146,7 +123,7 @@ class Algebraic(Base):
         Returns:
             Object with redundant operations removed.
         """
-        children = [child.squeeze() for child in self._children]
+        children = [child.squeeze() for child in self.children]
         if len(children) == 1:
             return children[0]
         else:
@@ -165,7 +142,7 @@ class Algebraic(Base):
         Returns:
             Object in canonical format.
         """
-        children = sorted([child.canonicalise(indices=False) for child in self._children])
+        children = sorted([child.canonicalise(indices=False) for child in self.children])
         expr = self._compose(*children)
 
         if indices:
@@ -184,7 +161,7 @@ class Algebraic(Base):
         return {
             "_type": self.__class__.__name__,
             "_module": self.__class__.__module__,
-            "children": tuple(child.as_json() for child in self._children),
+            "children": tuple(child.as_json() for child in self.children),
         }
 
     @classmethod
@@ -211,7 +188,7 @@ class Algebraic(Base):
         children: list[Base] = []
         for child in data.args:
             if isinstance(child, (sympy.Add, sympy.Mul)):
-                children.extend(cls.from_sympy(child)._children)
+                children.extend(cls.from_sympy(child).children)
             elif isinstance(child, sympy.Indexed):
                 children.append(Tensor.from_sympy(child))
             elif isinstance(child, sympy.Float):
@@ -246,13 +223,13 @@ def _compose_add(*children: Base, cls: type[Add] | None = None) -> Base:
     other: list[Base] = []
     for child in children:
         if isinstance(child, Scalar):
-            scalar = Scalar(scalar._value + child._value)
+            scalar = Scalar(scalar.value + child.value)
         elif isinstance(child, Add):
-            inner = _compose_add(*child._children)
-            if inner._children:
-                for child in inner._children:
+            inner = _compose_add(*child.children)
+            if inner.children:
+                for child in inner.children:
                     if isinstance(child, Scalar):
-                        scalar = Scalar(scalar._value + child._value)
+                        scalar = Scalar(scalar.value + child.value)
                     else:
                         other.append(child)
         else:
@@ -303,20 +280,20 @@ def _compose_mul(
     other: list[Base] = []
     for child in children:
         if isinstance(child, Scalar):
-            scalar = cls_scalar(scalar._value * child._value)
+            scalar = cls_scalar(scalar.value * child.value)
         elif isinstance(child, Mul):
-            inner = _compose_mul(*child._children)
-            if inner._children:
-                for child in inner._children:
+            inner = _compose_mul(*child.children)
+            if inner.children:
+                for child in inner.children:
                     if isinstance(child, Scalar):
-                        scalar = cls_scalar(scalar._value * child._value)
+                        scalar = cls_scalar(scalar.value * child.value)
                     else:
                         other.append(child)
         else:
             other.append(child)
 
     # If the product of scalars is zero, return zero
-    if scalar._value == 0.0:
+    if scalar.value == 0.0:
         return cls_scalar(0.0)
 
     # If there are no other arguments, return the scalar
@@ -324,7 +301,7 @@ def _compose_mul(
         return scalar
 
     # If the scalar is one, don't include it
-    if scalar._value == 1.0:
+    if scalar.value == 1.0:
         if len(other) == 1:
             return other[0]
         return cls(*other)
@@ -354,7 +331,7 @@ class Add(Algebraic):
     @property
     def external_indices(self) -> tuple[Index, ...]:
         """Get the external indices (those that are not summed over)."""
-        return self._children[0].external_indices  # Already checked on input
+        return self.children[0].external_indices  # Already checked on input
 
     @property
     def internal_indices(self) -> tuple[Index, ...]:
@@ -366,19 +343,19 @@ class Add(Algebraic):
         """Return whether the object is disjoint."""
         return False
 
-    def expand(self) -> ExpandedAddLayer:
+    def expand(self) -> Base:
         """Expand the object into the minimally nested format.
 
-        Output has the form Add[Mul[Tensor | Scalar]].
+        Output has the form `Add[Mul[Tensor | Scalar]]`.
 
         Returns:
             Object in expanded format.
         """
         # Recursively expand the parentheses
-        children: list[ExpandedMulLayer] = []
-        for child in self._children:
-            children.extend(child.expand()._children)
-        return ExpandedAddLayer(*children)
+        children: list[Base] = []
+        for child in self.children:
+            children.extend(child.expand().children)
+        return Add(*children)
 
     def as_sympy(self) -> Any:
         """Return a sympy representation of the object.
@@ -386,7 +363,7 @@ class Add(Algebraic):
         Returns:
             Object in sympy format.
         """
-        return sum(child.as_sympy() for child in self._children)
+        return sum(child.as_sympy() for child in self.children)
 
     def __repr__(self) -> str:
         """Return a string representation.
@@ -394,22 +371,22 @@ class Add(Algebraic):
         Returns:
             String representation.
         """
-        return " + ".join(map(_repr_brackets, self._children))
+        return " + ".join(map(_repr_brackets, self.children))
 
     def __add__(self, other: Base | float) -> Base:
         """Add two objects."""
         if isinstance(other, (int, float)):
             other = _compose_scalar(other)
         if isinstance(other, Add):
-            return _compose_add(*self._children, *other._children)
-        return _compose_add(*self._children, other)
+            return _compose_add(*self._children, *other.children)
+        return _compose_add(*self.children, other)
 
     def __mul__(self, other: Base | float) -> Base:
         """Multiply two objects."""
         if isinstance(other, (int, float)):
             other = _compose_scalar(other)
         if isinstance(other, Mul):
-            return _compose_mul(self, *other._children)
+            return _compose_mul(self, *other.children)
         return _compose_mul(self, other)
 
 
@@ -434,7 +411,7 @@ class Mul(Algebraic):
     def external_indices(self) -> tuple[Index, ...]:
         """Get the external indices (those that are not summed over)."""
         counts: dict[Index, int] = defaultdict(int)
-        for child in self._children:
+        for child in self.children:
             for index in child.external_indices:
                 counts[index] += 1
         return tuple(index for index, count in counts.items() if count == 1)
@@ -443,7 +420,7 @@ class Mul(Algebraic):
     def internal_indices(self) -> tuple[Index, ...]:
         """Get the internal indices (those that are summed over)."""
         counts: dict[Index, int] = defaultdict(int)
-        for child in self._children:
+        for child in self.children:
             for index in child.external_indices:
                 counts[index] += 1
         return tuple(index for index, count in counts.items() if count > 1)
@@ -453,7 +430,7 @@ class Mul(Algebraic):
         """Return whether the object is disjoint."""
         return len(self.internal_indices) == 0
 
-    def expand(self) -> ExpandedAddLayer:
+    def expand(self) -> Base:
         """Expand the object into the minimally nested format.
 
         Output has the form Add[Mul[Tensor | Scalar]].
@@ -462,17 +439,14 @@ class Mul(Algebraic):
             Object in expanded format.
         """
         # Recursively expand the parentheses
-        children: list[ExpandedMulLayer] = []
-        for child in self._children:
-            inner_children: tuple[ExpandedMulLayer, ...] = child.expand()._children
+        children: list[Base] = []
+        for child in self.children:
+            inner_children: tuple[Base, ...] = child.expand().children
             if not children:
                 children.extend(list(inner_children))
             else:
-                children = [
-                    cast(ExpandedMulLayer, a * b)
-                    for a, b in itertools.product(children, inner_children)
-                ]
-        return ExpandedAddLayer(*children)
+                children = [a * b for a, b in itertools.product(children, inner_children)]
+        return Add(*children)
 
     def as_sympy(self) -> Any:
         """Return a sympy representation of the object.
@@ -480,7 +454,7 @@ class Mul(Algebraic):
         Returns:
             Object in sympy format.
         """
-        return reduce(lambda x, y: x * y, (child.as_sympy() for child in self._children))
+        return reduce(lambda x, y: x * y, (child.as_sympy() for child in self.children))
 
     def __repr__(self) -> str:
         """Return a string representation.
@@ -488,14 +462,14 @@ class Mul(Algebraic):
         Returns:
             String representation.
         """
-        return " * ".join(map(_repr_brackets, self._children))
+        return " * ".join(map(_repr_brackets, self.children))
 
     def __add__(self, other: Base | float) -> Base:
         """Add two objects."""
         if isinstance(other, (int, float)):
             other = _compose_scalar(other)
         if isinstance(other, Add):
-            return _compose_add(self, *other._children)
+            return _compose_add(self, *other.children)
         return _compose_add(self, other)
 
     def __mul__(self, other: Base | float) -> Base:
@@ -503,25 +477,5 @@ class Mul(Algebraic):
         if isinstance(other, (int, float)):
             other = _compose_scalar(other)
         if isinstance(other, Mul):
-            return _compose_mul(*self._children, *other._children)
-        return _compose_mul(*self._children, other)
-
-
-class ExpandedMulLayer(Mul):
-    """`Mul` layer of the result of `Base.expand`.
-
-    The `Base.expand` method returns and object that gurantees the structure
-    Add[Mul[Tensor | Scalar]]. This is used as a type hint for the return type.
-    """
-
-    _children: tuple[Tensor | Scalar, ...]
-
-
-class ExpandedAddLayer(Add):
-    """`Add` layer of the result of `Base.expand`.
-
-    The `Base.expand` method returns and object that gurantees the structure
-    Add[Mul[Tensor | Scalar]]. This is used as a type hint for the return type.
-    """
-
-    _children: tuple[ExpandedMulLayer, ...]
+            return _compose_mul(*self.children, *other.children)
+        return _compose_mul(*self.children, other)

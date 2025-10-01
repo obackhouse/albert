@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import itertools
 import warnings
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from albert import _default_sizes
 from albert.algebra import Mul
@@ -23,9 +23,9 @@ if TYPE_CHECKING:
 def _format_mul(expr: Mul) -> Mul:
     """Check the ``Mul`` expression is valid and return it."""
     expanded = expr.expand()
-    if len(expanded._children) != 1:
+    if len(expanded.children) != 1:
         raise ValueError("Expression {expr} is not a valid tensor product.")
-    return expanded._children[0]
+    return cast(Mul, expanded.children[0])
 
 
 def _get_inputs_and_output(
@@ -44,7 +44,7 @@ def _get_inputs_and_output(
     expr = _format_mul(expr)
     memo: dict[Index, int] = {}
     inputs = []
-    for tensor in expr.search_leaves(Tensor):
+    for tensor in expr.search(Tensor):
         inds = []
         for ind in tensor.indices:
             if ind not in memo:
@@ -80,7 +80,7 @@ def find_optimal_path(
     # Expand the product
     if not isinstance(expr, Mul):
         raise TypeError("Expression must be a Mul.")
-    (expr,) = expr.expand()._children
+    (expr,) = cast(tuple[Mul], expr.expand().children)
 
     # Optimise the contraction path
     inputs, output, sizes = _get_inputs_and_output(expr, sizes)
@@ -103,7 +103,7 @@ def generate_paths_exhaustive(
         All possible contraction trees.
     """
     expr = _format_mul(expr)
-    num_tensors = len(list(expr.search_leaves(Tensor)))
+    num_tensors = len(list(expr.search(Tensor)))
     if num_tensors < 2:
         return
     if num_tensors > 5:
@@ -151,7 +151,7 @@ def generate_paths_approximate(
         Approximate contraction trees.
     """
     expr = _format_mul(expr)
-    num_tensors = len(list(expr.search_leaves(Tensor)))
+    num_tensors = len(list(expr.search(Tensor)))
     if num_tensors < 2:
         return
     if sizes is None:
@@ -202,7 +202,7 @@ def generate_paths(
         Contraction trees.
     """
     expr = _format_mul(expr)
-    num_tensors = len(list(expr.search_leaves(Tensor)))
+    num_tensors = len(list(expr.search(Tensor)))
     if num_tensors < 40:
         yield find_optimal_path(expr, sizes=sizes)
         max_samples -= 1

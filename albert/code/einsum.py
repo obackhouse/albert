@@ -295,8 +295,8 @@ class EinsumCodeGenerator(BaseCodeGenerator):
         expr = Expression(expr.lhs, expr.rhs.expand())  # guarantee Add[Mul[Tensor | Scalar]]
         for i, mul in enumerate(expr.rhs._children or []):
             # Separate the scalar and tensors
-            scalars = list(mul.search_leaves(Scalar))
-            tensors = list(mul.search_leaves(Tensor))
+            scalars = list(mul.search(Scalar))
+            tensors = list(mul.search(Tensor))
 
             # Get the indices
             lhs = [tensor.external_indices for tensor in tensors]

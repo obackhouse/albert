@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, TypeVar, cast
+from typing import TYPE_CHECKING, TypeVar
 
 from albert.base import Base
 
 if TYPE_CHECKING:
-    from typing import Any, Callable, Optional
+    from typing import Any, Optional
 
-    from albert.algebra import ExpandedAddLayer
     from albert.index import Index
     from albert.types import _ScalarJSON
 
@@ -72,7 +71,7 @@ class Scalar(Base):
             Copy of the object.
         """
         if value is None:
-            value = self._value
+            value = self.value
         return Scalar(value)
 
     def map_indices(self, mapping: dict[Index, Index]) -> Scalar:
@@ -84,24 +83,6 @@ class Scalar(Base):
         Returns:
             Object with mapped indices.
         """
-        return self
-
-    def apply(
-        self,
-        function: Callable[[T], Base],
-        node_type: type[T] | tuple[type[T], ...],
-    ) -> Base:
-        """Apply a function to nodes.
-
-        Args:
-            function: Functon to apply.
-            node_type: Type of node to apply to.
-
-        Returns:
-            Object after applying function (if applicable).
-        """
-        if isinstance(self, node_type):
-            return function(cast(T, self))
         return self
 
     def canonicalise(self, indices: bool = False) -> Scalar:
@@ -118,7 +99,7 @@ class Scalar(Base):
         """
         return self
 
-    def expand(self) -> ExpandedAddLayer:
+    def expand(self) -> Base:
         """Expand the object into the minimally nested format.
 
         Output has the form Add[Mul[Tensor | Scalar]].
@@ -126,11 +107,9 @@ class Scalar(Base):
         Returns:
             Object in expanded format.
         """
-        from albert.algebra import Add, ExpandedAddLayer, ExpandedMulLayer, Mul  # FIXME
+        from albert.algebra import Add, Mul  # FIXME
 
-        mul = cast(ExpandedMulLayer, Mul(self))
-        add = cast(ExpandedAddLayer, Add(mul))
-        return add
+        return Add(Mul(self))
 
     def collect(self) -> Scalar:
         """Collect like terms in the top layer of the object.
@@ -156,7 +135,7 @@ class Scalar(Base):
         """
         import sympy
 
-        return sympy.Float(self._value)
+        return sympy.Float(self.value)
 
     @classmethod
     def from_sympy(cls, data: Any) -> Scalar:
@@ -176,7 +155,7 @@ class Scalar(Base):
         return {
             "_type": self.__class__.__name__,
             "_module": self.__class__.__module__,
-            "value": self._value,
+            "value": self.value,
         }
 
     @classmethod
@@ -194,7 +173,7 @@ class Scalar(Base):
         Returns:
             String representation.
         """
-        body = str(self._value)
+        body = str(self.value)
         while body.endswith("0") and "." in body:
             body = body[:-1]
         body = body.rstrip(".")
@@ -205,7 +184,7 @@ class Scalar(Base):
         if isinstance(other, (int, float)):
             other = _compose_scalar(other)
         if isinstance(other, Scalar):
-            return _compose_scalar(self._value + other._value)
+            return _compose_scalar(self.value + other.value)
         return NotImplemented
 
     def __mul__(self, other: Base | float) -> Scalar:
@@ -213,5 +192,5 @@ class Scalar(Base):
         if isinstance(other, (int, float)):
             other = _compose_scalar(other)
         if isinstance(other, Scalar):
-            return _compose_scalar(self._value * other._value)
+            return _compose_scalar(self.value * other.value)
         return NotImplemented

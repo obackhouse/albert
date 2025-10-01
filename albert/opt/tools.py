@@ -35,7 +35,7 @@ def substitute_expressions(exprs: list[Expression]) -> list[Expression]:
     # Find original set of indices for canonicalisation
     extra_indices: set[Index] = set()
     for e in expr:
-        for tensor in e.rhs.search_leaves(Tensor):
+        for tensor in e.rhs.search(Tensor):
             extra_indices.update(tensor.external_indices)
             extra_indices.update(tensor.internal_indices)
     extra_indices = sorted(extra_indices)
@@ -58,7 +58,7 @@ def substitute_expressions(exprs: list[Expression]) -> list[Expression]:
                         index_map = dict(
                             zip(e_src.external_indices, tensor.external_indices)  # noqa: B023
                         )
-                        for tensor in e_src.rhs.search_leaves(Tensor):  # noqa: B023
+                        for tensor in e_src.rhs.search(Tensor):  # noqa: B023
                             for index in tensor.external_indices:
                                 if index not in index_map:
                                     index_map[index] = index.copy(name=f"z{memo['counter']}_")
@@ -102,10 +102,10 @@ def combine_expressions(exprs: list[Expression]) -> list[Expression]:
     # Get the factors of the unique expressions
     expr_factors: dict[Expression, Scalar] = defaultdict(lambda: Scalar(0.0))
     for expr in exprs:
-        for mul in expr.rhs.expand()._children:
+        for mul in expr.rhs.expand().children:
             factor = Scalar(1.0)
             tensors = []
-            for leaf in mul._children:
+            for leaf in mul.children:
                 if isinstance(leaf, Scalar):
                     factor *= leaf
                 else:
@@ -139,7 +139,7 @@ def expressions_to_graph(exprs: list[Expression]) -> dict[TensorInfo, set[Tensor
     graph: dict[TensorInfo, set[TensorInfo]] = defaultdict(set)
     for expr in exprs:
         info = _tensor_info(expr.lhs)
-        for tensor in expr.rhs.search_leaves(Tensor):
+        for tensor in expr.rhs.search(Tensor):
             graph[info].add(_tensor_info(tensor))
     return graph
 
@@ -155,7 +155,7 @@ def split_expressions(exprs: list[Expression]) -> list[Expression]:
     """
     new_exprs: list[Expression] = []
     for expr in exprs:
-        for child in expr.rhs.expand()._children:
+        for child in expr.rhs.expand().children:
             new_exprs.append(Expression(expr.lhs, child))
     return new_exprs
 
@@ -190,7 +190,7 @@ def sort_expressions(exprs: list[Expression]) -> list[Expression]:
         """Add an expression to the list."""
         # Find the first time the tensor is used
         for i, expr in enumerate(new_exprs):
-            if name in set(_tensor_info(t) for t in expr.rhs.search_leaves(Tensor)):
+            if name in set(_tensor_info(t) for t in expr.rhs.search(Tensor)):
                 break
         else:
             i = len(new_exprs)
@@ -252,8 +252,8 @@ def count_flops(expr: Base, sizes: Optional[dict[str | None, int]] = None) -> in
         flops *= sizes[index.space]
 
     # Add the FLOPs of the children recursively
-    if expr._children:
-        for child in expr._children:
+    if expr.children:
+        for child in expr.children:
             if isinstance(child, Tensor):
                 flops += count_flops(child, sizes)
 
@@ -350,7 +350,7 @@ def optimise_eom(
     for expr in exprs:
         depends = _is_eom_vector(expr.lhs)
         if not depends:
-            for tensor in expr.rhs.search_leaves(Tensor):
+            for tensor in expr.rhs.search(Tensor):
                 if _is_eom_vector(tensor) or tensor.name in cache:
                     depends = True
                     break
@@ -367,7 +367,7 @@ def optimise_eom(
     for expr in exprs_dep:
         if expr.lhs.name.startswith("tmp"):
             initialised.add(expr.lhs.name)
-        for tensor in expr.rhs.search_leaves(Tensor):
+        for tensor in expr.rhs.search(Tensor):
             if tensor.name.startswith("tmp") and tensor.name not in initialised:
                 returns_indep.append(tensor)
 

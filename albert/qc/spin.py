@@ -38,11 +38,11 @@ def ghf_to_uhf(
 
     # Loop over leaves of the expression tree
     new_exprs: dict[tuple[Index, ...], Base] = defaultdict(Scalar)
-    for mul in expr._children:
+    for mul in expr.children:
         # Split the leaves into those that are already unrestricted and those that are not
         scalars = []
         tensors = []
-        for leaf in mul._children:
+        for leaf in mul.children:
             if isinstance(leaf, Scalar):
                 scalars.append(leaf)
             else:
@@ -87,9 +87,9 @@ def uhf_to_rhf(expr: Base, canonicalise: bool = True) -> Base:
 
     # Loop over leaves of the expression tree
     new_expr: Base = Scalar(0)
-    for mul in expr._children:
+    for mul in expr.children:
         leaves: list[Base] = []
-        for leaf in mul._children:
+        for leaf in mul.children:
             if isinstance(leaf, Scalar):
                 leaves.append(leaf)
             else:

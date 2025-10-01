@@ -185,7 +185,7 @@ def final_contraction_vertices(expr: Mul, path: Path) -> tuple[Vertex | None, Ve
         A pair of vertices representing the left and right children of the final contraction. If
         not applicable, returns ``(None, None)``.
     """
-    tensors = list(expr.search_leaves(Tensor))
+    tensors = list(expr.search(Tensor))
     num_tensors = len(tensors)
     if num_tensors < 2 or not path:
         return None, None
@@ -224,11 +224,12 @@ def build_bipartite_subgraphs(
     """
     graphs: dict[IndexPartition, nx.Graph] = {}
     for expr in exprs:
-        for mul in expr.rhs.expand()._children:
-            num_tensors = len(list(mul.search_leaves(Tensor)))
+        for mul in expr.rhs.expand().children:
+            assert isinstance(mul, Mul)  # for mypy
+            num_tensors = len(list(mul.search(Tensor)))
             if num_tensors < 2:
                 continue
-            scalar = prod([s.value for s in mul.search_leaves(Scalar)])
+            scalar = prod([s.value for s in mul.search(Scalar)])
 
             # Get the contraction trees
             trees = list(generate_paths(mul, sizes=sizes, max_samples=max_samples, **opt_kwargs))
@@ -507,7 +508,7 @@ def rewrite_with_constriction(
     # Rewrite the expression
     terms: list[Base] = []
     complete = True
-    for mul in expr.rhs.expand().search_nodes(Mul):
+    for mul in expr.rhs.expand().search(Mul):
         if mul not in covered:
             terms.append(mul)
         else:
@@ -551,8 +552,8 @@ def remove_trivial(exprs: list[Expression]) -> list[Expression]:
     remove: set[int] = set()
     for i in range(len(exprs) - 1, -1, -1):
         rhs = exprs[i].rhs.expand()
-        tensors = list(rhs.search_leaves(Tensor))
-        scalar = prod([scalar.value for scalar in rhs.search_leaves(Scalar)])
+        tensors = list(rhs.search(Tensor))
+        scalar = prod([scalar.value for scalar in rhs.search(Scalar)])
         if len(tensors) == 1 and isclose(scalar, 1.0):
             name_old = exprs[i].lhs.name
             name_new = tensors[0].name
@@ -576,7 +577,7 @@ def renumber_intermediates(
     # Get all tensor names
     tensors: set[str] = set()
     for expr in exprs:
-        for tensor in expr.rhs.search_leaves(Tensor):
+        for tensor in expr.rhs.search(Tensor):
             tensors.add(tensor.name)
         tensors.add(expr.lhs.name)
 
@@ -601,7 +602,7 @@ def renumber_intermediates(
 def _canonicalise_expression(expr: Expression, indices: list[Index]) -> Expression:
     """Canonicalise an expression."""
     rhs_canon = canonicalise_indices(expr.rhs.canonicalise(), extra_indices=indices)
-    rhs_canon = Add(*[canonicalise_exhaustive(mul) for mul in rhs_canon.expand()._children])
+    rhs_canon = Add(*[canonicalise_exhaustive(mul) for mul in rhs_canon.expand().children])
     index_map = dict(zip(expr.lhs.external_indices, rhs_canon.external_indices))
     lhs_canon = expr.lhs.map_indices(index_map)
     return Expression(lhs_canon, rhs_canon.collect())
@@ -610,7 +611,7 @@ def _canonicalise_expression(expr: Expression, indices: list[Index]) -> Expressi
 @lru_cache(maxsize=2**14)
 def _count_flops_expression(expr: Expression) -> int:
     """Count the number of floating point operations in an expression."""
-    return sum(count_flops(mul) for mul in expr.rhs.expand()._children)
+    return sum(count_flops(mul) for mul in expr.rhs.expand().children)
 
 
 def _check_memo(
@@ -657,7 +658,7 @@ def optimise(
     indices: list[Index] = []
     seen: set[Index] = set()
     for expression in expressions:
-        for tensor in expression.rhs.search_leaves(Tensor):
+        for tensor in expression.rhs.search(Tensor):
             for index in tensor.indices:
                 if index not in seen:
                     seen.add(index)
