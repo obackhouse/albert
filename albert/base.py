@@ -16,7 +16,6 @@ if TYPE_CHECKING:
     from albert.types import SerialisedField
 
 T = TypeVar("T", bound="Base")
-Tchild = TypeVar("Tchild", bound="Base")
 TypeOrFilter = Optional[type[T] | tuple[type[T], ...] | Callable[["Base"], bool]]
 
 
