@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, TypeVar, cast
 
-from albert.base import Base, _INTERN_TABLE
+from albert.base import _INTERN_TABLE, Base
 
 if TYPE_CHECKING:
     from typing import Any, Optional

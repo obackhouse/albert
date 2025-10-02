@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import threading
 import weakref
-from typing import TYPE_CHECKING, Generic, TypeVar, Any
+from typing import TYPE_CHECKING, Generic, TypeVar
 
 if TYPE_CHECKING:
     from typing import Callable, Hashable
 
-    from albert.base import Base
 
 T = TypeVar("T")
 

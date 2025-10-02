@@ -8,7 +8,7 @@ from functools import reduce
 from typing import TYPE_CHECKING, TypeVar
 
 from albert import ALLOW_NON_EINSTEIN_NOTATION
-from albert.base import Base, _INTERN_TABLE
+from albert.base import _INTERN_TABLE, Base
 from albert.scalar import Scalar
 
 if TYPE_CHECKING:

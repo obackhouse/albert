@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, TypeVar, cast
 
 from albert.algebra import Add, Mul
-from albert.base import Base, _INTERN_TABLE
+from albert.base import _INTERN_TABLE, Base
 from albert.index import Index
 from albert.scalar import Scalar
 
