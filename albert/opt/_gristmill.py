@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from albert import _default_sizes
-from albert.algebra import _compose_mul
+from albert.algebra import Add, Mul
 from albert.expression import Expression
 from albert.index import Index
 from albert.scalar import Scalar
@@ -14,6 +14,7 @@ from albert.tensor import Tensor
 if TYPE_CHECKING:
     from typing import Any, Literal, Optional
 
+    from albert.base import Base
     from albert.symmetry import Symmetry
 
 # Try to find a pyspark context:
@@ -184,9 +185,9 @@ def optimise_gristmill(
         output = cls(*inds, name=base.name, symmetry=symmetries.get(base))
 
         # Convert the RHS
-        expr_i = Scalar(0.0)
+        parts: list[Base] = [Scalar.factory(0.0)]
         for amp in [t.amp for t in term.rhs_terms]:
-            factor = Scalar(float(sympy.prod(amp.atoms(sympy.Number))))
+            factor = Scalar.factory(float(sympy.prod(amp.atoms(sympy.Number))))
             args: list[Tensor] = []
             for i, atom in enumerate(amp.atoms(sympy.Indexed)):
                 base = atom.base
@@ -200,7 +201,7 @@ def optimise_gristmill(
                     for i in atom.indices
                 ]
                 args.append(cls(*inds, name=base.name, symmetry=symmetries.get(base)))
-            expr_i += _compose_mul(factor, *args)
-        exprs.append(Expression(output, expr_i))
+            parts.append(Mul.factory(factor, *args))
+        exprs.append(Expression(output, Add.factory(*parts)))
 
     return exprs

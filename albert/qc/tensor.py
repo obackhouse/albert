@@ -82,7 +82,9 @@ class QTensor(Tensor, SpinMixin):
         Returns:
             Tuple of expressions resulting from the conversion.
         """
-        raise NotImplementedError(f"as_uhf not implemented for tensor {self.name}.")
+        raise NotImplementedError(
+            f"as_uhf not implemented for tensor {self} of type {self.__class__}."
+        )
 
     def as_rhf(self) -> Base:
         """Convert the indices with spin to indices without spin.
@@ -92,4 +94,6 @@ class QTensor(Tensor, SpinMixin):
         Returns:
             Expression resulting from the conversion.
         """
-        raise NotImplementedError(f"as_rhf not implemented for tensor {self.name}.")
+        raise NotImplementedError(
+            f"as_rhf not implemented for tensor {self} of type {self.__class__}."
+        )

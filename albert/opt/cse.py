@@ -472,10 +472,15 @@ def build_intermediates(
 
     def _build(side: Subset, tensor: Tensor) -> Expression:
         """Build an intermediate expression for one side of the biclique."""
-        expr = Scalar(0.0)
-        for key in side.vertices:
-            vertex: Vertex = graph.nodes[key]["vertex"]
-            expr += Scalar(float(side.coefficients[key])) * Mul(*vertex.tensors)  # infers externals
+        expr = Add.factory(
+            *[
+                Mul.factory(
+                    Scalar.factory(float(side.coefficients[key])),
+                    *graph.nodes[key]["vertex"].tensors,
+                )
+                for key in side.vertices
+            ]
+        )
         return Expression(tensor, expr)
 
     return _build(biclique.left, tensors[0]), _build(biclique.right, tensors[1])
@@ -517,7 +522,7 @@ def rewrite_with_constriction(
         return expr
     terms.append(term)
 
-    return Expression(expr.lhs, Add(*terms))
+    return Expression(expr.lhs, Add.factory(*terms))
 
 
 def rename_tensors(expr: Expression, old: str, new: str) -> Expression:
@@ -602,7 +607,7 @@ def renumber_intermediates(
 def _canonicalise_expression(expr: Expression, indices: list[Index]) -> Expression:
     """Canonicalise an expression."""
     rhs_canon = canonicalise_indices(expr.rhs.canonicalise(), extra_indices=indices)
-    rhs_canon = Add(*[canonicalise_exhaustive(mul) for mul in rhs_canon.expand().children])
+    rhs_canon = Add.factory(*[canonicalise_exhaustive(mul) for mul in rhs_canon.expand().children])
     index_map = dict(zip(expr.lhs.external_indices, rhs_canon.external_indices))
     lhs_canon = expr.lhs.map_indices(index_map)
     return Expression(lhs_canon, rhs_canon.collect())
@@ -707,7 +712,7 @@ def optimise(
         right = _check_memo(intermediates, right, memo)
 
         # Rewrite the expression
-        term = Scalar(float(biclique.coefficient)) * left * right
+        term = Mul.factory(Scalar.factory(float(biclique.coefficient)), left, right)
         term = canonicalise_exhaustive(term)
         expressions = [rewrite_with_constriction(e, graph, biclique, term) for e in expressions]
         for tensor in intermediates:

@@ -6,6 +6,8 @@ from abc import ABC, abstractmethod
 from enum import Enum
 from typing import TYPE_CHECKING, Callable, Optional, TypeVar, cast
 
+from albert.hashing import InternTable
+
 if TYPE_CHECKING:
     from typing import Any, Iterable
 
@@ -73,6 +75,9 @@ class Serialisable(ABC):
             return True
         if not isinstance(other, Serialisable):
             return False
+        if self._hash is not None and other._hash is not None:
+            if self._hash != other._hash:
+                return False
         for a, b in zip(self._hashable_fields(), other._hashable_fields()):
             if a != b:
                 return False
@@ -124,11 +129,11 @@ def _sign_penalty(base: Base) -> int:
     Returns:
         Penalty for the sign.
     """
-    if not base._children:
+    if not base.children:
         return 0
     penalty = 1
-    if base._children:
-        for child in base._children:
+    if base.children:
+        for child in base.children:
             if hasattr(child, "value"):
                 penalty *= 1 if getattr(child, "value") < 0 else -1
     return penalty
@@ -140,6 +145,23 @@ class Base(Serialisable):
     _score: int
     _children: Optional[tuple[Base, ...]]
     _penalties: tuple[Callable[[Base], int], ...] = (_sign_penalty,)
+    _internal_indices: tuple[Index, ...]
+    _external_indices: tuple[Index, ...]
+
+    @classmethod
+    @abstractmethod
+    def factory(cls: type[Base], *args: Any, **kwargs: Any) -> Base:
+        """Factory method to create a new object.
+
+        Args:
+            args: Positional arguments to pass to the constructor.
+            kwargs: Keyword arguments to pass to the constructor.
+
+        Returns:
+            Algebraic object. In general, `factory` methods may return objects of a different type
+            to the class they are called on.
+        """
+        pass
 
     @property
     def is_leaf(self) -> bool:
@@ -238,16 +260,14 @@ class Base(Serialisable):
         return self
 
     @property
-    @abstractmethod
     def external_indices(self) -> tuple[Index, ...]:
         """Get the external indices (those that are not summed over)."""
-        pass
+        return self._external_indices
 
     @property
-    @abstractmethod
     def internal_indices(self) -> tuple[Index, ...]:
         """Get the internal indices (those that are summed over)."""
-        pass
+        return self._internal_indices
 
     @property
     def rank(self) -> int:
@@ -400,6 +420,8 @@ class Base(Serialisable):
             yield penalty(self)
         yield self._score
         yield getattr(self, "name", "~")
+        yield getattr(self, "symmetry", None) is not None
+        yield getattr(self, "symmetry", ())
         yield len(self._children) if self._children is not None else 0
         if self._children:
             yield from self._children
@@ -448,7 +470,7 @@ class Base(Serialisable):
         indent = max(indent, 2)
 
         def to_str(node: Base) -> str:
-            if node._children:
+            if node.children:
                 return node.__class__.__name__
             return str(node)
 
@@ -456,17 +478,17 @@ class Base(Serialisable):
             nonlocal result  # type: ignore[misc]
             connector = connectors[3 if is_last else 2] + connectors[0] * (indent - 2) + " "
             result += f"{prefix}{connector}{to_str(node)}\n"
-            if not node._children:
+            if not node.children:
                 return
             spacing = (connectors[1] if not is_last else " ") + " " * (indent - 1)
             next_prefix = f"{prefix}{spacing}"
-            for i, child in enumerate(node._children):
-                walk(child, next_prefix, i == len(node._children) - 1)
+            for i, child in enumerate(node.children):
+                walk(child, next_prefix, i == len(node.children) - 1)
 
         # Build the string representation
         result = f"{to_str(self)}\n"
-        for i, child in enumerate(self._children or []):
-            walk(child, "", i == len(self._children or []) - 1)
+        for i, child in enumerate(self.children or []):
+            walk(child, "", i == len(self.children or []) - 1)
 
         return result.rstrip()
 
@@ -499,3 +521,6 @@ class Base(Serialisable):
     def __neg__(self) -> Base:
         """Negate the object."""
         return -1 * self
+
+
+_INTERN_TABLE = InternTable[Base]()

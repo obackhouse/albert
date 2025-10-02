@@ -6,7 +6,7 @@ import re
 from numbers import Number
 from typing import TYPE_CHECKING
 
-from albert.algebra import _compose_mul
+from albert.algebra import Mul
 from albert.index import Index
 from albert.qc import ghf
 from albert.qc.tensor import QTensor
@@ -72,7 +72,7 @@ def import_from_pdaggerq(
         index_spaces = {}
 
     # Build the expression
-    expr: Base = Scalar(0.0)
+    expr: Base = Scalar.factory(0.0)
     for term in terms:
         # Convert the symbols
         symbols = [
@@ -88,7 +88,7 @@ def import_from_pdaggerq(
         # Remove the permutation operators
         perm_ops = filter(lambda symbol: isinstance(symbol, PermutationOperator), symbols)
         symbols = filter(lambda symbol: not isinstance(symbol, PermutationOperator), symbols)
-        part = _compose_mul(*symbols)
+        part = Mul.factory(*symbols)
         for perm_op in perm_ops:
             index_map = {
                 perm_op.external_indices[0]: perm_op.external_indices[1],
@@ -175,7 +175,7 @@ def _convert_symbol(
 
     if _is_number(symbol):
         # It's the factor
-        return Scalar(float(symbol))
+        return Scalar.factory(float(symbol))
 
     tensor_symbol: type[QTensor]
     index_strs: tuple[str, ...]

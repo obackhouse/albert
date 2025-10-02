@@ -29,7 +29,7 @@ def test_ccsd_energy():
     expr_ghf = expr_ghf.canonicalise()
     assert (
         repr(expr_ghf)
-        == "(0.5 * v(i,j,j,i)) + f(i,i) + (0.25 * t2(i,j,a,b) * v(i,j,a,b)) + (f(i,a) * t1(i,a)) + (0.5 * t1(i,a) * t1(j,b) * v(i,j,a,b))"
+        == "f(i,i) + (0.5 * v(i,j,j,i)) + (0.25 * t2(i,j,a,b) * v(i,j,a,b)) + (f(i,a) * t1(i,a)) + (0.5 * t1(i,a) * t1(j,b) * v(i,j,a,b))"
     )
     assert all(i.spin == None for i in expr_ghf.external_indices)
     assert all(i.spin == None for i in expr_ghf.internal_indices)
