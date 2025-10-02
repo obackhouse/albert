@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING, TypeVar, cast
 
-from albert.base import Base
-from albert.hashing import _INTERN_TABLE
+from albert.base import Base, _INTERN_TABLE
 
 if TYPE_CHECKING:
     from typing import Any, Optional
@@ -38,7 +37,7 @@ class Scalar(Base):
         self._external_indices = ()
 
     @classmethod
-    def factory(cls: type[Scalar], value: float) -> Base:
+    def factory(cls: type[Scalar], value: float) -> Scalar:
         """Factory method to create a new object.
 
         Args:
@@ -63,7 +62,7 @@ class Scalar(Base):
         def create() -> Scalar:
             return cls(value)
 
-        return _INTERN_TABLE.get(key, create)
+        return cast(Scalar, _INTERN_TABLE.get(key, create))
 
     @property
     def value(self) -> float:

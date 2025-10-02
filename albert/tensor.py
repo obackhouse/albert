@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING, TypeVar, cast
 
 from albert.algebra import Add, Mul
-from albert.base import Base
+from albert.base import Base, _INTERN_TABLE
 from albert.index import Index
 from albert.scalar import Scalar
-from albert.hashing import _INTERN_TABLE
 
 if TYPE_CHECKING:
     from typing import Any, Optional
@@ -62,7 +61,7 @@ class Tensor(Base):
         *indices: Index,
         name: Optional[str] = None,
         symmetry: Optional[Symmetry] = None,
-    ) -> Base:
+    ) -> Tensor:
         """Factory method to create a new object.
 
         Args:
@@ -83,7 +82,7 @@ class Tensor(Base):
         def create() -> Tensor:
             return cls(*indices, name=name, symmetry=symmetry)
 
-        return _INTERN_TABLE.get(key, create)
+        return cast(Tensor, _INTERN_TABLE.get(key, create))
 
     @property
     def indices(self) -> tuple[Index, ...]:

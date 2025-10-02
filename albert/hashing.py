@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import threading
 import weakref
-from typing import TYPE_CHECKING, TypeVar, Generic
+from typing import TYPE_CHECKING, Generic, TypeVar, Any
 
 if TYPE_CHECKING:
-    from typing import Hashable
+    from typing import Callable, Hashable
+
+    from albert.base import Base
 
 T = TypeVar("T")
 
@@ -15,12 +17,14 @@ T = TypeVar("T")
 class InternTable(Generic[T]):
     """A thread-safe table for interning objects."""
 
-    def __init__(self):
+    _table: weakref.WeakValueDictionary[Hashable, T]
+
+    def __init__(self) -> None:
         """Initialise the intern table."""
-        self._table: weakref.WeakValueDictionary[Hashable, T] = weakref.WeakValueDictionary()
+        self._table = weakref.WeakValueDictionary()
         self._lock = threading.RLock()
 
-    def get(self, key: Hashable, factory: callable[[], T]) -> T:
+    def get(self, key: Hashable, factory: Callable[..., T]) -> T:
         """Get an object from the table, creating it if necessary.
 
         Args:
@@ -36,5 +40,3 @@ class InternTable(Generic[T]):
                 obj = factory()
                 self._table[key] = obj
             return obj
-
-_INTERN_TABLE = InternTable[T]()

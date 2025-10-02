@@ -6,6 +6,8 @@ from abc import ABC, abstractmethod
 from enum import Enum
 from typing import TYPE_CHECKING, Callable, Optional, TypeVar, cast
 
+from albert.hashing import InternTable
+
 if TYPE_CHECKING:
     from typing import Any, Iterable
 
@@ -418,7 +420,8 @@ class Base(Serialisable):
             yield penalty(self)
         yield self._score
         yield getattr(self, "name", "~")
-        yield getattr(self, "symmetry", None)
+        yield getattr(self, "symmetry", None) is not None
+        yield getattr(self, "symmetry", ())
         yield len(self._children) if self._children is not None else 0
         if self._children:
             yield from self._children
@@ -518,3 +521,6 @@ class Base(Serialisable):
     def __neg__(self) -> Base:
         """Negate the object."""
         return -1 * self
+
+
+_INTERN_TABLE = InternTable[Base]()

@@ -8,12 +8,11 @@ from functools import reduce
 from typing import TYPE_CHECKING, TypeVar
 
 from albert import ALLOW_NON_EINSTEIN_NOTATION
-from albert.base import Base
+from albert.base import Base, _INTERN_TABLE
 from albert.scalar import Scalar
-from albert.hashing import _INTERN_TABLE
 
 if TYPE_CHECKING:
-    from typing import Any, Callable, Iterable
+    from typing import Any, Iterable
 
     from albert.index import Index
     from albert.types import _AlgebraicJSON
@@ -269,7 +268,7 @@ class Add(Algebraic):
         # Build a key for interning
         key = (cls, value, tuple(other))  # Commutative but not canonical
 
-        def create() -> Add:
+        def create() -> Base:
             if not other:
                 return cls(cls_scalar.factory(value))
             if abs(value) < 1e-12:
@@ -398,7 +397,7 @@ class Mul(Algebraic):
         # Build a key for interning
         key = (cls, value, tuple(other))  # Commutative but not canonical
 
-        def create() -> Mul:
+        def create() -> Base:
             if not other:
                 return cls(cls_scalar.factory(value))
             if abs(value - 1.0) < 1e-12:

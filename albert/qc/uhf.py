@@ -14,6 +14,7 @@ if TYPE_CHECKING:
 
     from albert.base import Base
     from albert.index import Index
+    from albert.qc.rhf import RTensor
 
 
 class UTensor(QTensor):
@@ -269,7 +270,7 @@ class RDM2(UTensor):
 
 def _amplitude_as_rhf(
     amp: UTensor,
-    type_rhf: type[UTensor],
+    type_rhf: type[RTensor],
     covariant: int,
     contravariant: int,
 ) -> Base:
@@ -319,7 +320,7 @@ def _amplitude_as_rhf(
 
 def _t4_as_rhf(
     amp: UTensor,
-    type_rhf: type[UTensor],
+    type_rhf: type[RTensor],
     covariant: int,
     contravariant: int,
 ) -> Base:
