@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, TypeVar
 
 from albert.base import Base
+from albert.hashing import _INTERN_TABLE
 
 if TYPE_CHECKING:
     from typing import Any, Optional
@@ -17,21 +18,14 @@ T = TypeVar("T", bound=Base)
 _ZERO = 1e-12
 
 
-def _compose_scalar(value: float) -> Scalar:
-    """Compose a scalar."""
-    if abs(value) < _ZERO:
-        return Scalar(0)
-    if abs(value % 1) < _ZERO:
-        return Scalar(int(value))
-    return Scalar(value)
-
-
 class Scalar(Base):
     """Class for a scalar.
 
     Args:
         value: Value of the scalar.
     """
+
+    __slots__ = ("_value", "_hash", "_children", "_internal_indices", "_external_indices")
 
     _score = 1
 
@@ -40,21 +34,41 @@ class Scalar(Base):
         self._value = value
         self._hash = None
         self._children = None
+        self._internal_indices = ()
+        self._external_indices = ()
+
+    @classmethod
+    def factory(cls: type[Scalar], value: float) -> Base:
+        """Factory method to create a new object.
+
+        Args:
+            value: Value of the scalar.
+
+        Returns:
+            Algebraic object. In general, `factory` methods may return objects of a different type
+            to the class they are called on.
+        """
+        if not issubclass(cls, Scalar):
+            raise TypeError(f"cls must be a subclass of Scalar, got {cls}")
+
+        # Perform some basic simplifications
+        if abs(value) < _ZERO:
+            value = 0.0
+        elif abs(value % 1) < _ZERO:
+            value = int(value)
+
+        # Build a key for interning
+        key = (cls, value)
+
+        def create() -> Scalar:
+            return cls(value)
+
+        return _INTERN_TABLE.get(key, create)
 
     @property
     def value(self) -> float:
         """Get the value of the scalar."""
         return self._value
-
-    @property
-    def external_indices(self) -> tuple[Index, ...]:
-        """Get the external indices (those that are not summed over)."""
-        return ()
-
-    @property
-    def internal_indices(self) -> tuple[Index, ...]:
-        """Get the internal indices (those that are summed over)."""
-        return ()
 
     @property
     def disjoint(self) -> bool:
@@ -182,15 +196,15 @@ class Scalar(Base):
     def __add__(self, other: Base | float) -> Scalar:
         """Add two objects."""
         if isinstance(other, (int, float)):
-            other = _compose_scalar(other)
+            other = self.factory(other)
         if isinstance(other, Scalar):
-            return _compose_scalar(self.value + other.value)
+            return self.factory(self.value + other.value)
         return NotImplemented
 
     def __mul__(self, other: Base | float) -> Scalar:
         """Multiply two objects."""
         if isinstance(other, (int, float)):
-            other = _compose_scalar(other)
+            other = self.factory(other)
         if isinstance(other, Scalar):
-            return _compose_scalar(self.value * other.value)
+            return self.factory(self.value * other.value)
         return NotImplemented

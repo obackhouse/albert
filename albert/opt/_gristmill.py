@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from albert import _default_sizes
-from albert.algebra import _compose_mul
+from albert.algebra import Mul
 from albert.expression import Expression
 from albert.index import Index
 from albert.scalar import Scalar
@@ -200,7 +200,7 @@ def optimise_gristmill(
                     for i in atom.indices
                 ]
                 args.append(cls(*inds, name=base.name, symmetry=symmetries.get(base)))
-            expr_i += _compose_mul(factor, *args)
+            expr_i += Mul.factory(factor, *args)
         exprs.append(Expression(output, expr_i))
 
     return exprs

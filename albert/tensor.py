@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, TypeVar
 
-from albert.algebra import Add, Mul, _compose_add, _compose_mul
+from albert.algebra import Add, Mul
 from albert.base import Base
 from albert.index import Index
 from albert.scalar import Scalar
+from albert.hashing import _INTERN_TABLE
 
 if TYPE_CHECKING:
     from typing import Any, Optional
@@ -26,7 +27,15 @@ class Tensor(Base):
         name: Name of the tensor.
     """
 
-    __slots__ = ("_indices", "_name", "_symmetry", "_hash", "_children")
+    __slots__ = (
+        "_indices",
+        "_name",
+        "_symmetry",
+        "_hash",
+        "_children",
+        "_internal_indices",
+        "_external_indices",
+    )
 
     _score = 0
 
@@ -43,6 +52,39 @@ class Tensor(Base):
         self._hash = None
         self._children = None
 
+        # Precompute indices
+        self._external_indices = tuple(index for index in indices if indices.count(index) == 1)
+        self._internal_indices = tuple(index for index in indices if indices.count(index) > 1)
+
+    @classmethod
+    def factory(
+        cls: type[Tensor],
+        *indices: Index,
+        name: Optional[str] = None,
+        symmetry: Optional[Symmetry] = None,
+    ) -> Base:
+        """Factory method to create a new object.
+
+        Args:
+            indices: Indices of the tensor.
+            name: Name of the tensor.
+            symmetry: Symmetry of the tensor.
+
+        Returns:
+            Algebraic object. In general, `factory` methods may return objects of a different type
+            to the class they are called on.
+        """
+        if not issubclass(cls, Tensor):
+            raise TypeError(f"cls must be a subclass of Tensor, got {cls}")
+
+        # Build a key for interning
+        key = (cls, indices, name, symmetry)
+
+        def create() -> Tensor:
+            return cls(*indices, name=name, symmetry=symmetry)
+
+        return _INTERN_TABLE.get(key, create)
+
     @property
     def indices(self) -> tuple[Index, ...]:
         """Get the indices of the object."""
@@ -57,16 +99,6 @@ class Tensor(Base):
     def symmetry(self) -> Optional[Symmetry]:
         """Get the symmetry of the object."""
         return self._symmetry
-
-    @property
-    def external_indices(self) -> tuple[Index, ...]:
-        """Get the external indices (those that are not summed over)."""
-        return tuple(index for index in self.indices if self.indices.count(index) == 1)
-
-    @property
-    def internal_indices(self) -> tuple[Index, ...]:
-        """Get the internal indices (those that are summed over)."""
-        return tuple(index for index in self.indices if self.indices.count(index) > 1)
 
     @property
     def disjoint(self) -> bool:
@@ -247,13 +279,13 @@ class Tensor(Base):
         if isinstance(other, (int, float)):
             other = Scalar(other)
         if isinstance(other, Add):
-            return _compose_add(self, *other.children)
-        return _compose_add(self, other)
+            return Add.factory(self, *other.children)
+        return Add.factory(self, other)
 
     def __mul__(self, other: Base | float) -> Base:
         """Multiply two objects."""
         if isinstance(other, (int, float)):
             other = Scalar(other)
         if isinstance(other, Mul):
-            return _compose_mul(self, *other.children)
-        return _compose_mul(self, other)
+            return Mul.factory(self, *other.children)
+        return Mul.factory(self, other)

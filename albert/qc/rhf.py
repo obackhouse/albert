@@ -10,7 +10,28 @@ from albert.symmetry import Permutation, Symmetry, symmetric_group
 if TYPE_CHECKING:
     from typing import Optional
 
+    from albert.base import Base
     from albert.index import Index
+
+
+class RTensor(QTensor):
+    """Base class for RHF tensors.
+
+    Args:
+        indices: Indices of the tensor.
+        name: Name of the tensor.
+        symmetry: Symmetry of the tensor.
+    """
+
+    def as_rhf(self) -> Base:
+        """Convert the indices with spin to indices without spin.
+
+        Indices that are returned without spin are spatial orbitals.
+
+        Returns:
+            Tensor resulting from the conversion.
+        """
+        return self
 
 
 class Fock(QTensor):

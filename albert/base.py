@@ -73,6 +73,9 @@ class Serialisable(ABC):
             return True
         if not isinstance(other, Serialisable):
             return False
+        if self._hash is not None and other._hash is not None:
+            if self._hash != other._hash:
+                return False
         for a, b in zip(self._hashable_fields(), other._hashable_fields()):
             if a != b:
                 return False
@@ -140,6 +143,23 @@ class Base(Serialisable):
     _score: int
     _children: Optional[tuple[Base, ...]]
     _penalties: tuple[Callable[[Base], int], ...] = (_sign_penalty,)
+    _internal_indices: tuple[Index, ...]
+    _external_indices: tuple[Index, ...]
+
+    @classmethod
+    @abstractmethod
+    def factory(cls: type[Base], *args: Any, **kwargs: Any) -> Base:
+        """Factory method to create a new object.
+
+        Args:
+            args: Positional arguments to pass to the constructor.
+            kwargs: Keyword arguments to pass to the constructor.
+
+        Returns:
+            Algebraic object. In general, `factory` methods may return objects of a different type
+            to the class they are called on.
+        """
+        pass
 
     @property
     def is_leaf(self) -> bool:
@@ -238,16 +258,14 @@ class Base(Serialisable):
         return self
 
     @property
-    @abstractmethod
     def external_indices(self) -> tuple[Index, ...]:
         """Get the external indices (those that are not summed over)."""
-        pass
+        return self._external_indices
 
     @property
-    @abstractmethod
     def internal_indices(self) -> tuple[Index, ...]:
         """Get the internal indices (those that are summed over)."""
-        pass
+        return self._internal_indices
 
     @property
     def rank(self) -> int:
@@ -400,6 +418,7 @@ class Base(Serialisable):
             yield penalty(self)
         yield self._score
         yield getattr(self, "name", "~")
+        yield getattr(self, "symmetry", None)
         yield len(self._children) if self._children is not None else 0
         if self._children:
             yield from self._children

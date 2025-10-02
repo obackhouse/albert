@@ -114,6 +114,7 @@ class Symmetry(Serialisable):
     def __init__(self, *permutations: Permutation):
         """Initialise the symmetry."""
         self._permutations = permutations
+        self._hash = None
 
     @property
     def permutations(self) -> tuple[Permutation, ...]:
