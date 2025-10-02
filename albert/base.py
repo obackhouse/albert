@@ -127,11 +127,11 @@ def _sign_penalty(base: Base) -> int:
     Returns:
         Penalty for the sign.
     """
-    if not base._children:
+    if not base.children:
         return 0
     penalty = 1
-    if base._children:
-        for child in base._children:
+    if base.children:
+        for child in base.children:
             if hasattr(child, "value"):
                 penalty *= 1 if getattr(child, "value") < 0 else -1
     return penalty
@@ -467,7 +467,7 @@ class Base(Serialisable):
         indent = max(indent, 2)
 
         def to_str(node: Base) -> str:
-            if node._children:
+            if node.children:
                 return node.__class__.__name__
             return str(node)
 
@@ -475,17 +475,17 @@ class Base(Serialisable):
             nonlocal result  # type: ignore[misc]
             connector = connectors[3 if is_last else 2] + connectors[0] * (indent - 2) + " "
             result += f"{prefix}{connector}{to_str(node)}\n"
-            if not node._children:
+            if not node.children:
                 return
             spacing = (connectors[1] if not is_last else " ") + " " * (indent - 1)
             next_prefix = f"{prefix}{spacing}"
-            for i, child in enumerate(node._children):
-                walk(child, next_prefix, i == len(node._children) - 1)
+            for i, child in enumerate(node.children):
+                walk(child, next_prefix, i == len(node.children) - 1)
 
         # Build the string representation
         result = f"{to_str(self)}\n"
-        for i, child in enumerate(self._children or []):
-            walk(child, "", i == len(self._children or []) - 1)
+        for i, child in enumerate(self.children or []):
+            walk(child, "", i == len(self.children or []) - 1)
 
         return result.rstrip()
 

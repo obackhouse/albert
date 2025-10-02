@@ -712,7 +712,7 @@ def optimise(
         right = _check_memo(intermediates, right, memo)
 
         # Rewrite the expression
-        term = Scalar.factory(float(biclique.coefficient)) * left * right
+        term = Mul.factory(Scalar.factory(float(biclique.coefficient)), left, right)
         term = canonicalise_exhaustive(term)
         expressions = [rewrite_with_constriction(e, graph, biclique, term) for e in expressions]
         for tensor in intermediates:
