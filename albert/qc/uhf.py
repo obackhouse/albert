@@ -314,7 +314,7 @@ def _amplitude_as_rhf(
             UTensor,  # noqa: B023
         )
 
-    return sum(amps, Scalar(0.0))
+    return sum(amps, Scalar.factory(0.0))
 
 
 def _t4_as_rhf(
@@ -380,7 +380,7 @@ def _t4_as_rhf(
             UTensor,  # noqa: B023
         )
 
-    return sum(amps, Scalar(0.0))
+    return sum(amps, Scalar.factory(0.0))
 
 
 class T1(UTensor):

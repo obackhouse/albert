@@ -100,10 +100,10 @@ def combine_expressions(exprs: list[Expression]) -> list[Expression]:
         The total expression with the combined tensors, for each distinct output tensor.
     """
     # Get the factors of the unique expressions
-    expr_factors: dict[Expression, Scalar] = defaultdict(lambda: Scalar(0.0))
+    expr_factors: dict[Expression, Scalar] = defaultdict(lambda: Scalar.factory(0.0))
     for expr in exprs:
         for mul in expr.rhs.expand().children:
-            factor = Scalar(1.0)
+            factor = Scalar.factory(1.0)
             tensors = []
             for leaf in mul.children:
                 if isinstance(leaf, Scalar):

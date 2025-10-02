@@ -86,7 +86,7 @@ def uhf_to_rhf(expr: Base, canonicalise: bool = True) -> Base:
     expr = expr.expand()
 
     # Loop over leaves of the expression tree
-    new_expr: Base = Scalar(0)
+    new_expr: Base = Scalar.factory(0)
     for mul in expr.children:
         leaves: list[Base] = []
         for leaf in mul.children:
@@ -122,7 +122,7 @@ def ghf_to_rhf(expr: Base, canonicalise: bool = True) -> Base:
     uhf_exprs = ghf_to_uhf(expr, target_rhf=True, canonicalise=canonicalise)
 
     # Convert to RHF
-    rhf_exprs = sum((uhf_to_rhf(expr, canonicalise=canonicalise) for expr in uhf_exprs), Scalar(0))
+    rhf_exprs = sum((uhf_to_rhf(expr, canonicalise=canonicalise) for expr in uhf_exprs), Scalar.factory(0))
 
     return rhf_exprs
 

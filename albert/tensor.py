@@ -277,7 +277,7 @@ class Tensor(Base):
     def __add__(self, other: Base | float) -> Base:
         """Add two objects."""
         if isinstance(other, (int, float)):
-            other = Scalar(other)
+            other = Scalar.factory(other)
         if isinstance(other, Add):
             return Add.factory(self, *other.children)
         return Add.factory(self, other)
@@ -285,7 +285,7 @@ class Tensor(Base):
     def __mul__(self, other: Base | float) -> Base:
         """Multiply two objects."""
         if isinstance(other, (int, float)):
-            other = Scalar(other)
+            other = Scalar.factory(other)
         if isinstance(other, Mul):
             return Mul.factory(self, *other.children)
         return Mul.factory(self, other)

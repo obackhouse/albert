@@ -184,9 +184,9 @@ def optimise_gristmill(
         output = cls(*inds, name=base.name, symmetry=symmetries.get(base))
 
         # Convert the RHS
-        expr_i = Scalar(0.0)
+        expr_i = Scalar.factory(0.0)
         for amp in [t.amp for t in term.rhs_terms]:
-            factor = Scalar(float(sympy.prod(amp.atoms(sympy.Number))))
+            factor = Scalar.factory(float(sympy.prod(amp.atoms(sympy.Number))))
             args: list[Tensor] = []
             for i, atom in enumerate(amp.atoms(sympy.Indexed)):
                 base = atom.base

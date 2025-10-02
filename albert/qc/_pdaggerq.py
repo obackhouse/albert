@@ -72,7 +72,7 @@ def import_from_pdaggerq(
         index_spaces = {}
 
     # Build the expression
-    expr: Base = Scalar(0.0)
+    expr: Base = Scalar.factory(0.0)
     for term in terms:
         # Convert the symbols
         symbols = [
@@ -175,7 +175,7 @@ def _convert_symbol(
 
     if _is_number(symbol):
         # It's the factor
-        return Scalar(float(symbol))
+        return Scalar.factory(float(symbol))
 
     tensor_symbol: type[QTensor]
     index_strs: tuple[str, ...]

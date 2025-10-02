@@ -108,7 +108,7 @@ class Algebraic(Base):
         collected: dict[tuple[Base, ...], Scalar] = defaultdict(Scalar)
         for mul in expanded.children:
             parts: list[Base] = []
-            factor = Scalar(1.0)
+            factor = Scalar.factory(1.0)
             if mul.children:
                 for child in mul.children:
                     if isinstance(child, Scalar):
