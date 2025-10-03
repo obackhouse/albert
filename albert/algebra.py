@@ -8,12 +8,13 @@ from functools import reduce
 from typing import TYPE_CHECKING, TypeVar
 
 from albert import ALLOW_NON_EINSTEIN_NOTATION
-from albert.base import _INTERN_TABLE, Base
+from albert.base import _INTERN_TABLE, Base, _matches_filter
 from albert.scalar import Scalar
 
 if TYPE_CHECKING:
     from typing import Any, Iterable
 
+    from albert.base import TypeOrFilter
     from albert.index import Index
     from albert.types import _AlgebraicJSON
 
@@ -34,8 +35,6 @@ def _check_indices(children: Iterable[Base]) -> dict[Index, int]:
     """
     counts: dict[Index, int] = defaultdict(int)
     for child in children:
-        for index in child.internal_indices:
-            counts[index] += 1
         for index in child.external_indices:
             counts[index] += 1
     if any(count > 2 for count in counts.values()) and not ALLOW_NON_EINSTEIN_NOTATION:
@@ -279,6 +278,27 @@ class Add(Algebraic):
 
         return _INTERN_TABLE.get(key, create)
 
+    def delete(
+        self,
+        type_filter: TypeOrFilter[Base],
+    ) -> Base:
+        """Delete nodes (set its value to zero) matching a type filter.
+
+        Args:
+            type_filter: Type of node to delete.
+
+        Returns:
+            Object after deleting nodes (if applicable).
+        """
+        children = [
+            child.delete(type_filter)
+            for child in self.children
+            if not _matches_filter(child, type_filter)
+        ]
+        if not _matches_filter(self, type_filter):
+            return self.factory(*children)
+        return Scalar.factory(0.0)
+
     @property
     def disjoint(self) -> bool:
         """Return whether the object is disjoint."""
@@ -407,6 +427,25 @@ class Mul(Algebraic):
             return cls(cls_scalar.factory(value), *other)
 
         return _INTERN_TABLE.get(key, create)
+
+    def delete(
+        self,
+        type_filter: TypeOrFilter[Base],
+    ) -> Base:
+        """Delete nodes (set its value to zero) matching a type filter.
+
+        Args:
+            type_filter: Type of node to delete.
+
+        Returns:
+            Object after deleting nodes (if applicable).
+        """
+        if any(_matches_filter(child, type_filter) for child in self.children):
+            return Scalar.factory(0.0)
+        children = [child.delete(type_filter) for child in self.children]
+        if not _matches_filter(self, type_filter):
+            return self.factory(*children)
+        return Scalar.factory(0.0)
 
     @property
     def disjoint(self) -> bool:

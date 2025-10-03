@@ -5,13 +5,14 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, TypeVar, cast
 
 from albert.algebra import Add, Mul
-from albert.base import _INTERN_TABLE, Base
+from albert.base import _INTERN_TABLE, Base, _matches_filter
 from albert.index import Index
 from albert.scalar import Scalar
 
 if TYPE_CHECKING:
     from typing import Any, Optional
 
+    from albert.base import TypeOrFilter
     from albert.symmetry import Permutation, Symmetry
     from albert.types import _TensorJSON
 
@@ -83,6 +84,20 @@ class Tensor(Base):
             return cls(*indices, name=name, symmetry=symmetry)
 
         return cast(Tensor, _INTERN_TABLE.get(key, create))
+
+    def delete(
+        self,
+        type_filter: TypeOrFilter[Base],
+    ) -> Base:
+        """Delete nodes (set its value to zero) matching a type filter.
+
+        Args:
+            type_filter: Type of node to delete.
+
+        Returns:
+            Object after deleting nodes (if applicable).
+        """
+        return Scalar.factory(0.0) if _matches_filter(self, type_filter) else self
 
     @property
     def indices(self) -> tuple[Index, ...]:
