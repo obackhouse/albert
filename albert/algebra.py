@@ -35,8 +35,6 @@ def _check_indices(children: Iterable[Base]) -> dict[Index, int]:
     """
     counts: dict[Index, int] = defaultdict(int)
     for child in children:
-        for index in child.internal_indices:
-            counts[index] += 1
         for index in child.external_indices:
             counts[index] += 1
     if any(count > 2 for count in counts.values()) and not ALLOW_NON_EINSTEIN_NOTATION:
