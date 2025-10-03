@@ -259,6 +259,29 @@ class Base(Serialisable):
             return function(cast(T, self))
         return self
 
+    @abstractmethod
+    def delete(
+        self,
+        type_filter: TypeOrFilter[Base],
+    ) -> Base:
+        """Delete nodes (set its value to zero) matching a type filter.
+
+        Args:
+            type_filter: Type of node to delete.
+
+        Returns:
+            Object after deleting nodes (if applicable).
+        """
+        pass
+        #if self.children:
+        #    children = tuple(
+        #        child.delete(type_filter)
+        #        for child in self.children if not _matches_filter(child, type_filter)
+        #    )
+        #if not _matches_filter(self, type_filter):
+        #    return self.copy(*children) if self.children else self
+        #return self.factory()  # Can only trigger for uppermost node, no index issues
+
     @property
     def external_indices(self) -> tuple[Index, ...]:
         """Get the external indices (those that are not summed over)."""

@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, TypeVar, cast
 
-from albert.base import _INTERN_TABLE, Base
+from albert.base import _INTERN_TABLE, Base, _matches_filter
 
 if TYPE_CHECKING:
     from typing import Any, Optional
 
     from albert.index import Index
     from albert.types import _ScalarJSON
+    from albert.base import TypeOrFilter
 
 T = TypeVar("T", bound=Base)
 
@@ -63,6 +64,20 @@ class Scalar(Base):
             return cls(value)
 
         return cast(Scalar, _INTERN_TABLE.get(key, create))
+
+    def delete(
+        self,
+        type_filter: TypeOrFilter[Base],
+    ) -> Base:
+        """Delete nodes (set its value to zero) matching a type filter.
+
+        Args:
+            type_filter: Type of node to delete.
+
+        Returns:
+            Object after deleting nodes (if applicable).
+        """
+        return Scalar.factory(0.0) if _matches_filter(self, type_filter) else self
 
     @property
     def value(self) -> float:
