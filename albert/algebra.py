@@ -292,7 +292,8 @@ class Add(Algebraic):
         """
         children = [
             child.delete(type_filter)
-            for child in self.children if not _matches_filter(child, type_filter)
+            for child in self.children
+            if not _matches_filter(child, type_filter)
         ]
         if not _matches_filter(self, type_filter):
             return self.factory(*children)

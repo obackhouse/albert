@@ -9,9 +9,9 @@ from albert.base import _INTERN_TABLE, Base, _matches_filter
 if TYPE_CHECKING:
     from typing import Any, Optional
 
+    from albert.base import TypeOrFilter
     from albert.index import Index
     from albert.types import _ScalarJSON
-    from albert.base import TypeOrFilter
 
 T = TypeVar("T", bound=Base)
 
