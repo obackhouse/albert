@@ -6,14 +6,15 @@ import itertools
 import warnings
 from typing import TYPE_CHECKING, cast
 
+import cotengra
+import opt_einsum
+
 from albert import _default_sizes
 from albert.algebra import Mul
 from albert.tensor import Tensor
 
 if TYPE_CHECKING:
     from typing import Any, Generator, Optional
-
-    import cotengra
 
     from albert.index import Index
 
@@ -61,12 +62,16 @@ def _get_inputs_and_output(
 def find_optimal_path(
     expr: Mul,
     sizes: Optional[dict[str | None, int]] = None,
+    max_cpu_scaling: dict[tuple[str, ...], int] | None = None,
+    max_ram_scaling: dict[tuple[str, ...], int] | None = None,
 ) -> cotengra.ContractionTree:
     """Find the optimal path for a tensor product.
 
     Args:
         expr: The product to parenthesise.
         sizes: The sizes of the spaces in the expression.
+        max_cpu_scaling: The maximum CPU scaling for the spaces in the expression.
+        max_ram_scaling: The maximum RAM scaling for the spaces in the expression.
 
     Returns:
         The optimal contraction tree.
@@ -75,17 +80,83 @@ def find_optimal_path(
     if sizes is None:
         sizes = _default_sizes
 
-    import cotengra
-
     # Expand the product
     if not isinstance(expr, Mul):
         raise TypeError("Expression must be a Mul.")
     (expr,) = cast(tuple[Mul], expr.expand().children)
 
+    # Get constrained cost function
+    sizes_dummy = dict(zip(sizes.keys(), itertools.count(1, 1)))
+    dummy_map = {v: k for k, v in sizes_dummy.items()}
+    sizes_map = {sizes_dummy[k]: sizes[k] for k in sizes_dummy}
+
+    def cost(
+        cost1: int,
+        cost2: int,
+        i1_union_i2: set[int],
+        size_dict: list[int],
+        cost_cap: int,
+        s1: int,
+        s2: int,
+        xn: dict[int, Any],
+        g: int,
+        all_tensors: int,
+        inputs: list[set[int]],
+        i1_cut_i2_wo_output: set[int],
+        memory_limit: Optional[int],
+        contract1: int | tuple[int],
+        contract2: int | tuple[int],
+    ) -> None:
+        # Get the cost scaling
+        scaling: dict[str | None, int] = {}
+        for i in i1_union_i2:
+            c = dummy_map[size_dict[i]]
+            scaling[c] = scaling.get(c, 0) + 1
+
+        # Check the cost scaling
+        if max_cpu_scaling is not None:
+            for cs, n in max_cpu_scaling.items():
+                if sum(scaling.get(c, 0) for c in cs) > n:
+                    return
+
+        # Get the real cost
+        size_dict_real = [sizes_map[i] for i in size_dict]
+        cost = cost1 + cost2 + opt_einsum.paths.compute_size_by_dict(i1_union_i2, size_dict_real)
+
+        # Check the real cost
+        if cost <= cost_cap:
+            s = s1 | s2
+            if s not in xn or cost < xn[s][1]:
+                i_mem = opt_einsum.paths._dp_calc_legs(
+                    g, all_tensors, s, inputs, i1_cut_i2_wo_output, i1_union_i2
+                )
+
+                # Get the memory scaling
+                scaling = {}
+                for i in i_mem:
+                    c = dummy_map[size_dict[i]]
+                    scaling[c] = scaling.get(c, 0) + 1
+
+                # Check the memory scaling
+                if max_ram_scaling is not None:
+                    for cs, n in max_ram_scaling.items():
+                        if sum(scaling.get(c, 0) for c in cs) > n:
+                            return
+
+                # Get the real memory
+                mem = opt_einsum.paths.compute_size_by_dict(i_mem, size_dict_real)
+
+                # Check the real memory
+                if memory_limit is None or mem <= memory_limit:
+                    # Accept this contraction
+                    xn[s] = (i_mem, cost, (contract1, contract2))
+
     # Optimise the contraction path
-    inputs, output, sizes = _get_inputs_and_output(expr, sizes)
-    opt = cotengra.OptimalOptimizer()
-    tree = opt.search(inputs, output, sizes)
+    optimizer = opt_einsum.DynamicProgramming(minimize=cost)
+    inputs, output, _sizes = _get_inputs_and_output(expr, sizes_dummy)
+    _, _, index_sizes = _get_inputs_and_output(expr, sizes)
+    path = optimizer(inputs, output, _sizes)
+    tree = cotengra.ContractionTree.from_path(inputs, output, index_sizes, path=path)
 
     return tree
 
@@ -114,8 +185,6 @@ def generate_paths_exhaustive(
         )
     if sizes is None:
         sizes = _default_sizes
-
-    import cotengra
 
     def _recurse(path: list[T], n: int) -> Generator[list[T], None, None]:
         if n == 1:
@@ -156,8 +225,6 @@ def generate_paths_approximate(
         return
     if sizes is None:
         sizes = _default_sizes
-
-    import cotengra
 
     # Get trial paths
     inputs, output, sizes = _get_inputs_and_output(expr, sizes)
