@@ -16,7 +16,7 @@ from albert import _default_sizes
 from albert.algebra import Add, Mul
 from albert.canon import canonicalise_exhaustive, canonicalise_indices
 from albert.expression import Expression
-from albert.opt.parenth import generate_paths
+from albert.opt.parenth import find_optimal_path, generate_paths
 from albert.opt.tools import count_flops
 from albert.scalar import Scalar
 from albert.tensor import Tensor
@@ -209,6 +209,8 @@ def build_bipartite_subgraphs(
     *exprs: Expression,
     sizes: dict[str | None, int] | None = None,
     max_samples: int = 8,
+    max_cpu_scaling: dict[tuple[str, ...], int] | None = None,
+    max_ram_scaling: dict[tuple[str, ...], int] | None = None,
     **opt_kwargs: Any,
 ) -> dict[IndexPartition, nx.Graph]:
     """Build bipartite graphs for each partition of indices from the expressions.
@@ -217,10 +219,16 @@ def build_bipartite_subgraphs(
         *exprs: The expressions to build the graphs from.
         sizes: The sizes of the spaces in the expression.
         max_samples: The maximum number of samples to use when building the graphs.
+        max_cpu_scaling: The maximum CPU scaling for the spaces in the expression.
+        max_ram_scaling: The maximum RAM scaling for the spaces in the expression.
         **opt_kwargs: Additional keyword arguments for the optimization.
 
     Returns:
         A mapping from index partitions to bipartite graphs.
+
+    Note:
+        Multiple path sample is currently only supported when both ``max_cpu_scaling`` and
+        ``max_ram_scaling`` are ``None``.
     """
     graphs: dict[IndexPartition, nx.Graph] = {}
     for expr in exprs:
@@ -232,7 +240,20 @@ def build_bipartite_subgraphs(
             scalar = prod([s.value for s in mul.search(Scalar)])
 
             # Get the contraction trees
-            trees = list(generate_paths(mul, sizes=sizes, max_samples=max_samples, **opt_kwargs))
+            if max_cpu_scaling is None and max_ram_scaling is None:
+                trees = list(
+                    generate_paths(mul, sizes=sizes, max_samples=max_samples, **opt_kwargs)
+                )
+            else:
+                trees = [
+                    find_optimal_path(
+                        mul,
+                        sizes=sizes,
+                        max_cpu_scaling=max_cpu_scaling,
+                        max_ram_scaling=max_ram_scaling,
+                        **opt_kwargs,
+                    )
+                ]
             paths = [tree.get_path() for tree in trees]
             costs = [tree.total_flops(log=None) for tree in trees]
             best_cost = min(costs) if costs else 0.0
@@ -607,7 +628,6 @@ def renumber_intermediates(
 def _canonicalise_expression(expr: Expression, indices: list[Index]) -> Expression:
     """Canonicalise an expression."""
     rhs_canon = canonicalise_indices(expr.rhs.canonicalise(), extra_indices=indices)
-    rhs_canon = Add.factory(*[canonicalise_exhaustive(mul) for mul in rhs_canon.expand().children])
     index_map = dict(zip(expr.lhs.external_indices, rhs_canon.external_indices))
     lhs_canon = expr.lhs.map_indices(index_map)
     return Expression(lhs_canon, rhs_canon.collect())
@@ -641,6 +661,8 @@ def optimise(
     intermediate_format: str = "__im{}__",
     max_path_samples: int = 16,
     max_bicliques: int = 4,
+    max_cpu_scaling: dict[tuple[str, ...], int] | None = None,
+    max_ram_scaling: dict[tuple[str, ...], int] | None = None,
 ) -> list[Expression]:
     """Optimise an expression by identifying and factoring out common subexpressions.
 
@@ -650,10 +672,16 @@ def optimise(
         intermediate_format: The format string for naming intermediate tensors.
         max_path_samples: The maximum number of samples to use when building the graphs.
         max_bicliques: The maximum number of bicliques to check.
+        max_cpu_scaling: The maximum CPU scaling for the spaces in the expression.
+        max_ram_scaling: The maximum RAM scaling for the spaces in the expression.
 
     Returns:
         A list of expressions including the original expression rewritten in terms of
         intermediates.
+
+    Note:
+        Multiple path sampling is currently only supported when both ``max_cpu_scaling`` and
+        ``max_ram_scaling`` are ``None``.
     """
     if sizes is None:
         sizes = _default_sizes
@@ -728,7 +756,11 @@ def optimise(
         while True:
             # Build bipartite graphs and select profitable constrictable bicliques
             graphs = build_bipartite_subgraphs(
-                *expressions, sizes=sizes, max_samples=max_path_samples
+                *expressions,
+                sizes=sizes,
+                max_samples=max_path_samples,
+                max_cpu_scaling=max_cpu_scaling,
+                max_ram_scaling=max_ram_scaling,
             )
             bicliques = select_constrictable_bicliques(graphs, sizes, number=max_bicliques)
             if not bicliques:
