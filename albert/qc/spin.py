@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import itertools
 from collections import defaultdict
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
-from albert.algebra import _compose_mul
+from albert.algebra import Mul
 from albert.index import Index
+from albert.qc.tensor import QTensor
 from albert.scalar import Scalar
 
 if TYPE_CHECKING:
@@ -37,15 +38,15 @@ def ghf_to_uhf(
 
     # Loop over leaves of the expression tree
     new_exprs: dict[tuple[Index, ...], Base] = defaultdict(Scalar)
-    for mul in expr._children:
+    for mul in expr.children:
         # Split the leaves into those that are already unrestricted and those that are not
         scalars = []
         tensors = []
-        for leaf in mul._children:
+        for leaf in mul.children:
             if isinstance(leaf, Scalar):
                 scalars.append(leaf)
             else:
-                leaf_as_uhf = leaf.as_uhf(target_rhf=target_rhf)
+                leaf_as_uhf = cast(QTensor, leaf).as_uhf(target_rhf=target_rhf)
                 if canonicalise:
                     leaf_as_uhf = tuple(e.canonicalise() for e in leaf_as_uhf)
                 tensors.append(leaf_as_uhf)
@@ -62,7 +63,7 @@ def ghf_to_uhf(
                         break
             else:
                 # This contribution is valid, add it to the new expression
-                new_mul = _compose_mul(*scalars, *tensors_perm)
+                new_mul = Mul.factory(*scalars, *tensors_perm)
                 new_exprs[new_mul.external_indices] += new_mul
 
     # Expand and collect
@@ -85,20 +86,20 @@ def uhf_to_rhf(expr: Base, canonicalise: bool = True) -> Base:
     expr = expr.expand()
 
     # Loop over leaves of the expression tree
-    new_expr: Base = Scalar(0)
-    for mul in expr._children:
+    new_expr: Base = Scalar.factory(0)
+    for mul in expr.children:
         leaves: list[Base] = []
-        for leaf in mul._children:
+        for leaf in mul.children:
             if isinstance(leaf, Scalar):
                 leaves.append(leaf)
             else:
-                leaf_as_rhf = leaf.as_rhf()
+                leaf_as_rhf = cast(QTensor, leaf).as_rhf()
                 if canonicalise:
                     leaf_as_rhf = leaf_as_rhf.canonicalise()
                 leaves.append(leaf_as_rhf)
 
         # Construct the new expression
-        new_mul = _compose_mul(*leaves)
+        new_mul = Mul.factory(*leaves)
         new_expr += new_mul
 
     # Expand and collect
@@ -121,7 +122,9 @@ def ghf_to_rhf(expr: Base, canonicalise: bool = True) -> Base:
     uhf_exprs = ghf_to_uhf(expr, target_rhf=True, canonicalise=canonicalise)
 
     # Convert to RHF
-    rhf_exprs = sum((uhf_to_rhf(expr, canonicalise=canonicalise) for expr in uhf_exprs), Scalar(0))
+    rhf_exprs = sum(
+        (uhf_to_rhf(expr, canonicalise=canonicalise) for expr in uhf_exprs), Scalar.factory(0)
+    )
 
     return rhf_exprs
 

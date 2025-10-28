@@ -1,57 +1,94 @@
-"""Parenthesisation."""
+"""Parenthesisation of tensor products."""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import itertools
+import warnings
+from typing import TYPE_CHECKING, cast
 
+import cotengra
 import opt_einsum
 
 from albert import _default_sizes
-from albert.algebra import Add, Mul
-from albert.base import Base
-from albert.index import Index
-from albert.scalar import Scalar
+from albert.algebra import Mul
 from albert.tensor import Tensor
 
 if TYPE_CHECKING:
-    from typing import Any, Optional
+    from typing import Any, Generator, Optional
+
+    from albert.index import Index
+
+    T = tuple[int, ...]
 
 
-def parenthesise_mul(
-    mul: Mul,
-    sizes: Optional[dict[str | None, float]] = None,
-    scaling_limit_cpu: dict[tuple[str, ...], int] | None = None,
-    scaling_limit_ram: dict[tuple[str, ...], int] | None = None,
-    intermediate_counter: int = 0,
-) -> tuple[Mul, list[tuple[Tensor, Base]]]:
-    """Parenthesise a product.
+def _format_mul(expr: Mul) -> Mul:
+    """Check the ``Mul`` expression is valid and return it."""
+    expanded = expr.expand()
+    if len(expanded.children) != 1:
+        raise ValueError("Expression {expr} is not a valid tensor product.")
+    return cast(Mul, expanded.children[0])
 
-    Converts the `Mul` of given children into a nested `Mul` of groups of said children.
+
+def _get_inputs_and_output(
+    expr: Mul,
+    sizes: dict[str | None, int],
+) -> tuple[tuple[T, ...], T, dict[int, int]]:
+    """Get the einsum inputs and output from a tensor product.
 
     Args:
-        mul: The contraction to parenthesise.
+        expr: The product to analyse.
         sizes: The sizes of the spaces in the expression.
-        scaling_limit_cpu: The scaling limits for CPU. Keys should be tuples of index space names,
-            and values are the maximum allowed scaling for that combination of spaces.
-        scaling_limit_ram: The scaling limits for RAM. Keys should be tuples of index space names,
-            and values are the maximum allowed scaling for that combination of spaces.
-        intermediate_counter: The starting counter for naming intermediate tensors.
 
     Returns:
-        The parenthesised contraction represented by a non-nested product, and a list of
-        `(Tensor, Base)` pairs defining the intermediates to resolve the nested product.
+        A tuple of the einsum inputs, output, and sizes.
     """
+    expr = _format_mul(expr)
+    memo: dict[Index, int] = {}
+    inputs = []
+    for tensor in expr.search(Tensor):
+        inds = []
+        for ind in tensor.indices:
+            if ind not in memo:
+                memo[ind] = len(memo)
+            inds.append(memo[ind])
+        inputs.append(tuple(inds))
+
+    output = tuple(sorted(memo[ind] for ind in expr.external_indices))
+    sizes = {memo[ind]: sizes[ind.space] for ind in memo}
+
+    return tuple(inputs), output, sizes
+
+
+def find_optimal_path(
+    expr: Mul,
+    sizes: Optional[dict[str | None, int]] = None,
+    max_cpu_scaling: dict[tuple[str, ...], int] | None = None,
+    max_ram_scaling: dict[tuple[str, ...], int] | None = None,
+) -> cotengra.ContractionTree:
+    """Find the optimal path for a tensor product.
+
+    Args:
+        expr: The product to parenthesise.
+        sizes: The sizes of the spaces in the expression.
+        max_cpu_scaling: The maximum CPU scaling for the spaces in the expression.
+        max_ram_scaling: The maximum RAM scaling for the spaces in the expression.
+
+    Returns:
+        The optimal contraction tree.
+    """
+    expr = _format_mul(expr)
     if sizes is None:
         sizes = _default_sizes
-    if scaling_limit_cpu is None:
-        scaling_limit_cpu = {}
-    if scaling_limit_ram is None:
-        scaling_limit_ram = {}
 
-    # Get dummy sizes for the cost function
-    sizes_dummy = {space: ord(space) for space in sizes if isinstance(space, str)}
-    dummy_map = {value: key for key, value in sizes_dummy.items()}
-    sizes_map = {sizes_dummy[space]: sizes[space] for space in sizes_dummy}
+    # Expand the product
+    if not isinstance(expr, Mul):
+        raise TypeError("Expression must be a Mul.")
+    (expr,) = cast(tuple[Mul], expr.expand().children)
+
+    # Get constrained cost function
+    sizes_dummy = dict(zip(sizes.keys(), itertools.count(1, 1)))
+    dummy_map = {v: k for k, v in sizes_dummy.items()}
+    sizes_map = {sizes_dummy[k]: sizes[k] for k in sizes_dummy}
 
     def cost(
         cost1: int,
@@ -70,16 +107,15 @@ def parenthesise_mul(
         contract1: int | tuple[int],
         contract2: int | tuple[int],
     ) -> None:
-        """Cost function for `opt_einsum`."""
         # Get the cost scaling
-        scaling: dict[str, int] = {}
+        scaling: dict[str | None, int] = {}
         for i in i1_union_i2:
             c = dummy_map[size_dict[i]]
             scaling[c] = scaling.get(c, 0) + 1
 
         # Check the cost scaling
-        if scaling_limit_cpu is not None:
-            for cs, n in scaling_limit_cpu.items():
+        if max_cpu_scaling is not None:
+            for cs, n in max_cpu_scaling.items():
                 if sum(scaling.get(c, 0) for c in cs) > n:
                     return
 
@@ -102,8 +138,8 @@ def parenthesise_mul(
                     scaling[c] = scaling.get(c, 0) + 1
 
                 # Check the memory scaling
-                if scaling_limit_ram is not None:
-                    for cs, n in scaling_limit_ram.items():
+                if max_ram_scaling is not None:
+                    for cs, n in max_ram_scaling.items():
                         if sum(scaling.get(c, 0) for c in cs) > n:
                             return
 
@@ -115,121 +151,134 @@ def parenthesise_mul(
                     # Accept this contraction
                     xn[s] = (i_mem, cost, (contract1, contract2))
 
-    # Separate the children into tensors and scalars
-    tensors = list(mul.search_children(Tensor))
-    scalars = list(mul.search_children(Scalar))
-    assert len(mul._children) == len(list(tensors)) + len(list(scalars))
+    # Optimise the contraction path
+    optimizer = opt_einsum.DynamicProgramming(minimize=cost)
+    inputs, output, _sizes = _get_inputs_and_output(expr, sizes_dummy)
+    _, _, index_sizes = _get_inputs_and_output(expr, sizes)
+    path = optimizer(inputs, output, _sizes)
+    tree = cotengra.ContractionTree.from_path(inputs, output, index_sizes, path=path)
 
-    # Get the optimal contraction path
-    optimiser = opt_einsum.DynamicProgramming(
-        minimize=cost,
-        cost_cap=True,
-    )
-
-    # Map index names to unique characters for opt_einsum
-    _index_map: dict[Index, str] = {}
-
-    def _assign_index(index: Index) -> str:
-        if index not in _index_map:
-            if len(_index_map) >= 26:
-                raise ValueError("Too many unique indices.")
-            _index_map[index] = chr(97 + len(_index_map))
-        return _index_map[index]
-
-    # Make fake arrays to get the contraction path
-    arrays = [lambda: None for _ in tensors]
-    for i, t in enumerate(tensors):
-        arrays[i].shape = tuple(sizes_dummy[i.space] for i in t.indices)  # type: ignore
-    inputs = ["".join(_assign_index(i) for i in t.indices) for t in tensors]
-    output = "".join(_assign_index(i) for i in mul.external_indices)
-    subscript = ",".join(inputs) + "->" + output
-    path, info = opt_einsum.contract_path(subscript, *arrays, optimize=optimiser)
-    lines = str(info).splitlines()
-    start = next(i for i, line in enumerate(lines) if line.startswith("-----")) + 3
-    subscripts = [line.split()[2] for line in lines[start:] if line.strip()]
-
-    # Build the contractions
-    intermediates: list[tuple[Tensor, Base]] = []
-    counter = intermediate_counter
-    _index_map_rev = {v: k for k, v in _index_map.items()}
-    while subscripts:
-        inputs_i, output_i = subscripts.pop(0).split("->")
-        tensors_i = [tensors.pop(i) for i in sorted(path.pop(0), reverse=True)]
-        assert all(
-            tuple(_index_map_rev[c] for c in inp) == tuple(t.indices)
-            for inp, t in zip(inputs_i.split(","), tensors_i)
-        )
-        if len(subscripts) == 0:
-            expr = Mul(*scalars, *tensors_i)
-        else:
-            output_indices = [_index_map_rev[c] for c in output_i]
-            interm = Tensor(*output_indices, name=f"tmp{counter}")
-            counter += 1
-            intermediates.append((interm, Mul(*tensors_i)))
-            tensors.append(interm)
-
-    return expr, intermediates
+    return tree
 
 
-def factorise(output_exprs: list[tuple[Tensor, Base]]) -> list[tuple[Tensor, Base]]:
-    """Factorise expressions that differ by at most one tensor and the scalar factor.
+def generate_paths_exhaustive(
+    expr: Mul, sizes: Optional[dict[str | None, int]] = None
+) -> Generator[cotengra.ContractionTree, None, None]:
+    """Generate all possible paths for a tensor product.
 
     Args:
-        output_exprs: The output and expression pairs to identify common subexpressions in, as
-            `(Tensor, Base)` pairs.
+        expr: The product to parenthesise.
+        sizes: The sizes of the spaces in the expression.
 
-    Returns:
-        The factorised expressions as `(Tensor, Base)` pairs.
+    Yields:
+        All possible contraction trees.
     """
-    # Check that each expression is either:
-    #  a) a Mul with at most two non-scalar children
-    #  b) a non-scalar
-    new_output_exprs: list[tuple[Tensor, Base]] = []
-    to_factorise: list[tuple[Tensor, Base]] = []
-    for output, expr in output_exprs:
-        if isinstance(expr, Mul):
-            children = [child for child in expr._children if not isinstance(child, Scalar)]
-            if len(children) > 2:
-                raise ValueError(
-                    "Each expression must be a Mul with two non-scalar children. Try "
-                    "parenthesising the expressions first.",
-                )
-            if len(children) == 2:
-                to_factorise.append((output, expr))
-            else:
-                new_output_exprs.append((output, expr))
-        else:
-            new_output_exprs.append((output, expr))
+    expr = _format_mul(expr)
+    num_tensors = len(list(expr.search(Tensor)))
+    if num_tensors < 2:
+        return
+    if num_tensors > 5:
+        warnings.warn(
+            "Generating all possible paths scales extremely poorly. Use with caution.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+    if sizes is None:
+        sizes = _default_sizes
 
-    while to_factorise:
-        # Get all the possible factors
-        factors: dict[Base, int] = {}
-        for output, expr in to_factorise:
-            assert expr._children is not None
-            children = [child for child in expr._children if not isinstance(child, Scalar)]
-            assert len(children) == 2
-            for child in children:
-                if child not in factors:
-                    factors[child] = 0
-                factors[child] += 1
+    def _recurse(path: list[T], n: int) -> Generator[list[T], None, None]:
+        if n == 1:
+            yield list(path)
+            return
+        for i, j in itertools.combinations(range(n), 2):
+            path.append((i, j))
+            yield from _recurse(path, n - 1)
+            path.pop()
 
-        # Find the factor that appears the most
-        factor = max(factors, key=lambda k: factors[k])
+    # Get all paths
+    inputs, output, index_sizes = _get_inputs_and_output(expr, sizes)
+    for path in _recurse([], num_tensors):
+        tree = cotengra.ContractionTree.from_path(inputs, output, index_sizes, path=path)
+        yield tree
 
-        # For each expression that contains this factor, remove it and group them
-        group: list[tuple[Tensor, Base]] = []
-        new_to_factorise: list[tuple[Tensor, Base]] = []
-        for output, expr in to_factorise:
-            assert expr._children is not None
-            if factor in expr._children:
-                group.append((output, Mul(*[child for child in expr._children if child != factor])))
-            else:
-                new_to_factorise.append((output, expr))
-        to_factorise = new_to_factorise
 
-        # Combine the group into sums for each unique output
-        for output in set(output for output, _ in group):
-            group_out = [child for out, child in group if out == output]
-            new_output_exprs.append((output, Mul(factor, Add(*group_out))))
+def generate_paths_approximate(
+    expr: Mul,
+    sizes: Optional[dict[str | None, int]] = None,
+    max_samples: int = 8,
+    **opt_kwargs: Any,
+) -> Generator[cotengra.ContractionTree, None, None]:
+    """Generate approximate paths for a tensor product.
 
-    return new_output_exprs
+    Args:
+        expr: The product to parenthesise.
+        sizes: The sizes of the spaces in the expression.
+        max_samples: The maximum number of paths to generate.
+        **opt_kwargs: Additional keyword arguments to pass to the optimizers.
+
+    Yields:
+        Approximate contraction trees.
+    """
+    expr = _format_mul(expr)
+    num_tensors = len(list(expr.search(Tensor)))
+    if num_tensors < 2:
+        return
+    if sizes is None:
+        sizes = _default_sizes
+
+    # Get trial paths
+    inputs, output, sizes = _get_inputs_and_output(expr, sizes)
+    opt = cotengra.HyperOptimizer(max_repeats=max_samples, **opt_kwargs)
+    trial_fn, trial_args = opt.setup(inputs, output, sizes)
+    repeats_start = opt._repeats_start + len(opt.scores)
+    repeats = range(repeats_start, repeats_start + max_samples)
+    trials = (opt._gen_results_parallel if opt._pool is not None else opt._gen_results)(
+        repeats, trial_fn, trial_args
+    )
+
+    # Yield unique trees
+    seen: set[tuple[T, ...]] = set()
+    for trial in trials:
+        if len(seen) >= max_samples:
+            break
+        tree: cotengra.ContractionTree = trial["tree"]
+        if tree.get_path() not in seen:
+            seen.add(tree.get_path())
+            yield tree
+
+    # Clean up
+    opt._maybe_cancel_futures()
+    del opt
+
+
+def generate_paths(
+    expr: Mul,
+    sizes: Optional[dict[str | None, int]] = None,
+    max_samples: int = 8,
+    **opt_kwargs: Any,
+) -> Generator[cotengra.ContractionTree, None, None]:
+    """Generate paths for a tensor product.
+
+    Args:
+        expr: The product to parenthesise.
+        sizes: The sizes of the spaces in the expression.
+        max_samples: The maximum number of paths to generate if not exhaustive.
+        **opt_kwargs: Additional keyword arguments to pass to the optimizers.
+
+    Yields:
+        Contraction trees.
+    """
+    expr = _format_mul(expr)
+    num_tensors = len(list(expr.search(Tensor)))
+    if num_tensors < 40:
+        yield find_optimal_path(expr, sizes=sizes)
+        max_samples -= 1
+    if num_tensors < 6 and max_samples > 0:
+        trees = list(generate_paths_exhaustive(expr, sizes=sizes))
+        costs = [tree.total_cost(log=None) for tree in trees]
+        for _, tree in sorted(zip(costs, trees), key=lambda x: x[0])[:max_samples]:
+            yield tree
+    elif max_samples > 0:
+        yield from generate_paths_approximate(
+            expr, sizes=sizes, max_samples=max_samples, **opt_kwargs
+        )

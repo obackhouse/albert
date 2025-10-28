@@ -4,16 +4,37 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from albert.qc.tensor import QTensor
 from albert.symmetry import Permutation, Symmetry, symmetric_group
-from albert.tensor import Tensor
 
 if TYPE_CHECKING:
     from typing import Optional
 
+    from albert.base import Base
     from albert.index import Index
 
 
-class Fock(Tensor):
+class RTensor(QTensor):
+    """Base class for RHF tensors.
+
+    Args:
+        indices: Indices of the tensor.
+        name: Name of the tensor.
+        symmetry: Symmetry of the tensor.
+    """
+
+    def as_rhf(self) -> Base:
+        """Convert the indices with spin to indices without spin.
+
+        Indices that are returned without spin are spatial orbitals.
+
+        Returns:
+            Tensor resulting from the conversion.
+        """
+        return self
+
+
+class Fock(RTensor):
     """Class for the Fock matrix.
 
     Args:
@@ -35,7 +56,7 @@ class Fock(Tensor):
             name = "f"
         if symmetry is None:
             symmetry = symmetric_group((0, 1), (1, 0))
-        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
+        RTensor.__init__(self, *indices, name=name, symmetry=symmetry)
 
 
 class RDM1(Fock):
@@ -60,7 +81,7 @@ class RDM1(Fock):
             name = "d"
         if symmetry is None:
             symmetry = symmetric_group((0, 1), (1, 0))
-        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
+        RTensor.__init__(self, *indices, name=name, symmetry=symmetry)
 
 
 class Delta(Fock):
@@ -85,10 +106,10 @@ class Delta(Fock):
             name = "δ"
         if symmetry is None:
             symmetry = symmetric_group((0, 1), (1, 0))
-        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
+        RTensor.__init__(self, *indices, name=name, symmetry=symmetry)
 
 
-class ERI(Tensor):
+class ERI(RTensor):
     """Class for the electron repulsion integral tensor.
 
     Args:
@@ -119,10 +140,10 @@ class ERI(Tensor):
                 (2, 3, 1, 0),
                 (3, 2, 1, 0),
             )
-        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
+        RTensor.__init__(self, *indices, name=name, symmetry=symmetry)
 
 
-class CDERI(Tensor):
+class CDERI(RTensor):
     """Class for the CDERI tensor.
 
     Args:
@@ -146,10 +167,10 @@ class CDERI(Tensor):
             symmetry = symmetric_group((0, 1, 2), (0, 2, 1))
         if indices[0].space != "x":
             raise ValueError("First index of CDERI must be in auxiliary (x) space.")
-        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
+        RTensor.__init__(self, *indices, name=name, symmetry=symmetry)
 
 
-class RDM2(Tensor):
+class RDM2(RTensor):
     """Class for the two-particle reduced density matrix.
 
     Args:
@@ -171,10 +192,10 @@ class RDM2(Tensor):
             name = "Γ"
         if symmetry is None:
             symmetry = symmetric_group((0, 1, 2, 3))
-        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
+        RTensor.__init__(self, *indices, name=name, symmetry=symmetry)
 
 
-class T1(Tensor):
+class T1(RTensor):
     """Class for the T1 amplitude tensor.
 
     Args:
@@ -196,10 +217,10 @@ class T1(Tensor):
             name = "t1"
         if symmetry is None:
             symmetry = symmetric_group((0, 1))
-        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
+        RTensor.__init__(self, *indices, name=name, symmetry=symmetry)
 
 
-class T2(Tensor):
+class T2(RTensor):
     """Class for the T2 amplitude tensor.
 
     Args:
@@ -224,10 +245,10 @@ class T2(Tensor):
                 Permutation((0, 1, 2, 3), +1),
                 Permutation((1, 0, 3, 2), +1),
             )
-        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
+        RTensor.__init__(self, *indices, name=name, symmetry=symmetry)
 
 
-class T3(Tensor):
+class T3(RTensor):
     """Class for the T3 amplitude tensor.
 
     Args:
@@ -254,10 +275,10 @@ class T3(Tensor):
                 # Permutation((2, 1, 0, 3, 4, 5), -1),
                 Permutation((2, 1, 0, 5, 4, 3), +1),
             )
-        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
+        RTensor.__init__(self, *indices, name=name, symmetry=symmetry)
 
 
-class T4(Tensor):
+class T4(RTensor):
     """Class for the T4 amplitude tensor.
 
     Args:
@@ -287,7 +308,7 @@ class T4(Tensor):
                     for (b, d), sbd in [((5, 7), +1), ((7, 5), -1)]
                 )
             )
-        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
+        RTensor.__init__(self, *indices, name=name, symmetry=symmetry)
 
 
 class L1(T1):
@@ -379,7 +400,7 @@ class L4(T4):
         T4.__init__(self, *indices, name=name, symmetry=symmetry)
 
 
-class R0(Tensor):
+class R0(RTensor):
     """Class for the R0 amplitude tensor.
 
     Args:
@@ -399,10 +420,10 @@ class R0(Tensor):
             raise ValueError("R0 amplitude tensor must have zero indices.")
         if name is None:
             name = "r0"
-        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
+        RTensor.__init__(self, *indices, name=name, symmetry=symmetry)
 
 
-class R1ip(Tensor):
+class R1ip(RTensor):
     """Class for the R1ip amplitude tensor.
 
     Args:
@@ -424,10 +445,10 @@ class R1ip(Tensor):
             name = "r2"
         if symmetry is None:
             symmetry = symmetric_group((0,))
-        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
+        RTensor.__init__(self, *indices, name=name, symmetry=symmetry)
 
 
-class R2ip(Tensor):
+class R2ip(RTensor):
     """Class for the R2ip amplitude tensor.
 
     Args:
@@ -449,10 +470,10 @@ class R2ip(Tensor):
             name = "r2"
         if symmetry is None:
             symmetry = symmetric_group((0, 1, 2))  # FIXME?
-        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
+        RTensor.__init__(self, *indices, name=name, symmetry=symmetry)
 
 
-class R3ip(Tensor):
+class R3ip(RTensor):
     """Class for the R3ip amplitude tensor.
 
     Args:
@@ -474,10 +495,10 @@ class R3ip(Tensor):
             name = "r3"
         if symmetry is None:
             symmetry = symmetric_group((0, 1, 2, 3, 4))  # FIXME?
-        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
+        RTensor.__init__(self, *indices, name=name, symmetry=symmetry)
 
 
-class R1ea(Tensor):
+class R1ea(RTensor):
     """Class for the R1ea amplitude tensor.
 
     Args:
@@ -499,10 +520,10 @@ class R1ea(Tensor):
             name = "r1"
         if symmetry is None:
             symmetry = symmetric_group((0,))
-        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
+        RTensor.__init__(self, *indices, name=name, symmetry=symmetry)
 
 
-class R2ea(Tensor):
+class R2ea(RTensor):
     """Class for the R2ea amplitude tensor.
 
     Args:
@@ -524,10 +545,10 @@ class R2ea(Tensor):
             name = "r2"
         if symmetry is None:
             symmetry = symmetric_group((0, 1, 2))  # FIXME?
-        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
+        RTensor.__init__(self, *indices, name=name, symmetry=symmetry)
 
 
-class R3ea(Tensor):
+class R3ea(RTensor):
     """Class for the R3ea amplitude tensor.
 
     Args:
@@ -549,7 +570,7 @@ class R3ea(Tensor):
             name = "r3"
         if symmetry is None:
             symmetry = symmetric_group((0, 1, 2, 3, 4))  # FIXME?
-        Tensor.__init__(self, *indices, name=name, symmetry=symmetry)
+        RTensor.__init__(self, *indices, name=name, symmetry=symmetry)
 
 
 class R1ee(T1):

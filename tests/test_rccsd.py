@@ -13,6 +13,7 @@ from albert.opt import optimise as _optimise
 from albert.qc._pdaggerq import import_from_pdaggerq, remove_reference_energy
 from albert.qc.spin import ghf_to_rhf
 from albert.tensor import Tensor
+from albert.expression import Expression
 
 
 def _kwargs(strategy, transposes, greedy_cutoff, drop_cutoff):
@@ -32,6 +33,7 @@ def _kwargs(strategy, transposes, greedy_cutoff, drop_cutoff):
         (True, "gristmill", True, _kwargs("opt", "natural", -1, -1)),
         (True, "gristmill", False, _kwargs("greedy", "ignore", -1, 2)),
         (True, "gristmill", True, _kwargs("greedy", "ignore", 2, 2)),
+        (True, "albert", True, {}),
     ],
 )
 def test_rccsd_einsum(helper, optimise, method, canonicalise, kwargs):
@@ -63,16 +65,11 @@ def _test_rccsd_einsum(helper, file, optimise, method, canonicalise, kwargs):
         energy = energy.canonicalise(indices=True).collect()
     output = Tensor(name="e_cc")
 
+    exprs = [Expression(output, energy)]
     if optimise:
-        output_expr = _optimise([output], [energy], method=method, **kwargs)
-    else:
-        output_expr = [(output, energy)]
+        exprs = _optimise(exprs, method=method, **kwargs)
 
-    codegen(
-        "energy",
-        [output],
-        output_expr,
-    )
+    codegen("energy", [output], exprs)
 
     pq.clear()
     pq.set_left_operators([["e1(i,a)"]])
@@ -102,23 +99,11 @@ def _test_rccsd_einsum(helper, file, optimise, method, canonicalise, kwargs):
         *sorted(t2.external_indices, key=lambda i: "ijab".index(i.name)), name="t2new"
     )
 
-    outputs = [output_t1, output_t2]
+    exprs = [Expression(output_t1, t1), Expression(output_t2, t2)]
     if optimise:
-        output_expr = _optimise(
-            outputs,
-            [t1, t2],
-            method=method,
-            **kwargs,
-        )
-    else:
-        output_expr = [(output_t1, t1), (output_t2, t2)]
+        exprs = _optimise(exprs, method=method, **kwargs)
 
-    codegen(
-        "update_amplitudes",
-        outputs,
-        output_expr,
-        as_dict=True,
-    )
+    codegen("update_amplitudes", [output_t1, output_t2], exprs, as_dict=True)
 
     module = importlib.import_module(f"_test_rccsd")
     energy = module.energy

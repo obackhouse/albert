@@ -2,27 +2,19 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, TypedDict
+from typing import TYPE_CHECKING
 
-from albert.base import Serialisable, SerialisedField
+from albert.base import Serialisable
 
 if TYPE_CHECKING:
     from typing import Any, Iterable, Optional
+
+    from albert.types import SerialisedField, _IndexJSON
 
 
 def _to_greek(name: str) -> str:
     """Convert a spin channel name to a greek letter."""
     return chr(0x3B1 + ord(name) - ord("a"))
-
-
-class _IndexJSON(TypedDict):
-    """Type for JSON representation of an index."""
-
-    _type: str
-    _module: str
-    name: str
-    spin: Optional[str]
-    space: Optional[str]
 
 
 def from_list(
@@ -60,6 +52,8 @@ class Index(Serialisable):
         space: The space of the index.
     """
 
+    __slots__ = ("_name", "_spin", "_space", "_hash")
+
     _name: str
     _spin: Optional[str]
     _space: Optional[str]
@@ -86,16 +80,23 @@ class Index(Serialisable):
         """Get the space of the index."""
         return self._space
 
+    @property
+    def category(self) -> tuple[str, str]:
+        """Get the category of the index, a compound of space and spin."""
+        space = self.space if self.space is not None else ""
+        spin = self.spin if self.spin is not None else ""
+        return (space, spin)
+
     def copy(
         self, name: Optional[str] = None, spin: Optional[str] = None, space: Optional[str] = None
     ) -> Index:
         """Return a copy of the object with some properties changed."""
         if name is None:
-            name = self._name
+            name = self.name
         if spin is None:
-            spin = self._spin
+            spin = self.spin
         if space is None:
-            space = self._space
+            space = self.space
         return Index(name, spin=spin, space=space)
 
     def spin_flip(self) -> Index:
@@ -113,11 +114,11 @@ class Index(Serialisable):
         """
         import sympy
 
-        name = self._name
-        if self._spin is not None:
-            name += f"{self._spin}"
-        if self._space is not None:
-            name += f"{self._space}"
+        name = self.name
+        if self.spin is not None:
+            name += f"{self.spin}"
+        if self.space is not None:
+            name += f"{self.space}"
 
         return sympy.Symbol(name)
 
@@ -146,9 +147,9 @@ class Index(Serialisable):
         return {
             "_type": self.__class__.__name__,
             "_module": self.__class__.__module__,
-            "name": self._name,
-            "spin": self._spin,
-            "space": self._space,
+            "name": self.name,
+            "spin": self.spin,
+            "space": self.space,
         }
 
     @classmethod
@@ -163,13 +164,13 @@ class Index(Serialisable):
     def _hashable_fields(self) -> Iterable[SerialisedField]:
         """Yield fields of the hashable representation."""
         yield self.__class__.__name__
-        yield self._space.lower() if self._space else ""
-        yield self._space.isupper() if self._space else False
-        yield self._spin if self._spin is not None else ""
-        yield self._name
+        yield self.space.lower() if self.space else ""
+        yield self.space.isupper() if self.space else False
+        yield self.spin if self.spin is not None else ""
+        yield self.name
 
     def __repr__(self) -> str:
         """Return a string representation of the object."""
-        if self._spin in ("a", "b"):
-            return f"{self._name}{_to_greek(self._spin)}"
-        return self._name
+        if self.spin in ("a", "b"):
+            return f"{self.name}{_to_greek(self.spin)}"
+        return self.name

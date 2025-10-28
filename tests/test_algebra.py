@@ -4,6 +4,8 @@ from albert.algebra import Add, Mul
 from albert.index import Index
 from albert.scalar import Scalar
 from albert.tensor import Tensor
+from albert.misc import from_string
+from albert.base import Traversal
 
 
 def test_add():
@@ -135,3 +137,40 @@ def test_nested():
     assert expanded.internal_indices == ()
     assert repr(expanded) == "(t1(i,j) * t3(j,k) * t4(k,l)) + (t2(i,j) * t3(j,k) * t4(k,l))"
     assert expanded == Add(Mul(tensor1, tensor3, tensor4), Mul(tensor2, tensor3, tensor4))
+
+
+def test_search():
+    expr = from_string("(a(i,j) * b(j,k)) + (c(i,j) * d(j,k)) + (a(i,j) * d(j,k))")
+
+    assert len(list(expr.search(lambda node: getattr(node, "name", None) == "a"))) == 2
+    assert len(list(expr.search(Tensor))) == 6
+    assert len(list(expr.search(Tensor, depth=1))) == 0
+    assert len(list(expr.search(Tensor, depth=2))) == 6
+    assert len(list(expr.search(Mul))) == 3
+    assert len(list(expr.search(Add))) == 1
+    assert len(list(expr.search((Add, Mul)))) == 4
+
+    assert expr.find(lambda node: getattr(node, "name", None) == "c").name == "c"
+    assert expr.find(Tensor) == Tensor.from_string("a(i,j)")
+    assert expr.find(Mul) == Mul.from_string("a(i,j) * b(j,k)")
+    assert expr.find(Add) == expr
+    assert expr.find((Add, Mul), order=Traversal.PREORDER) == expr
+    assert expr.find((Add, Mul), order=Traversal.POSTORDER) == Mul.from_string("a(i,j) * b(j,k)")
+    assert expr.find(Tensor, depth=0) is None
+
+    assert expr.apply(
+        lambda node: node.copy(name="z"),
+        Tensor,
+    ) == from_string("(z(i,j) * z(j,k)) + (z(i,j) * z(j,k)) + (z(i,j) * z(j,k))")
+    assert expr.apply(
+        lambda node: node.copy(name="z"),
+        lambda node: isinstance(node, Tensor) and node.name == "a",
+    ) == from_string("(z(i,j) * b(j,k)) + (c(i,j) * d(j,k)) + (z(i,j) * d(j,k))")
+
+    assert expr.delete(
+        lambda node: getattr(node, "name", None) == "a",
+    ) == from_string("c(i,j) * d(j,k)")
+    assert expr.delete(Tensor).squeeze() == Scalar.factory(0.0)
+    assert expr.delete(
+        lambda node: node.squeeze() == from_string("a(i,j) * b(j,k)")
+    ) == from_string("c(i,j) * d(j,k) + a(i,j) * d(j,k)")

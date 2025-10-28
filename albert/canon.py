@@ -7,9 +7,10 @@ import itertools
 from collections import defaultdict
 from typing import TYPE_CHECKING, Literal, Protocol, TypeVar
 
-from albert.base import IAlgebraic, IMul
+from albert.algebra import Algebraic, Mul
 from albert.index import Index
 from albert.scalar import Scalar
+from albert.tensor import Tensor
 
 if TYPE_CHECKING:
     from typing import Any, Callable, Generator, Optional
@@ -37,14 +38,12 @@ def iter_equivalent_forms(expr: Base) -> Generator[Base, None, None]:
     Yields:
         All equivalent forms of the tensor expression.
     """
-    from albert.scalar import Scalar
-    from albert.tensor import Tensor  # FIXME
 
     @functools.lru_cache(maxsize=None)
     def _symmetry(node: Tensor) -> list[Base]:
-        if node._symmetry is None:
+        if node.symmetry is None:
             return [node]
-        return list(node._symmetry(node))
+        return list(node.symmetry(node))
 
     def _iter_variants(node: Base) -> Generator[Base, None, None]:
         if isinstance(node, Scalar):
@@ -53,8 +52,8 @@ def iter_equivalent_forms(expr: Base) -> Generator[Base, None, None]:
         if isinstance(node, Tensor):
             yield from _symmetry(node)
             return
-        assert node._children is not None
-        variants = [list(_iter_variants(child)) if child else [] for child in node._children]
+        assert node.children is not None
+        variants = [list(_iter_variants(child)) if child else [] for child in node.children]
         for combo in itertools.product(*variants):
             yield node.copy(*combo)
 
@@ -69,6 +68,8 @@ def canonicalise_exhaustive(
 
     Args:
         expr: The tensor expression to canonicalise.
+        key: A key function to use for canonicalisation. If ``None``, a default key function is
+            used that sorts algebraic sums by their children, ignoring scalar factors.
 
     Returns:
         The canonicalised tensor expression.
@@ -77,7 +78,7 @@ def canonicalise_exhaustive(
     def _iter_equivalent_forms(expr: Base) -> Generator[Base, None, None]:
         """Iterate over all equivalent forms of a tensor expression."""
         internal_indices = sorted(expr.internal_indices)
-        categories = [(index.space, index.spin) for index in internal_indices]
+        categories = [index.category for index in internal_indices]
         for perm in itertools.permutations(range(len(internal_indices))):
             if all(categories[i] == categories[j] for i, j in enumerate(perm)):
                 index_map = dict(zip(internal_indices, (internal_indices[i] for i in perm)))
@@ -87,8 +88,8 @@ def canonicalise_exhaustive(
 
         def key(e: Base) -> SupportsDunderLT[Any]:
             """Key function for canonicalisation."""
-            if isinstance(e, IAlgebraic):
-                return tuple(sorted(filter(lambda x: not isinstance(x, Scalar), e._children or [])))
+            if isinstance(e, Algebraic):
+                return tuple(sorted(filter(lambda x: not isinstance(x, Scalar), e.children or [])))
             return e
 
     expr = min(_iter_equivalent_forms(expr), key=key)
@@ -105,45 +106,47 @@ def canonicalise_indices(
 
     Args:
         expr: The tensor expression to canonicalise.
+        extra_indices: Extra indices to consider when canonicalising.
+        which: Which indices to canonicalise.
 
     Returns:
         The canonicalised tensor expression.
     """
-    from albert.tensor import Tensor  # FIXME
-
-    # Get the indices, grouped by spin and space
+    # Get the indices, grouped by category
     index_groups = defaultdict(set)
-    for leaf in expr.search_leaves(Tensor):  # type: ignore[type-abstract]
+    for leaf in expr.search(Tensor):
         for index in leaf.external_indices:
-            index_groups[(index.spin, index.space)].add(index)
-            if index.spin in ("a", "b"):
-                index_groups[(index.spin_flip().spin, index.space)].add(index.spin_flip())
+            index_groups[index.category].add(index)
+            index_flip = index.spin_flip()
+            if index != index_flip:
+                index_groups[index_flip.category].add(index_flip)
     for index in extra_indices or []:
-        index_groups[(index.spin, index.space)].add(index)
-        if index.spin in ("a", "b"):
-            index_groups[(index.spin_flip().spin, index.space)].add(index.spin_flip())
+        index_groups[index.category].add(index)
+        index_flip = index.spin_flip()
+        if index != index_flip:
+            index_groups[index_flip.category].add(index_flip)
     index_lists = {key: sorted(indices) for key, indices in index_groups.items()}
 
     # Find the canonical external indices globally
     index_map = {}
     for index in expr.external_indices:
-        index_map[index] = index_lists[(index.spin, index.space)].pop(0)
+        index_map[index] = index_lists[index.category].pop(0)
 
         # If the spin-flipped index exists, remove it to avoid repeat indices with the same name
-        if index.spin in ("a", "b"):
-            index_flip = index_map[index].spin_flip()
-            if index_flip in index_lists.get((index_flip.spin, index_flip.space), []):
-                index_lists[(index_flip.spin, index_flip.space)].remove(index_flip)
+        index_flip = index_map[index].spin_flip()
+        if index_map[index] != index_flip:
+            if index_flip in index_lists.get(index_flip.category, []):
+                index_lists[index_flip.category].remove(index_flip)
 
-    def _canonicalise_node(node: IMul) -> Base:
+    def _canonicalise_node(node: Mul) -> Base:
         """Canonicalise a node."""
         index_map_node = index_map.copy()
         index_lists_node = {key: indices.copy() for key, indices in index_lists.items()}
 
         # Find the canonical internal indices for each term
         for index in node.internal_indices:
-            if len(index_lists_node[(index.spin, index.space)]):
-                index_map_node[index] = index_lists_node[(index.spin, index.space)].pop(0)
+            if index_lists_node[index.category]:
+                index_map_node[index] = index_lists_node[index.category].pop(0)
             else:
                 # Somehow we ran out of indices? Didn't think this was possible, but we can
                 # just make a new one
@@ -155,8 +158,8 @@ def canonicalise_indices(
 
             # If the spin-flipped index exists, remove it to avoid repeat indices with the same name
             index_flip = index_map_node[index].spin_flip()
-            if index_flip in index_lists_node.get((index_flip.spin, index_flip.space), []):
-                index_lists_node[(index_flip.spin, index_flip.space)].remove(index_flip)
+            if index_flip in index_lists_node.get(index_flip.category, []):
+                index_lists_node[index_flip.category].remove(index_flip)
 
         # Remove mappings for indices we don't want to change
         for src, dst in list(index_map.items()):
@@ -172,6 +175,6 @@ def canonicalise_indices(
 
     # Find the canonical internal indices for each term
     expr = expr.expand()
-    expr = expr.apply(_canonicalise_node, IMul)
+    expr = expr.apply(_canonicalise_node, Mul)
 
     return expr

@@ -2,32 +2,21 @@
 
 from __future__ import annotations
 
-from functools import cached_property
-from typing import TYPE_CHECKING, TypedDict, TypeVar, cast
+from typing import TYPE_CHECKING, TypeVar, cast
 
-from albert.algebra import Add, ExpandedAddLayer, ExpandedMulLayer, Mul, _compose_add, _compose_mul
-from albert.base import Base, ITensor
-from albert.canon import canonicalise_indices
+from albert.algebra import Add, Mul
+from albert.base import _INTERN_TABLE, Base, _matches_filter
 from albert.index import Index
 from albert.scalar import Scalar
 
 if TYPE_CHECKING:
-    from typing import Any, Callable, Optional
+    from typing import Any, Optional
 
-    from albert.index import _IndexJSON
-    from albert.symmetry import Permutation, Symmetry, _SymmetryJSON
+    from albert.base import TypeOrFilter
+    from albert.symmetry import Permutation, Symmetry
+    from albert.types import _TensorJSON
 
 T = TypeVar("T", bound=Base)
-
-
-class _TensorJSON(TypedDict):
-    """Type for JSON representation of a tensor."""
-
-    _type: str
-    _module: str
-    indices: tuple[_IndexJSON, ...]
-    name: str
-    symmetry: Optional[_SymmetryJSON]
 
 
 class Tensor(Base):
@@ -38,7 +27,17 @@ class Tensor(Base):
         name: Name of the tensor.
     """
 
-    _interface = ITensor
+    __slots__ = (
+        "_indices",
+        "_name",
+        "_symmetry",
+        "_hash",
+        "_children",
+        "_internal_indices",
+        "_external_indices",
+    )
+
+    _score = 0
 
     def __init__(
         self,
@@ -52,6 +51,53 @@ class Tensor(Base):
         self._symmetry = symmetry
         self._hash = None
         self._children = None
+
+        # Precompute indices
+        self._external_indices = tuple(index for index in indices if indices.count(index) == 1)
+        self._internal_indices = tuple(index for index in indices if indices.count(index) > 1)
+
+    @classmethod
+    def factory(
+        cls: type[Tensor],
+        *indices: Index,
+        name: Optional[str] = None,
+        symmetry: Optional[Symmetry] = None,
+    ) -> Tensor:
+        """Factory method to create a new object.
+
+        Args:
+            indices: Indices of the tensor.
+            name: Name of the tensor.
+            symmetry: Symmetry of the tensor.
+
+        Returns:
+            Algebraic object. In general, `factory` methods may return objects of a different type
+            to the class they are called on.
+        """
+        if not issubclass(cls, Tensor):
+            raise TypeError(f"cls must be a subclass of Tensor, got {cls}")
+
+        # Build a key for interning
+        key = (cls, indices, name, symmetry)
+
+        def create() -> Tensor:
+            return cls(*indices, name=name, symmetry=symmetry)
+
+        return cast(Tensor, _INTERN_TABLE.get(key, create))
+
+    def delete(
+        self,
+        type_filter: TypeOrFilter[Base],
+    ) -> Base:
+        """Delete nodes (set its value to zero) matching a type filter.
+
+        Args:
+            type_filter: Type of node to delete.
+
+        Returns:
+            Object after deleting nodes (if applicable).
+        """
+        return Scalar.factory(0.0) if _matches_filter(self, type_filter) else self
 
     @property
     def indices(self) -> tuple[Index, ...]:
@@ -67,16 +113,6 @@ class Tensor(Base):
     def symmetry(self) -> Optional[Symmetry]:
         """Get the symmetry of the object."""
         return self._symmetry
-
-    @cached_property
-    def external_indices(self) -> tuple[Index, ...]:
-        """Get the external indices (those that are not summed over)."""
-        return tuple(index for index in self._indices if self._indices.count(index) == 1)
-
-    @cached_property
-    def internal_indices(self) -> tuple[Index, ...]:
-        """Get the internal indices (those that are summed over)."""
-        return tuple(index for index in self._indices if self._indices.count(index) > 1)
 
     @property
     def disjoint(self) -> bool:
@@ -100,11 +136,11 @@ class Tensor(Base):
             Copy of the object.
         """
         if not indices:
-            indices = self._indices
+            indices = self.indices
         if name is None:
-            name = self._name
+            name = self.name
         if symmetry is None:
-            symmetry = self._symmetry
+            symmetry = self.symmetry
         return self.__class__(*indices, name=name, symmetry=symmetry)
 
     def map_indices(self, mapping: dict[Index, Index]) -> Tensor:
@@ -116,7 +152,7 @@ class Tensor(Base):
         Returns:
             Object with mapped indices.
         """
-        indices = tuple(mapping.get(index, index) for index in self._indices)
+        indices = tuple(mapping.get(index, index) for index in self.indices)
         return self.copy(*indices)
 
     def permute_indices(self, permutation: tuple[int, ...] | Permutation) -> Base:
@@ -134,26 +170,8 @@ class Tensor(Base):
         else:
             perm = permutation.permutation
             sign = permutation.sign
-        indices = tuple(self._indices[i] for i in perm)
+        indices = tuple(self.indices[i] for i in perm)
         return sign * self.copy(*indices)
-
-    def apply(
-        self,
-        function: Callable[[T], Base],
-        node_type: type[T] | tuple[type[T], ...],
-    ) -> Base:
-        """Apply a function to nodes.
-
-        Args:
-            function: Functon to apply.
-            node_type: Type of node to apply to.
-
-        Returns:
-            Object after applying function (if applicable).
-        """
-        if isinstance(self, node_type) or self._interface == node_type:
-            return function(cast(T, self))
-        return self
 
     def canonicalise(self, indices: bool = False) -> Base:
         """Canonicalise the object.
@@ -168,15 +186,19 @@ class Tensor(Base):
         Returns:
             Object in canonical format.
         """
-        if self._symmetry is not None:
-            best = min(self._symmetry(self))
+        if self.symmetry is not None:
+            best = min(self.symmetry(self))
         else:
             best = self
+
         if indices:
+            from albert.canon import canonicalise_indices
+
             best = canonicalise_indices(best)
+
         return best
 
-    def expand(self) -> ExpandedAddLayer:
+    def expand(self) -> Base:
         """Expand the object into the minimally nested format.
 
         Output has the form Add[Mul[Tensor | Scalar]].
@@ -184,9 +206,7 @@ class Tensor(Base):
         Returns:
             Object in expanded format.
         """
-        mul = cast(ExpandedMulLayer, Mul(self))
-        add = cast(ExpandedAddLayer, Add(mul))
-        return add
+        return Add(Mul(self))
 
     def collect(self) -> Tensor:
         """Collect like terms in the top layer of the object.
@@ -212,8 +232,8 @@ class Tensor(Base):
         """
         import sympy
 
-        name = self._name
-        indices = [index.as_sympy() for index in self._indices]
+        name = self.name
+        indices = [index.as_sympy() for index in self.indices]
 
         if len(indices) == 0:
             return sympy.Symbol(name)
@@ -240,9 +260,9 @@ class Tensor(Base):
         return {
             "_type": self.__class__.__name__,
             "_module": self.__class__.__module__,
-            "indices": tuple(index.as_json() for index in self._indices),
-            "name": self._name,
-            "symmetry": self._symmetry.as_json() if self._symmetry else None,
+            "indices": tuple(index.as_json() for index in self.indices),
+            "name": self.name,
+            "symmetry": self.symmetry.as_json() if self.symmetry else None,
         }
 
     @classmethod
@@ -258,36 +278,6 @@ class Tensor(Base):
             symmetry = Symmetry.from_json(data["symmetry"])
         return cls(*indices, name=data["name"], symmetry=symmetry)
 
-    def as_uhf(self, target_rhf: bool = False) -> tuple[Base, ...]:
-        """Convert the indices without spin to indices with spin.
-
-        Indices that start without spin are assumed to be spin orbitals.
-
-        Args:
-            target_rhf: Whether the target is RHF. For some tensors, the intermediate conversion
-                to UHF is different depending on the target.
-
-        Returns:
-            Tuple of expressions resulting from the conversion.
-        """
-        raise NotImplementedError(
-            "Conversion methods `as_rhf` and `as_uhf` are implemented for the subclasses of "
-            "`Tensor` in `albert.qc` modules."
-        )
-
-    def as_rhf(self) -> Base:
-        """Convert the indices with spin to indices without spin.
-
-        Indices that are returned without spin are spatial orbitals.
-
-        Returns:
-            Expression resulting from the conversion.
-        """
-        raise NotImplementedError(
-            "Conversion methods `as_rhf` and `as_uhf` are implemented for the subclasses of "
-            "`Tensor` in `albert.qc` modules."
-        )
-
     def __repr__(self) -> str:
         """Return a string representation.
 
@@ -295,21 +285,21 @@ class Tensor(Base):
             String representation.
         """
         if len(self._indices) == 0:
-            return self._name
-        return f"{self._name}({','.join(map(str, self._indices))})"
+            return self.name
+        return f"{self.name}({','.join(map(str, self.indices))})"
 
     def __add__(self, other: Base | float) -> Base:
         """Add two objects."""
         if isinstance(other, (int, float)):
-            other = Scalar(other)
+            other = Scalar.factory(other)
         if isinstance(other, Add):
-            return _compose_add(self, *other._children)
-        return _compose_add(self, other)
+            return Add.factory(self, *other.children)
+        return Add.factory(self, other)
 
     def __mul__(self, other: Base | float) -> Base:
         """Multiply two objects."""
         if isinstance(other, (int, float)):
-            other = Scalar(other)
+            other = Scalar.factory(other)
         if isinstance(other, Mul):
-            return _compose_mul(self, *other._children)
-        return _compose_mul(self, other)
+            return Mul.factory(self, *other.children)
+        return Mul.factory(self, other)

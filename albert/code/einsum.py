@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, cast
 
 from albert.code.base import BaseCodeGenerator
+from albert.expression import Expression
 from albert.misc import ExclusionSet
 from albert.opt.tools import _tensor_info
 from albert.scalar import Scalar
@@ -13,7 +14,6 @@ from albert.tensor import Tensor
 if TYPE_CHECKING:
     from typing import Optional
 
-    from albert.base import Base
     from albert.index import Index
 
 
@@ -70,7 +70,7 @@ class EinsumCodeGenerator(BaseCodeGenerator):
         _add_spins = _add_spins and any(i.spin in ("a", "b") for i in tensor.external_indices)
         if _add_spins:
             spins = tuple(i.spin for i in tensor.external_indices if i.spin in ("a", "b"))
-            if len(spins):
+            if spins:
                 string += spin_delimiter + "".join(spins)
 
         # Add the spaces
@@ -79,7 +79,7 @@ class EinsumCodeGenerator(BaseCodeGenerator):
         _add_spaces = _add_spaces and all(i.space for i in tensor.external_indices)
         if _add_spaces:
             spaces = tuple(cast(str, i.space) for i in tensor.external_indices)
-            if len(spaces):
+            if spaces:
                 string += space_delimiter + "".join(spaces)
 
         return string
@@ -277,8 +277,7 @@ class EinsumCodeGenerator(BaseCodeGenerator):
 
     def tensor_expression(
         self,
-        output: Tensor,
-        expr: Base,
+        expr: Expression,
         declared: bool = False,
         is_return: bool = False,
         index_slices: Optional[dict[Index, int]] = None,
@@ -287,22 +286,21 @@ class EinsumCodeGenerator(BaseCodeGenerator):
         """Write a tensor expression.
 
         Args:
-            output: The output tensor.
-            expr: The expression.
+            expr: The tensor expression.
             declared: Whether the output tensor has already been declared.
             is_return: Whether the output tensor is a return tensor.
             index_slices: Specific indices to use as slices for the tensors.
             ignore_index_slices: List of tensor types to ignore slices for.
         """
-        expr = expr.expand()  # guarantee Add[Mul[Tensor | Scalar]]
-        for i, mul in enumerate(expr._children):
+        expr = Expression(expr.lhs, expr.rhs.expand())  # guarantee Add[Mul[Tensor | Scalar]]
+        for i, mul in enumerate(expr.rhs._children or []):
             # Separate the scalar and tensors
-            scalars = list(mul.search_leaves(Scalar))
-            tensors = list(mul.search_leaves(Tensor))
+            scalars = list(mul.search(Scalar))
+            tensors = list(mul.search(Tensor))
 
             # Get the indices
             lhs = [tensor.external_indices for tensor in tensors]
-            rhs = output.external_indices
+            rhs = expr.lhs.external_indices
             indices = _parse_indices(*lhs, rhs)
             assert len(indices) == len(tensors) + 1
 
@@ -322,7 +320,7 @@ class EinsumCodeGenerator(BaseCodeGenerator):
 
             # Get the operator and LHS
             operator = "=" if i == 0 and not declared else "+="
-            output_name = self.get_name(output)
+            output_name = self.get_name(expr.lhs)
 
             # Get the factor
             factor = 1.0

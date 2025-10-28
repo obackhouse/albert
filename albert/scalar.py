@@ -2,36 +2,20 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, TypedDict, TypeVar, cast
+from typing import TYPE_CHECKING, TypeVar, cast
 
-from albert.base import Base, IScalar
+from albert.base import _INTERN_TABLE, Base, _matches_filter
 
 if TYPE_CHECKING:
-    from typing import Any, Callable, Optional
+    from typing import Any, Optional
 
-    from albert.algebra import ExpandedAddLayer
+    from albert.base import TypeOrFilter
     from albert.index import Index
+    from albert.types import _ScalarJSON
 
 T = TypeVar("T", bound=Base)
 
 _ZERO = 1e-12
-
-
-class _ScalarJSON(TypedDict):
-    """Type for JSON representation of a scalar."""
-
-    _type: str
-    _module: str
-    value: float
-
-
-def _compose_scalar(value: float) -> Scalar:
-    """Compose a scalar."""
-    if abs(value) < _ZERO:
-        return Scalar(0)
-    if abs(value % 1) < _ZERO:
-        return Scalar(int(value))
-    return Scalar(value)
 
 
 class Scalar(Base):
@@ -41,28 +25,64 @@ class Scalar(Base):
         value: Value of the scalar.
     """
 
-    _interface = IScalar
+    __slots__ = ("_value", "_hash", "_children", "_internal_indices", "_external_indices")
+
+    _score = 1
 
     def __init__(self, value: float = 0.0):
         """Initialise the tensor."""
         self._value = value
         self._hash = None
         self._children = None
+        self._internal_indices = ()
+        self._external_indices = ()
+
+    @classmethod
+    def factory(cls: type[Scalar], value: float) -> Scalar:
+        """Factory method to create a new object.
+
+        Args:
+            value: Value of the scalar.
+
+        Returns:
+            Algebraic object. In general, `factory` methods may return objects of a different type
+            to the class they are called on.
+        """
+        if not issubclass(cls, Scalar):
+            raise TypeError(f"cls must be a subclass of Scalar, got {cls}")
+
+        # Perform some basic simplifications
+        if abs(value) < _ZERO:
+            value = 0.0
+        elif abs(value % 1) < _ZERO:
+            value = int(value)
+
+        # Build a key for interning
+        key = (cls, value)
+
+        def create() -> Scalar:
+            return cls(value)
+
+        return cast(Scalar, _INTERN_TABLE.get(key, create))
+
+    def delete(
+        self,
+        type_filter: TypeOrFilter[Base],
+    ) -> Base:
+        """Delete nodes (set its value to zero) matching a type filter.
+
+        Args:
+            type_filter: Type of node to delete.
+
+        Returns:
+            Object after deleting nodes (if applicable).
+        """
+        return Scalar.factory(0.0) if _matches_filter(self, type_filter) else self
 
     @property
     def value(self) -> float:
         """Get the value of the scalar."""
         return self._value
-
-    @property
-    def external_indices(self) -> tuple[Index, ...]:
-        """Get the external indices (those that are not summed over)."""
-        return ()
-
-    @property
-    def internal_indices(self) -> tuple[Index, ...]:
-        """Get the internal indices (those that are summed over)."""
-        return ()
 
     @property
     def disjoint(self) -> bool:
@@ -79,7 +99,7 @@ class Scalar(Base):
             Copy of the object.
         """
         if value is None:
-            value = self._value
+            value = self.value
         return Scalar(value)
 
     def map_indices(self, mapping: dict[Index, Index]) -> Scalar:
@@ -91,24 +111,6 @@ class Scalar(Base):
         Returns:
             Object with mapped indices.
         """
-        return self
-
-    def apply(
-        self,
-        function: Callable[[T], Base],
-        node_type: type[T] | tuple[type[T], ...],
-    ) -> Base:
-        """Apply a function to nodes.
-
-        Args:
-            function: Functon to apply.
-            node_type: Type of node to apply to.
-
-        Returns:
-            Object after applying function (if applicable).
-        """
-        if isinstance(self, node_type) or self._interface == node_type:
-            return function(cast(T, self))
         return self
 
     def canonicalise(self, indices: bool = False) -> Scalar:
@@ -125,7 +127,7 @@ class Scalar(Base):
         """
         return self
 
-    def expand(self) -> ExpandedAddLayer:
+    def expand(self) -> Base:
         """Expand the object into the minimally nested format.
 
         Output has the form Add[Mul[Tensor | Scalar]].
@@ -133,11 +135,9 @@ class Scalar(Base):
         Returns:
             Object in expanded format.
         """
-        from albert.algebra import Add, ExpandedAddLayer, ExpandedMulLayer, Mul  # FIXME
+        from albert.algebra import Add, Mul  # FIXME
 
-        mul = cast(ExpandedMulLayer, Mul(self))
-        add = cast(ExpandedAddLayer, Add(mul))
-        return add
+        return Add(Mul(self))
 
     def collect(self) -> Scalar:
         """Collect like terms in the top layer of the object.
@@ -163,7 +163,7 @@ class Scalar(Base):
         """
         import sympy
 
-        return sympy.Float(self._value)
+        return sympy.Float(self.value)
 
     @classmethod
     def from_sympy(cls, data: Any) -> Scalar:
@@ -183,7 +183,7 @@ class Scalar(Base):
         return {
             "_type": self.__class__.__name__,
             "_module": self.__class__.__module__,
-            "value": self._value,
+            "value": self.value,
         }
 
     @classmethod
@@ -195,37 +195,13 @@ class Scalar(Base):
         """
         return cls(data["value"])
 
-    def as_uhf(self, target_rhf: bool = False) -> tuple[Base, ...]:
-        """Convert the indices without spin to indices with spin.
-
-        Indices that start without spin are assumed to be spin orbitals.
-
-        Args:
-            target_rhf: Whether the target is RHF. For some tensors, the intermediate conversion
-                to UHF is different depending on the target.
-
-        Returns:
-            Tuple of expressions resulting from the conversion.
-        """
-        return (self,)
-
-    def as_rhf(self) -> Base:
-        """Convert the indices with spin to indices without spin.
-
-        Indices that are returned without spin are spatial orbitals.
-
-        Returns:
-            Expression resulting from the conversion.
-        """
-        return self
-
     def __repr__(self) -> str:
         """Return a string representation.
 
         Returns:
             String representation.
         """
-        body = str(self._value)
+        body = str(self.value)
         while body.endswith("0") and "." in body:
             body = body[:-1]
         body = body.rstrip(".")
@@ -234,15 +210,15 @@ class Scalar(Base):
     def __add__(self, other: Base | float) -> Scalar:
         """Add two objects."""
         if isinstance(other, (int, float)):
-            other = _compose_scalar(other)
+            other = self.factory(other)
         if isinstance(other, Scalar):
-            return _compose_scalar(self._value + other._value)
+            return self.factory(self.value + other.value)
         return NotImplemented
 
     def __mul__(self, other: Base | float) -> Scalar:
         """Multiply two objects."""
         if isinstance(other, (int, float)):
-            other = _compose_scalar(other)
+            other = self.factory(other)
         if isinstance(other, Scalar):
-            return _compose_scalar(self._value * other._value)
+            return self.factory(self.value * other.value)
         return NotImplemented

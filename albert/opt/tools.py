@@ -7,8 +7,8 @@ from typing import TYPE_CHECKING
 
 from albert import _default_sizes
 from albert.canon import canonicalise_indices
+from albert.expression import Expression
 from albert.index import Index
-from albert.opt import optimise
 from albert.scalar import Scalar
 from albert.symmetry import Permutation, Symmetry
 from albert.tensor import Tensor
@@ -21,25 +21,21 @@ if TYPE_CHECKING:
     TensorInfo = tuple[str, tuple[str | None, ...], tuple[str | None, ...]]
 
 
-def substitute_expressions(output_expr: list[tuple[Tensor, Base]]) -> list[tuple[Tensor, Base]]:
+def substitute_expressions(exprs: list[Expression]) -> list[Expression]:
     """Substitute expressions resulting from common subexpression elimination.
 
-    The return value is a list of tuples, where the first element is the output tensor and the
-    second element is the expression, for each distinct output tensor.
-
     Args:
-        output_expr: The output tensors and their expressions.
+        exprs: The tensor expressions.
 
     Returns:
         The total expression with the substituted tensors, for each distinct output tensor.
     """
-    output = [out for out, _ in output_expr]
-    expr: list[Base] = [exp.expand() for _, exp in output_expr]
+    expr = [Expression(e.lhs, e.rhs.expand()) for e in exprs]
 
     # Find original set of indices for canonicalisation
     extra_indices: set[Index] = set()
     for e in expr:
-        for tensor in e.search_leaves(Tensor):
+        for tensor in e.rhs.search(Tensor):
             extra_indices.update(tensor.external_indices)
             extra_indices.update(tensor.internal_indices)
     extra_indices = sorted(extra_indices)
@@ -48,36 +44,35 @@ def substitute_expressions(output_expr: list[tuple[Tensor, Base]]) -> list[tuple
     while True:
         # Find a valid substitution
         memo["found"] = False
-        for j, (o_src, e_src) in enumerate(zip(output, expr)):
+        for j, e_src in enumerate(expr):
             for i, e_dst in enumerate(expr):
                 if i == j:
                     continue
 
                 def _substitute(tensor: Tensor) -> Base:
                     """Perform the substitution."""
-                    if o_src.name == tensor.name:  # noqa: B023
+                    if e_src.lhs.name == tensor.name:  # noqa: B023
                         memo["found"] = True
 
                         # Find the index substitution
                         index_map = dict(
-                            zip(o_src.external_indices, tensor.external_indices)  # noqa: B023
+                            zip(e_src.external_indices, tensor.external_indices)  # noqa: B023
                         )
-                        for tensor in e_src.search_leaves(Tensor):  # noqa: B023
+                        for tensor in e_src.rhs.search(Tensor):  # noqa: B023
                             for index in tensor.external_indices:
                                 if index not in index_map:
                                     index_map[index] = index.copy(name=f"z{memo['counter']}_")
                                     memo["counter"] += 1
 
                         # Substitute the expression
-                        return e_src.map_indices(index_map)  # noqa: B023
+                        return e_src.rhs.map_indices(index_map)  # noqa: B023
 
                     return tensor
 
-                expr[i] = e_dst.apply(_substitute, Tensor)
+                expr[i] = Expression(e_dst.lhs, e_dst.rhs.apply(_substitute, Tensor))
 
             # Check if we found a substitution
             if memo["found"]:
-                output.pop(j)
                 expr.pop(j)
                 break
 
@@ -86,43 +81,44 @@ def substitute_expressions(output_expr: list[tuple[Tensor, Base]]) -> list[tuple
             break
 
     # Canonicalise the indices
-    for i, (o, e) in enumerate(zip(output, expr)):
-        perm = [e.external_indices.index(index) for index in o.external_indices]
-        expr[i] = canonicalise_indices(e, extra_indices=extra_indices)
-        output[i] = o.copy(*[expr[i].external_indices[p] for p in perm])
+    for i, e in enumerate(expr):
+        perm = [e.rhs.external_indices.index(index) for index in e.external_indices]
+        expr_i = canonicalise_indices(e.rhs, extra_indices=extra_indices)
+        output_i = e.lhs.copy(*[expr_i.external_indices[p] for p in perm])
+        expr[i] = Expression(output_i, expr_i)
 
-    return list(zip(output, expr))
+    return expr
 
 
-def combine_expressions(output_expr: list[tuple[Tensor, Base]]) -> list[tuple[Tensor, Base]]:
+def combine_expressions(exprs: list[Expression]) -> list[Expression]:
     """Combine identical expressions.
 
     Args:
-        output_expr: The output tensors and their expressions.
+        exprs: The tensor expressions.
 
     Returns:
         The total expression with the combined tensors, for each distinct output tensor.
     """
     # Get the factors of the unique expressions
-    output_expr_factors: dict[tuple[Tensor, Base], Scalar] = defaultdict(lambda: Scalar(0.0))
-    for output, expr in output_expr:
-        for mul in expr.expand()._children:
-            factor = Scalar(1.0)
+    expr_factors: dict[Expression, Scalar] = defaultdict(lambda: Scalar.factory(0.0))
+    for expr in exprs:
+        for mul in expr.rhs.expand().children:
+            factor = Scalar.factory(1.0)
             tensors = []
-            for leaf in mul._children:
+            for leaf in mul.children:
                 if isinstance(leaf, Scalar):
                     factor *= leaf
                 else:
                     tensors.append(leaf)
             mul_no_factor = mul.copy(*tensors)
-            output_expr_factors[output, mul_no_factor] += factor
+            expr_factors[Expression(expr.lhs, mul_no_factor)] += factor
 
     # Find the unique expressions
-    output_expr: list[tuple[Tensor, Base]] = []
-    for (output, expr), factor in output_expr_factors.items():
-        output_expr.append((output, factor * expr))
+    exprs: list[Expression] = []
+    for expr, factor in expr_factors.items():
+        exprs.append(Expression(expr.lhs, factor * expr.rhs))
 
-    return output_expr
+    return exprs
 
 
 def _tensor_info(tensor: Tensor) -> TensorInfo:
@@ -134,82 +130,75 @@ def _tensor_info(tensor: Tensor) -> TensorInfo:
     )
 
 
-def expressions_to_graph(
-    output_expr: list[tuple[Tensor, Base]],
-) -> dict[TensorInfo, set[TensorInfo]]:
+def expressions_to_graph(exprs: list[Expression]) -> dict[TensorInfo, set[TensorInfo]]:
     """Convert the expressions into a graph.
 
     Args:
-        output_expr: The output tensors and their expressions.
+        exprs: The tensor expressions.
     """
     graph: dict[TensorInfo, set[TensorInfo]] = defaultdict(set)
-    for output, expr in output_expr:
-        info = _tensor_info(output)
-        for tensor in expr.search_leaves(Tensor):
+    for expr in exprs:
+        info = _tensor_info(expr.lhs)
+        for tensor in expr.rhs.search(Tensor):
             graph[info].add(_tensor_info(tensor))
     return graph
 
 
-def split_expressions(output_expr: list[tuple[Tensor, Base]]) -> list[tuple[Tensor, Base]]:
+def split_expressions(exprs: list[Expression]) -> list[Expression]:
     """Split the expressions into single contractions.
 
     Args:
-        output_expr: The output tensors and their expressions.
+        exprs: The tensor expressions.
 
     Returns:
-        The output tensors and their expressions split up into single contractions.
+        The tensor expressions split up into single contractions.
     """
-    outputs: list[Tensor] = []
-    exprs: list[Base] = []
-    for output, expr in output_expr:
-        for child in expr.expand()._children:
-            outputs.append(output)
-            exprs.append(child)
-    return list(zip(outputs, exprs))
+    new_exprs: list[Expression] = []
+    for expr in exprs:
+        for child in expr.rhs.expand().children:
+            new_exprs.append(Expression(expr.lhs, child))
+    return new_exprs
 
 
 # FIXME: Should be possible to improve this algorithm
-def sort_expressions(output_expr: list[tuple[Tensor, Base]]) -> list[tuple[Tensor, Base]]:
+def sort_expressions(exprs: list[Expression]) -> list[Expression]:
     """Sort expression to optimise intermediate tensor memory footprint.
 
     This is basically a subset of the topological sort algorithm, but with some additional
     ordering constraints.
 
     Args:
-        output_expr: The output tensors and their expressions.
+        exprs: The tensor expressions.
 
     Returns:
-        The output tensors and their expressions sorted to optimise intermediate tensor memory
-        footprint.
+        The tensor expressions sorted to optimise intermediate tensor memory footprint.
     """
     import networkx
 
     # Get a dictionary of the expressions
-    names: dict[TensorInfo, list[tuple[Tensor, Base]]] = defaultdict(list)
-    for output, expr in split_expressions(output_expr):
-        names[_tensor_info(output)].append((output, expr))
+    names: dict[TensorInfo, list[Expression]] = defaultdict(list)
+    for expr in split_expressions(exprs):
+        names[_tensor_info(expr.lhs)].append(expr)
 
     # Create a graph
-    graph = expressions_to_graph(output_expr)
+    graph = expressions_to_graph(exprs)
 
     # Define the function to sort the names
-    outputs: list[Tensor] = []
-    exprs: list[Base] = []
+    new_exprs: list[Expression] = []
 
     def _add(name: TensorInfo) -> None:
         """Add an expression to the list."""
         # Find the first time the tensor is used
-        for i, (output, expr) in enumerate(zip(outputs, exprs)):
-            if name in set(_tensor_info(t) for t in expr.search_leaves(Tensor)):
+        for i, expr in enumerate(new_exprs):
+            if name in set(_tensor_info(t) for t in expr.rhs.search(Tensor)):
                 break
         else:
-            i = len(outputs)
+            i = len(new_exprs)
 
         # Insert the expression
         if name in names:
-            for output, expr in names[name]:
-                outputs.insert(i, output)
-                exprs.insert(i, expr)
+            for expr in names[name]:
+                new_exprs.insert(i, expr)
                 i += 1
 
     # Define a function to recursively get the dependencies
@@ -239,10 +228,10 @@ def sort_expressions(output_expr: list[tuple[Tensor, Base]]) -> list[tuple[Tenso
     # FIXME: Doesn't really have to be true...
     # assert len(outputs) == len(exprs) == len(output_expr)
 
-    return list(zip(outputs, exprs))
+    return new_exprs
 
 
-def count_flops(expr: Base, sizes: Optional[dict[str | None, float]] = None) -> float:
+def count_flops(expr: Base, sizes: Optional[dict[str | None, int]] = None) -> int:
     """Count the number of FLOPs required to evaluate an expression.
 
     Args:
@@ -256,15 +245,15 @@ def count_flops(expr: Base, sizes: Optional[dict[str | None, float]] = None) -> 
         sizes = _default_sizes
 
     # Find the FLOPs of the current expression
-    flops = 1.0
+    flops = 1
     for index in expr.external_indices:
         flops *= sizes[index.space]
     for index in expr.internal_indices:
         flops *= sizes[index.space]
 
     # Add the FLOPs of the children recursively
-    if expr._children:
-        for child in expr._children:
+    if expr.children:
+        for child in expr.children:
             if isinstance(child, Tensor):
                 flops += count_flops(child, sizes)
 
@@ -273,25 +262,25 @@ def count_flops(expr: Base, sizes: Optional[dict[str | None, float]] = None) -> 
 
 def optimise_eom(
     returns: list[Tensor],
-    outputs: list[Tensor],
-    exprs: list[Base],
+    exprs: list[Expression],
     method: str = "auto",
     **kwargs: Any,
-) -> tuple[
-    tuple[list[Tensor], list[tuple[Tensor, Base]]], tuple[list[Tensor], list[tuple[Tensor, Base]]]
-]:
+) -> tuple[tuple[list[Tensor], list[Expression]], tuple[list[Tensor], list[Expression]]]:
     """Perform common subexpression elimination for EOM expressions.
 
     This function optimises out expressions that are independent of the EOM vectors.
 
     Args:
-        outputs: The output tensors for each expression.
-        exprs: The expressions to be optimised.
+        returns: The return tensors.
+        exprs: The tensor expressions to be optimised.
         method: The optimisation method to use. Options are `"auto"`, `"gristmill"`.
+        **kwargs: Additional keyword arguments to pass to the optimiser.
 
     Returns:
-        The optimised expressions, as tuples of the output tensor and the expression.
+        The returned tensors and optimised tensor expressions, split into those that depend on the
+        EOM vectors and those that do not.
     """
+    from albert.opt import optimise
 
     def _is_eom_vector(tensor: Tensor) -> bool:
         """Check if a tensor is an EOM vector."""
@@ -342,48 +331,49 @@ def optimise_eom(
         return tensor.copy(*indices, symmetry=symmetry)
 
     # Make the optimiser more likely to optimise out constant intermediate tensors
-    for i, (output, expr) in enumerate(zip(outputs, exprs)):
-        outputs[i] = _add_dummy_index(output)
-        exprs[i] = expr.apply(_add_dummy_index, Tensor)
+    for i, expr in enumerate(exprs):
+        exprs[i] = Expression(_add_dummy_index(expr.lhs), expr.rhs.apply(_add_dummy_index, Tensor))
 
     # Optimise with the dummy indices
-    output_expr = optimise(outputs, exprs, method, **kwargs)
+    exprs = optimise(exprs, method, **kwargs)
 
     # Remove the dummy indices
-    for i, (output, expr) in enumerate(output_expr):
-        output_expr[i] = (_remove_dummy_index(output), expr.apply(_remove_dummy_index, Tensor))
+    for i, expr in enumerate(exprs):
+        exprs[i] = Expression(
+            _remove_dummy_index(expr.lhs), expr.rhs.apply(_remove_dummy_index, Tensor)
+        )
 
     # Extract the intermediates that don't depend on the EOM vectors
-    output_expr_dep: list[tuple[Tensor, Base]] = []
-    output_expr_indep: list[tuple[Tensor, Base]] = []
+    exprs_dep: list[Expression] = []
+    exprs_indep: list[Expression] = []
     cache: set[str] = set()
-    for output, expr in output_expr:
-        depends = _is_eom_vector(output)
+    for expr in exprs:
+        depends = _is_eom_vector(expr.lhs)
         if not depends:
-            for tensor in expr.search_leaves(Tensor):
+            for tensor in expr.rhs.search(Tensor):
                 if _is_eom_vector(tensor) or tensor.name in cache:
                     depends = True
                     break
         if depends:
-            output_expr_dep.append((output, expr))
-            cache.add(output.name)
+            exprs_dep.append(expr)
+            cache.add(expr.lhs.name)
         else:
-            output_expr_indep.append((output, expr))
+            exprs_indep.append(expr)
 
     # Get the intermediates needed to return
     returns_dep = returns
     returns_indep: list[Tensor] = []
     initialised: set[str] = set()
-    for output, expr in output_expr_dep:
-        if output.name.startswith("tmp"):
-            initialised.add(output.name)
-        for tensor in expr.search_leaves(Tensor):
+    for expr in exprs_dep:
+        if expr.lhs.name.startswith("tmp"):
+            initialised.add(expr.lhs.name)
+        for tensor in expr.rhs.search(Tensor):
             if tensor.name.startswith("tmp") and tensor.name not in initialised:
                 returns_indep.append(tensor)
 
     # Transform the names of the intermediates
-    for i, (output, expr) in enumerate(output_expr_dep):
-        expr = expr.apply(
+    for i, expr in enumerate(exprs_dep):
+        rhs = expr.rhs.apply(
             lambda t: (
                 t.copy(name=f"ints.{t.name}")
                 if t.name.startswith("tmp") and t.name not in initialised
@@ -391,26 +381,21 @@ def optimise_eom(
             ),
             Tensor,
         )
-        output_expr_dep[i] = (output, expr)
+        exprs_dep[i] = Expression(expr.lhs, rhs)
 
     # Re-optimise the output
-    output_expr_dep: list[tuple[Tensor, Base]] = [
-        (output, expr.expand()) for output, expr in output_expr_dep
-    ]
-    output_expr_dep = substitute_expressions(output_expr_dep)
-    output_expr_dep = optimise(
-        [output for output, _ in output_expr_dep],
-        [expr for _, expr in output_expr_dep],
-        method,
-        **kwargs,
-    )
+    exprs_dep: list[Expression] = [Expression(expr.lhs, expr.rhs.expand()) for expr in exprs_dep]
+    exprs_dep = substitute_expressions(exprs_dep)
+    exprs_dep = optimise(exprs_dep, method, **kwargs)
 
     # Replace the tensor types
-    for i, (output, expr) in enumerate(output_expr_dep):
-        output_expr_dep[i] = (_replace_types(output), expr.apply(_replace_types, Tensor))
-    for i, (output, expr) in enumerate(output_expr_indep):
-        output_expr_indep[i] = (_replace_types(output), expr.apply(_replace_types, Tensor))
+    for i, expr in enumerate(exprs_dep):
+        exprs_dep[i] = Expression(_replace_types(expr.lhs), expr.rhs.apply(_replace_types, Tensor))
+    for i, expr in enumerate(exprs_indep):
+        exprs_indep[i] = Expression(
+            _replace_types(expr.lhs), expr.rhs.apply(_replace_types, Tensor)
+        )
     returns_dep = [_replace_types(tensor) for tensor in returns_dep]
     returns_indep = [_replace_types(tensor) for tensor in returns_indep]
 
-    return (returns_indep, output_expr_indep), (returns_dep, output_expr_dep)
+    return (returns_indep, exprs_indep), (returns_dep, exprs_dep)
