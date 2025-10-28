@@ -2,6 +2,9 @@ from __future__ import annotations
 from typing import Any, Hashable, Protocol, Optional, TypedDict
 
 
+EvaluatorArrayDict = dict[str, dict[tuple[str, ...] | str, Any]] | dict[str, Any]
+
+
 class Comparable(Protocol):
     """Protocol for comparable objects."""
 

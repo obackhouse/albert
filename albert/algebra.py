@@ -12,11 +12,12 @@ from albert.base import _INTERN_TABLE, Base, _matches_filter
 from albert.scalar import Scalar
 
 if TYPE_CHECKING:
-    from typing import Any, Iterable
+    from typing import Any, Callable, Iterable
 
     from albert.base import TypeOrFilter
     from albert.index import Index
-    from albert.types import _AlgebraicJSON
+    from albert.tensor import Tensor
+    from albert.types import EvaluatorArrayDict, _AlgebraicJSON
 
 T = TypeVar("T", bound=Base)
 
@@ -299,6 +300,31 @@ class Add(Algebraic):
             return self.factory(*children)
         return Scalar.factory(0.0)
 
+    def evaluate(
+        self,
+        arrays: EvaluatorArrayDict,
+        einsum: Callable[..., Any],
+    ) -> Any:
+        """Evaluate the node numerically.
+
+        Args:
+            arrays: Mapping to provide numerical arrays for tensors. The mapping must be in one of
+                the following formats:
+                    1. ``{tensor_name: { (space1, space2, ...): array, ... }, ...}``
+                    2. ``{tensor_name: { "space1space2...": array, ...}, ...}``
+                    3. ``{tensor_name: array, ...}`` (only for tensors with no indices)
+            einsum: Function to perform tensor contraction.
+
+        Returns:
+            Evaluated node, as an array.
+        """
+        return sum(
+            child.evaluate(arrays, einsum).transpose(
+                tuple(child.external_indices.index(index) for index in self.external_indices)
+            )
+            for child in self.children
+        )
+
     @property
     def disjoint(self) -> bool:
         """Return whether the object is disjoint."""
@@ -446,6 +472,50 @@ class Mul(Algebraic):
         if not _matches_filter(self, type_filter):
             return self.factory(*children)
         return Scalar.factory(0.0)
+
+    def evaluate(
+        self,
+        arrays: EvaluatorArrayDict,
+        einsum: Callable[..., Any],
+    ) -> Any:
+        """Evaluate the node numerically.
+
+        Args:
+            arrays: Mapping to provide numerical arrays for tensors. The mapping must be in one of
+                the following formats:
+                    1. ``{tensor_name: { (space1, space2, ...): array, ... }, ...}``
+                    2. ``{tensor_name: { "space1space2...": array, ...}, ...}``
+                    3. ``{tensor_name: array, ...}`` (only for tensors with no indices)
+            einsum: Function to perform tensor contraction.
+
+        Returns:
+            Evaluated node, as an array.
+        """
+        # Find the scalar factor
+        factor = 1.0
+        if self.find(Scalar):
+            for scalar in self.search(Scalar):
+                factor *= scalar.evaluate(arrays, einsum)
+
+        # Get the arrays and indices
+        child: Tensor | Algebraic
+        index: Index
+        child_index_map: dict[Index, int] = {}
+        args: list[Any] = []
+        for child in self.search(lambda node: node is not self and not isinstance(node, Scalar)):
+            for index in child.external_indices:
+                if index not in child_index_map:
+                    child_index_map[index] = len(child_index_map)
+            args.append(child.evaluate(arrays, einsum))
+            args.append(
+                tuple(child_index_map[index] for index in child.external_indices)  # type: ignore
+            )
+
+        # Call the einsum function
+        output_indices = tuple(child_index_map[index] for index in self.external_indices)
+        result = einsum(*args, output_indices)
+
+        return result * factor
 
     @property
     def disjoint(self) -> bool:

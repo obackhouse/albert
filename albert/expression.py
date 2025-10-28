@@ -8,10 +8,10 @@ from albert.base import Base, Serialisable
 from albert.tensor import Tensor
 
 if TYPE_CHECKING:
-    from typing import Iterable
+    from typing import Any, Callable, Iterable
 
     from albert.index import Index
-    from albert.types import SerialisedField, _ExpressionJSON
+    from albert.types import EvaluatorArrayDict, SerialisedField, _ExpressionJSON
 
 
 class Expression(Serialisable):
@@ -70,6 +70,26 @@ class Expression(Serialisable):
             Copy of the object.
         """
         return Expression(self._lhs.copy(), self._rhs.copy())
+
+    def evaluate(
+        self,
+        arrays: EvaluatorArrayDict,
+        einsum: Callable[..., Any],
+    ) -> Any:
+        """Evaluate the node numerically.
+
+        Args:
+            arrays: Mapping to provide numerical arrays for tensors. The mapping must be in one of
+                the following formats:
+                    1. ``{tensor_name: { (space1, space2, ...): array, ... }, ...}``
+                    2. ``{tensor_name: { "space1space2...": array, ...}, ...}``
+                    3. ``{tensor_name: array, ...}`` (only for tensors with no indices)
+            einsum: Function to perform tensor contraction.
+
+        Returns:
+            Evaluated node, as an array.
+        """
+        return self.rhs.evaluate(arrays, einsum)
 
     def as_json(self) -> _ExpressionJSON:
         """Return a JSON representation of the object.

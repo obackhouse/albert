@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
     from albert.index import Index
     from albert.symmetry import Permutation
-    from albert.types import SerialisedField
+    from albert.types import EvaluatorArrayDict, SerialisedField
 
 T = TypeVar("T", bound="Base")
 TypeOrFilter = Optional[type[T] | tuple[type[T], ...] | Callable[["Base"], bool]]
@@ -271,6 +271,27 @@ class Base(Serialisable):
 
         Returns:
             Object after deleting nodes (if applicable).
+        """
+        pass
+
+    @abstractmethod
+    def evaluate(
+        self,
+        arrays: EvaluatorArrayDict,
+        einsum: Callable[..., Any],
+    ) -> Any:
+        """Evaluate the node numerically.
+
+        Args:
+            arrays: Mapping to provide numerical arrays for tensors. The mapping must be in one of
+                the following formats:
+                    1. ``{tensor_name: { (space1, space2, ...): array, ... }, ...}``
+                    2. ``{tensor_name: { "space1space2...": array, ...}, ...}``
+                    3. ``{tensor_name: array, ...}`` (only for tensors with no indices)
+            einsum: Function to perform tensor contraction.
+
+        Returns:
+            Evaluated node, as an array.
         """
         pass
 

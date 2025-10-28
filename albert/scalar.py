@@ -7,11 +7,11 @@ from typing import TYPE_CHECKING, TypeVar, cast
 from albert.base import _INTERN_TABLE, Base, _matches_filter
 
 if TYPE_CHECKING:
-    from typing import Any, Optional
+    from typing import Any, Callable, Optional
 
     from albert.base import TypeOrFilter
     from albert.index import Index
-    from albert.types import _ScalarJSON
+    from albert.types import EvaluatorArrayDict, _ScalarJSON
 
 T = TypeVar("T", bound=Base)
 
@@ -78,6 +78,26 @@ class Scalar(Base):
             Object after deleting nodes (if applicable).
         """
         return Scalar.factory(0.0) if _matches_filter(self, type_filter) else self
+
+    def evaluate(
+        self,
+        arrays: EvaluatorArrayDict,
+        einsum: Callable[..., Any],
+    ) -> Any:
+        """Evaluate the node numerically.
+
+        Args:
+            arrays: Mapping to provide numerical arrays for tensors. The mapping must be in one of
+                the following formats:
+                    1. ``{tensor_name: { (space1, space2, ...): array, ... }, ...}``
+                    2. ``{tensor_name: { "space1space2...": array, ...}, ...}``
+                    3. ``{tensor_name: array, ...}`` (only for tensors with no indices)
+            einsum: Function to perform tensor contraction.
+
+        Returns:
+            Evaluated node, as an array.
+        """
+        return self.value
 
     @property
     def value(self) -> float:
