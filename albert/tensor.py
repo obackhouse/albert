@@ -10,11 +10,11 @@ from albert.index import Index
 from albert.scalar import Scalar
 
 if TYPE_CHECKING:
-    from typing import Any, Optional
+    from typing import Any, Callable, Optional
 
     from albert.base import TypeOrFilter
     from albert.symmetry import Permutation, Symmetry
-    from albert.types import _TensorJSON
+    from albert.types import EvaluatorArrayDict, _TensorJSON
 
 T = TypeVar("T", bound=Base)
 
@@ -98,6 +98,36 @@ class Tensor(Base):
             Object after deleting nodes (if applicable).
         """
         return Scalar.factory(0.0) if _matches_filter(self, type_filter) else self
+
+    def evaluate(
+        self,
+        arrays: EvaluatorArrayDict,
+        einsum: Callable[..., Any],
+    ) -> Any:
+        """Evaluate the node numerically.
+
+        Args:
+            arrays: Mapping to provide numerical arrays for tensors. The mapping must be in one of
+                the following formats:
+                    1. ``{tensor_name: { (space1, space2, ...): array, ... }, ...}``
+                    2. ``{tensor_name: { "space1space2...": array, ...}, ...}``
+                    3. ``{tensor_name: array, ...}`` (only for tensors with no indices)
+            einsum: Function to perform tensor contraction.
+
+        Returns:
+            Evaluated node, as an array.
+        """
+        spaces = tuple(index.space for index in self.indices)
+        if all(space is None for space in spaces):
+            return arrays[self.name]
+        elif any(space is None for space in spaces):
+            raise ValueError("Cannot evaluate tensor with some indices missing spaces")
+        spaces = cast(tuple[str, ...], spaces)
+        if spaces in arrays[self.name]:
+            return arrays[self.name][spaces]
+        elif "".join(spaces) in arrays[self.name]:
+            return arrays[self.name]["".join(spaces)]
+        raise ValueError(f"No tensor {self.name} with spaces {spaces} provided")
 
     @property
     def indices(self) -> tuple[Index, ...]:
