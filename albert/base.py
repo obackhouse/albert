@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import importlib
 from abc import ABC, abstractmethod
 from enum import Enum
+from functools import cache
 from typing import TYPE_CHECKING, Callable, Optional, TypeVar, cast
 
 from albert.hashing import InternTable
@@ -463,14 +465,13 @@ class Base(Serialisable):
             yield from self._children
 
     @classmethod
-    @abstractmethod
     def from_json(cls, data: Any) -> Base:
         """Return an object loaded from a JSON representation.
 
         Returns:
             Object loaded from JSON representation.
         """
-        pass
+        return _get_class(data["_module"], data["_type"]).from_json(data)
 
     @abstractmethod
     def __repr__(self) -> str:
@@ -560,3 +561,17 @@ class Base(Serialisable):
 
 
 _INTERN_TABLE = InternTable[Base]()
+
+
+@cache
+def _get_class(module: str, type_: str) -> type[Base]:
+    """Get a class from JSON data for deserialisation.
+
+    Args:
+        module: Module path of the class.
+        type_: Type name of the class.
+
+    Returns:
+        Class object.
+    """
+    return cast(type[Base], getattr(importlib.import_module(module), type_))
