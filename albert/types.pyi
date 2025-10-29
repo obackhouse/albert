@@ -23,63 +23,56 @@ class SerialisedField(Comparable, Hashable, Protocol):
     pass
 
 
-class _ScalarJSON(TypedDict):
-    """Type for JSON representation of a scalar."""
+class _BaseJSON(TypedDict):
+    """Base type for JSON representation."""
 
     _type: str
     _module: str
+
+
+class _ScalarJSON(_BaseJSON):
+    """Type for JSON representation of a scalar."""
+
     value: float
 
 
-class _IndexJSON(TypedDict):
+class _IndexJSON(_BaseJSON):
     """Type for JSON representation of an index."""
 
-    _type: str
-    _module: str
     name: str
     spin: Optional[str]
     space: Optional[str]
 
 
-class _PermutationJSON(TypedDict):
+class _PermutationJSON(_BaseJSON):
     """Type for JSON representation of a permutation."""
 
-    _type: str
-    _module: str
     permutation: tuple[int, ...]
     sign: int
 
 
-class _SymmetryJSON(TypedDict):
+class _SymmetryJSON(_BaseJSON):
     """Type for JSON representation of a symmetry group."""
 
-    _type: str
-    _module: str
     permutations: tuple[_PermutationJSON, ...]
 
 
-class _TensorJSON(TypedDict):
+class _TensorJSON(_BaseJSON):
     """Type for JSON representation of a tensor."""
 
-    _type: str
-    _module: str
     indices: tuple[_IndexJSON, ...]
     name: str
     symmetry: Optional[_SymmetryJSON]
 
 
-class _AlgebraicJSON(TypedDict):
+class _AlgebraicJSON(_BaseJSON):
     """Type for JSON representation of an algebraic operation."""
 
-    _type: str
-    _module: str
     children: tuple[_AlgebraicJSON | _TensorJSON, ...]
 
 
-class _ExpressionJSON(TypedDict):
+class _ExpressionJSON(_BaseJSON):
     """Type for JSON representation of an expression."""
 
-    _type: str
-    _module: str
     lhs: _TensorJSON
     rhs: _TensorJSON | _AlgebraicJSON
