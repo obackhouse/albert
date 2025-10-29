@@ -166,7 +166,7 @@ class Base(Serialisable):
     @property
     def is_leaf(self) -> bool:
         """Get whether the object is a leaf in a tree."""
-        return self.children is None
+        return not bool(self.children)
 
     @property
     def children(self) -> tuple[Base, ...]:
