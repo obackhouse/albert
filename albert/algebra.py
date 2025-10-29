@@ -16,7 +16,6 @@ if TYPE_CHECKING:
 
     from albert.base import TypeOrFilter
     from albert.index import Index
-    from albert.tensor import Tensor
     from albert.types import EvaluatorArrayDict, _AlgebraicJSON
 
 T = TypeVar("T", bound=Base)
@@ -491,25 +490,19 @@ class Mul(Algebraic):
         Returns:
             Evaluated node, as an array.
         """
-        # Find the scalar factor
-        factor = 1.0
-        if self.find(Scalar):
-            for scalar in self.search(Scalar):
-                factor *= scalar.evaluate(arrays, einsum)
-
         # Get the arrays and indices
-        child: Tensor | Algebraic
-        index: Index
         child_index_map: dict[Index, int] = {}
+        factor = 1.0
         args: list[Any] = []
-        for child in self.search(lambda node: node is not self and not isinstance(node, Scalar)):
-            for index in child.external_indices:
-                if index not in child_index_map:
-                    child_index_map[index] = len(child_index_map)
-            args.append(child.evaluate(arrays, einsum))
-            args.append(
-                tuple(child_index_map[index] for index in child.external_indices)  # type: ignore
-            )
+        for child in self.children:
+            if isinstance(child, Scalar):
+                factor *= child.evaluate(arrays, einsum)
+            else:
+                for index in child.external_indices:
+                    if index not in child_index_map:
+                        child_index_map[index] = len(child_index_map)
+                args.append(child.evaluate(arrays, einsum))
+                args.append(tuple(child_index_map[index] for index in child.external_indices))
 
         # Call the einsum function
         output_indices = tuple(child_index_map[index] for index in self.external_indices)
