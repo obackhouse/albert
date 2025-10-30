@@ -7,7 +7,7 @@ from collections import defaultdict
 from functools import reduce
 from typing import TYPE_CHECKING
 
-from albert import ALLOW_NON_EINSTEIN_NOTATION
+from albert import ALLOW_NON_EINSTEIN_NOTATION, INFER_ALGEBRA_SYMMETRIES
 from albert.base import _INTERN_TABLE, Base, _matches_filter
 from albert.scalar import Scalar
 from albert.symmetry import infer_symmetry_add, infer_symmetry_mul
@@ -247,7 +247,11 @@ class Add(Algebraic):
         self._internal_indices = ()
 
         # Try to infer symmetry if not provided
-        if symmetry is None and all(child.symmetry is not None for child in children):
+        if (
+            symmetry is None
+            and all(child.symmetry is not None for child in children)
+            and INFER_ALGEBRA_SYMMETRIES
+        ):
             self._symmetry = infer_symmetry_add(self)
 
     @classmethod
@@ -428,7 +432,11 @@ class Mul(Algebraic):
         self._internal_indices = tuple(index for index, count in counts.items() if count > 1)
 
         # Try to infer symmetry if not provided
-        if self._symmetry is None and all(child.symmetry is not None for child in children):
+        if (
+            self._symmetry is None
+            and all(child.symmetry is not None for child in children)
+            and INFER_ALGEBRA_SYMMETRIES
+        ):
             self._symmetry = infer_symmetry_mul(self)
 
     @classmethod
