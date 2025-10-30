@@ -140,11 +140,6 @@ class Tensor(Base):
         return self._name
 
     @property
-    def symmetry(self) -> Optional[Symmetry]:
-        """Get the symmetry of the object."""
-        return self._symmetry
-
-    @property
     def disjoint(self) -> bool:
         """Return whether the object is disjoint."""
         return False

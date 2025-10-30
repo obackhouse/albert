@@ -5,20 +5,22 @@ from __future__ import annotations
 import itertools
 from collections import defaultdict
 from functools import reduce
-from typing import TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING
 
 from albert import ALLOW_NON_EINSTEIN_NOTATION
 from albert.base import _INTERN_TABLE, Base, _matches_filter
 from albert.scalar import Scalar
+from albert.symmetry import infer_symmetry_add, infer_symmetry_mul
 
 if TYPE_CHECKING:
-    from typing import Any, Callable, Iterable
+    from typing import Any, Callable, Iterable, Optional
 
     from albert.base import TypeOrFilter
     from albert.index import Index
+    from albert.symmetry import Symmetry
     from albert.types import EvaluatorArrayDict, _AlgebraicJSON
 
-T = TypeVar("T", bound=Base)
+# T = TypeVar("T", bound=Base)
 
 
 def _check_indices(children: Iterable[Base]) -> dict[Index, int]:
@@ -66,20 +68,23 @@ class Algebraic(Base):
         children: Children to operate on.
     """
 
-    __slots__ = ("_hash", "_children")
+    __slots__ = ("_hash", "_children", "_symmetry")
 
     _children: tuple[Base, ...]
 
-    def __init__(self, *children: Base):
+    def __init__(self, *children: Base, symmetry: Optional[Symmetry] = None):
         """Initialise the addition."""
         self._hash = None
         self._children = children
+        self._symmetry = symmetry
 
-    def copy(self, *children: Base) -> Algebraic:
+    def copy(self, *children: Base, symmetry: Optional[Symmetry] = None) -> Algebraic:
         """Return a copy of the object with optionally updated attributes."""
         if not children:
             children = self.children
-        return self.__class__(*children)
+        if symmetry is None:
+            symmetry = self._symmetry
+        return self.__class__(*children, symmetry=symmetry)
 
     def map_indices(self, mapping: dict[Index, Index]) -> Algebraic:
         """Return a copy of the object with the indices mapped according to some dictionary.
@@ -211,19 +216,23 @@ class Add(Algebraic):
         children: Children to add.
     """
 
-    __slots__ = ("_hash", "_children", "_internal_indices", "_external_indices")
+    __slots__ = ("_hash", "_children", "_symmetry", "_internal_indices", "_external_indices")
 
     _score = 2
 
-    def __init__(self, *children: Base):
+    def __init__(self, *children: Base, symmetry: Optional[Symmetry] = None):
         """Initialise the addition."""
         if len(set(tuple(sorted(child.external_indices)) for child in children)) > 1:
             raise ValueError("External indices in additions must be equal.")
-        super().__init__(*children)
+        super().__init__(*children, symmetry=symmetry)
 
         # Precompute indices
         self._external_indices = children[0].external_indices
         self._internal_indices = ()
+
+        # Try to infer symmetry if not provided
+        if symmetry is None and all(child.symmetry is not None for child in children):
+            self._symmetry = infer_symmetry_add(self)
 
     @classmethod
     def factory(cls: type[Add], *children: Base, cls_scalar: type[Scalar] | None = None) -> Base:
@@ -383,18 +392,22 @@ class Mul(Algebraic):
         children: Children to multiply
     """
 
-    __slots__ = ("_hash", "_children", "_internal_indices", "_external_indices")
+    __slots__ = ("_hash", "_children", "_symmetry", "_internal_indices", "_external_indices")
 
     _score = 3
 
-    def __init__(self, *children: Base):
+    def __init__(self, *children: Base, symmetry: Optional[Symmetry] = None):
         """Initialise the multiplication."""
-        super().__init__(*children)
+        super().__init__(*children, symmetry=symmetry)
 
         # Precompute indices
         counts = _check_indices(children)
         self._external_indices = tuple(index for index, count in counts.items() if count == 1)
         self._internal_indices = tuple(index for index, count in counts.items() if count > 1)
+
+        # Try to infer symmetry if not provided
+        if self._symmetry is None and all(child.symmetry is not None for child in children):
+            self._symmetry = infer_symmetry_mul(self)
 
     @classmethod
     def factory(cls: type[Mul], *children: Base, cls_scalar: type[Scalar] | None = None) -> Base:
