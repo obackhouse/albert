@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import itertools
+from math import prod
 from typing import TYPE_CHECKING
 
 from albert.base import Serialisable
@@ -10,6 +11,7 @@ from albert.base import Serialisable
 if TYPE_CHECKING:
     from typing import Iterable
 
+    from albert.algebra import Add, Mul
     from albert.base import Base
     from albert.types import SerialisedField, _PermutationJSON, _SymmetryJSON
 
@@ -210,7 +212,7 @@ def fully_symmetric_group(n: int) -> Symmetry:
     Returns:
         Symmetry group.
     """
-    return Symmetry(*[Permutation(perm, 1) for perm in itertools.permutations(range(n))])
+    return Symmetry(*sorted(Permutation(perm, 1) for perm in itertools.permutations(range(n))))
 
 
 def fully_antisymmetric_group(n: int) -> Symmetry:
@@ -244,3 +246,71 @@ def fully_antisymmetric_group(n: int) -> Symmetry:
     ]
 
     return Symmetry(*permutations)
+
+
+def infer_symmetry_add(add: Add) -> Symmetry:
+    """Infer the symmetry of an addition from its children.
+
+    Args:
+        add: Addition node.
+
+    Returns:
+        Inferred symmetry.
+    """
+    perms: set[Permutation] = set()
+    for child in add.children:
+        if child.symmetry is None:
+            raise ValueError("All children must have symmetry defined to infer symmetry.")
+        perms.update(child.symmetry.permutations)
+    return Symmetry(*sorted(perms))
+
+
+def infer_symmetry_mul(mul: Mul) -> Symmetry:
+    """Infer the symmetry of a multiplication from its children.
+
+    Args:
+        mul: Multiplication node.
+
+    Returns:
+        Inferred symmetry.
+    """
+    from albert.scalar import Scalar
+
+    # Get all permutations
+    children = tuple(filter(lambda node: not isinstance(node, Scalar), mul.children))
+    perms: list[list[Permutation]] = []
+    for child in children:
+        if child.symmetry is None:
+            raise ValueError("All children must have symmetry defined to infer symmetry.")
+        perms.append(list(child.symmetry.permutations))
+
+    # Loop over permutations of each child
+    result_permutations: set[Permutation] = set()
+    for permutations in itertools.product(*perms):
+        index_maps = [
+            dict(zip(child.external_indices, (child.external_indices[p] for p in perm.permutation)))
+            for child, perm in zip(children, permutations)
+        ]
+        sign = prod(perm.sign for perm in permutations)
+
+        # Skip if any internal and external indices are permuted in any child
+        if any(
+            (src in mul.external_indices) != (dst in mul.external_indices)
+            for index_map in index_maps
+            for src, dst in index_map.items()
+        ):
+            continue
+
+        # Find the permutation of the external indices
+        perm: list[int] = []
+        for idx in mul.external_indices:
+            for index_map in index_maps:
+                if idx in index_map:
+                    idx = index_map[idx]
+                    break
+            perm.append(mul.external_indices.index(idx))
+
+        # Add the resulting permutation
+        result_permutations.add(Permutation(tuple(perm), sign))
+
+    return Symmetry(*sorted(result_permutations))

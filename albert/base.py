@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from typing_extensions import Self
 
     from albert.index import Index
-    from albert.symmetry import Permutation
+    from albert.symmetry import Permutation, Symmetry
     from albert.types import EvaluatorArrayDict, SerialisedField
 
 T = TypeVar("T", bound="Base")
@@ -146,6 +146,7 @@ class Base(Serialisable):
 
     _score: int
     _children: Optional[tuple[Base, ...]]
+    _symmetry: Optional[Symmetry] = None
     _penalties: tuple[Callable[[Base], int], ...] = (_sign_penalty,)
     _internal_indices: tuple[Index, ...]
     _external_indices: tuple[Index, ...]
@@ -174,6 +175,11 @@ class Base(Serialisable):
     def children(self) -> tuple[Base, ...]:
         """Get the children of the node."""
         return self._children or ()
+
+    @property
+    def symmetry(self) -> Optional[Symmetry]:
+        """Get the symmetry of the object."""
+        return self._symmetry
 
     def _search(
         self,

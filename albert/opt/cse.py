@@ -718,8 +718,8 @@ def optimise(
 
         # Initialise intermediate tensors
         n = len(intermediates)
-        left = Tensor(*partition.indices_left, name=intermediate_format.format(n))
-        right = Tensor(*partition.indices_right, name=intermediate_format.format(n + 1))
+        left = Tensor.factory(*partition.indices_left, name=intermediate_format.format(n))
+        right = Tensor.factory(*partition.indices_right, name=intermediate_format.format(n + 1))
 
         # Build the intermediate expressions
         intermediates[left], intermediates[right] = build_intermediates(

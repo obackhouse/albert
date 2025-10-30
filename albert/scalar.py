@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, TypeVar, cast
 
 from albert.base import _INTERN_TABLE, Base, _matches_filter
+from albert.symmetry import fully_symmetric_group
 
 if TYPE_CHECKING:
     from typing import Any, Callable, Optional
@@ -25,15 +26,23 @@ class Scalar(Base):
         value: Value of the scalar.
     """
 
-    __slots__ = ("_value", "_hash", "_children", "_internal_indices", "_external_indices")
+    __slots__ = (
+        "_value",
+        "_hash",
+        "_children",
+        "_symmetry",
+        "_internal_indices",
+        "_external_indices",
+    )
 
     _score = 1
 
-    def __init__(self, value: float = 0.0):
+    def __init__(self, value: float = 0.0) -> None:
         """Initialise the tensor."""
         self._value = value
         self._hash = None
         self._children = None
+        self._symmetry = fully_symmetric_group(0)
         self._internal_indices = ()
         self._external_indices = ()
 
@@ -117,10 +126,14 @@ class Scalar(Base):
 
         Returns:
             Copy of the object.
+
+        Note:
+            Since ``albert`` objects are immutable, the copy may be an interned object. If this
+            method is called without any arguments, the original object may be returned.
         """
         if value is None:
             value = self.value
-        return Scalar(value)
+        return self.__class__.factory(value)
 
     def map_indices(self, mapping: dict[Index, Index]) -> Scalar:
         """Return a copy of the object with the indices mapped according to some dictionary.

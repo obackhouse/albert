@@ -34,3 +34,4 @@ _default_sizes: dict[str | None, int] = {
 }
 
 ALLOW_NON_EINSTEIN_NOTATION = 0
+INFER_ALGEBRA_SYMMETRIES = 0
