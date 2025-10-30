@@ -159,6 +159,10 @@ class Tensor(Base):
 
         Returns:
             Copy of the object.
+
+        Note:
+            Since ``albert`` objects are immutable, the copy may be an interned object. If this
+            method is called without any arguments, the original object may be returned.
         """
         if not indices:
             indices = self.indices
@@ -166,7 +170,7 @@ class Tensor(Base):
             name = self.name
         if symmetry is None:
             symmetry = self.symmetry
-        return self.__class__(*indices, name=name, symmetry=symmetry)
+        return self.__class__.factory(*indices, name=name, symmetry=symmetry)
 
     def map_indices(self, mapping: dict[Index, Index]) -> Tensor:
         """Return a copy of the object with the indices mapped according to some dictionary.

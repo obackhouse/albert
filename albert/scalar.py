@@ -126,10 +126,14 @@ class Scalar(Base):
 
         Returns:
             Copy of the object.
+
+        Note:
+            Since ``albert`` objects are immutable, the copy may be an interned object. If this
+            method is called without any arguments, the original object may be returned.
         """
         if value is None:
             value = self.value
-        return Scalar(value)
+        return self.__class__.factory(value)
 
     def map_indices(self, mapping: dict[Index, Index]) -> Scalar:
         """Return a copy of the object with the indices mapped according to some dictionary.

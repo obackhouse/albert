@@ -79,11 +79,27 @@ class Algebraic(Base):
         self._symmetry = symmetry
 
     def copy(self, *children: Base, symmetry: Optional[Symmetry] = None) -> Algebraic:
-        """Return a copy of the object with optionally updated attributes."""
+        """Return a copy of the object with optionally updated attributes.
+
+        Args:
+            children: New children.
+            symmetry: New symmetry.
+
+        Returns:
+            Copy of the object.
+
+        Note:
+            Since ``albert`` objects are immutable, the copy may be an interned object. If this
+            method is called without any arguments, the original object may be returned.
+        """
         if not children:
             children = self.children
         if symmetry is None:
             symmetry = self._symmetry
+        factory_copy = self.factory(*children, symmetry=symmetry)
+        if isinstance(factory_copy, self.__class__):
+            # factory method may return a different class, only return it if not
+            return factory_copy
         return self.__class__(*children, symmetry=symmetry)
 
     def map_indices(self, mapping: dict[Index, Index]) -> Algebraic:
@@ -235,12 +251,18 @@ class Add(Algebraic):
             self._symmetry = infer_symmetry_add(self)
 
     @classmethod
-    def factory(cls: type[Add], *children: Base, cls_scalar: type[Scalar] | None = None) -> Base:
+    def factory(
+        cls: type[Add],
+        *children: Base,
+        symmetry: Optional[Symmetry] = None,
+        cls_scalar: type[Scalar] | None = None,
+    ) -> Base:
         """Factory method to create a new object.
 
         Args:
             cls: The class of the addition to create.
             children: The children of the addition.
+            symmetry: Symmetry of the addition.
             cls_scalar: Class to use for scalars.
 
         Returns:
@@ -274,7 +296,7 @@ class Add(Algebraic):
                 other.append(child)
 
         # Build a key for interning
-        key = (cls, value, tuple(other))  # Commutative but not canonical
+        key = (cls, value, tuple(other), symmetry)  # Commutative but not canonical
 
         def create() -> Base:
             if not other:
@@ -410,12 +432,18 @@ class Mul(Algebraic):
             self._symmetry = infer_symmetry_mul(self)
 
     @classmethod
-    def factory(cls: type[Mul], *children: Base, cls_scalar: type[Scalar] | None = None) -> Base:
+    def factory(
+        cls: type[Mul],
+        *children: Base,
+        symmetry: Optional[Symmetry] = None,
+        cls_scalar: type[Scalar] | None = None,
+    ) -> Base:
         """Factory method to create a new object.
 
         Args:
             cls: The class of the multiplication to create.
             children: The children of the multiplication.
+            symmetry: Symmetry of the multiplication.
             cls_scalar: Class to use for scalars.
 
         Returns:
@@ -453,7 +481,7 @@ class Mul(Algebraic):
             return cls_scalar.factory(0.0)
 
         # Build a key for interning
-        key = (cls, value, tuple(other))  # Commutative but not canonical
+        key = (cls, value, tuple(other), symmetry)  # Commutative but not canonical
 
         def create() -> Base:
             if not other:
