@@ -151,6 +151,7 @@ def _convert_symbol(
     index_spins: Optional[dict[str, str]] = None,
     index_spaces: Optional[dict[str, str]] = None,
     l_is_lambda: bool = True,
+    name: str | None = None,
 ) -> Base:
     """Convert a symbol to a subclass of `Base`.
 
@@ -386,7 +387,7 @@ def _convert_symbol(
         for index in index_strs
     )
 
-    return tensor_symbol(*indices)
+    return tensor_symbol.factory(*indices, name=name)
 
 
 def remove_reference_energy(terms: list[list[str]]) -> list[list[str]]:
