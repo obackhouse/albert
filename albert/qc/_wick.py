@@ -3,22 +3,19 @@
 from __future__ import annotations
 
 import re
-from numbers import Number
 from typing import TYPE_CHECKING
 
 from albert.algebra import Mul
 from albert.index import Index
 from albert.qc import ghf
+from albert.qc._pdaggerq import _guess_space, _is_number
 from albert.qc.tensor import QTensor
 from albert.scalar import Scalar
-from albert.symmetry import symmetric_group
-from albert.qc._pdaggerq import _is_number, _guess_space
 
 if TYPE_CHECKING:
-    from typing import Any, Literal, Optional
+    from typing import Optional
 
     from albert.base import Base
-    from albert.symmetry import Symmetry
 
 
 def import_from_wick(
@@ -51,9 +48,9 @@ def import_from_wick(
 
     # Build the expression
     expr: Base = Scalar.factory(0.0)
-    for term in terms:
+    for term_str in terms:
         # Convert the symbols
-        term = _split_term(term)
+        term = _split_term(term_str)
         term, names = zip(*[_format_symbol(symbol, aliases=symbol_aliases) for symbol in term])
         symbols = [
             _convert_symbol(
@@ -91,7 +88,9 @@ def _split_term(term: str) -> list[str]:
 
 def _format_symbol(symbol: str, aliases: dict[str, str] | None = None) -> tuple[str, str]:
     """Rewrite a `wick` symbol to look like a `pdaggerq` symbol."""
-    symbol = re.sub(r"([a-zA-Z0-9]+)_\{([^\}]*)\}", lambda m: f"{m.group(1)}({','.join(m.group(2))})", symbol)
+    symbol = re.sub(
+        r"([a-zA-Z0-9]+)_\{([^\}]*)\}", lambda m: f"{m.group(1)}({','.join(m.group(2))})", symbol
+    )
     symbol_name, indices = symbol.split("(", 1) if "(" in symbol else (symbol, None)
     if aliases is not None:
         symbol_alias = aliases.get(symbol_name, symbol_name)
@@ -114,6 +113,7 @@ def _convert_symbol(
         index_spaces: The index spaces.
         l_is_lambda: Whether `l` corresponds to the Lambda operator, rather than the left-hand EOM
             operator.
+        name: The name of the tensor.
 
     Returns:
         The converted symbol.
@@ -180,9 +180,10 @@ def _convert_symbol(
         index_strs = tuple(symbol[3:-1].split(","))
         index_strs = (index_strs[2], index_strs[3], index_strs[0], index_strs[1])
         tensor_symbol = ghf.L2
-    elif re.match(
-        r"l3\((?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z])\)", symbol
-    ) and l_is_lambda:
+    elif (
+        re.match(r"l3\((?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z]),(?i:[a-z])\)", symbol)
+        and l_is_lambda
+    ):
         # l3(i,j,k,l,m,n)
         index_strs = tuple(symbol[3:-1].split(","))[::-1]
         index_strs = (

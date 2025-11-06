@@ -144,28 +144,6 @@ def _sign_penalty(base: Base) -> int:
     return penalty
 
 
-def _factor_penalty(base: Base) -> int:
-    """Return a penalty for the absolute factor in scalars in a `Base` object.
-
-    Args:
-        base: Base object to check.
-
-    Returns:
-        Penalty for the absolute factor.
-    """
-    # TODO: Improve check for Scalar
-    if hasattr(base, "value"):
-        return abs(getattr(base, "value"))
-    if not base.children:
-        return 1
-    penalty = 1
-    if base.children:
-        for child in base.children:
-            if hasattr(child, "value"):
-                penalty *= abs(int(getattr(child, "value")))
-    return penalty
-
-
 class Base(Serialisable):
     """Base class for algebraic types."""
 

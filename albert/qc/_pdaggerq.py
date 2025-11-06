@@ -161,6 +161,7 @@ def _convert_symbol(
         index_spaces: The index spaces.
         l_is_lambda: Whether `l` corresponds to the Lambda operator, rather than the left-hand EOM
             operator.
+        name: The name of the tensor.
 
     Returns:
         The converted symbol.
