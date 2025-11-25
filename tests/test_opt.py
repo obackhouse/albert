@@ -1,6 +1,10 @@
+import pytest
+
 from albert.expression import Expression
 from albert.opt.tools import substitute_expressions
+from albert.opt import optimise
 from albert.tensor import Tensor
+from albert.index import from_list
 
 
 def test_substitute_expressions():
@@ -61,3 +65,18 @@ def test_substitute_expressions():
         output_expr_sub[1].rhs
         == Tensor.from_string("(a(i,k,l) * b(k,l,j)) + (a(i,k,l) * c(k,l,j)) + (z(i,j))").expand()
     )
+
+
+@pytest.mark.parametrize("method", ["auto", "gristmill", "albert", "legacy"])
+def test_optimise(method: str):
+    i, j, k, l = from_list(["i", "j", "k", "l"], spaces="o")
+    lhs = Tensor(i, j, name="x")
+    rhs = (
+        Tensor(i, k, l, name="a") * Tensor(k, l, j, name="b")
+        + Tensor(i, k, l, name="a") * Tensor(k, l, j, name="c")
+    )
+    expr = Expression(lhs, rhs)
+    optimised_exprs = optimise([expr], method=method)
+    expr_recovered = substitute_expressions(optimised_exprs)[0]
+    assert len(optimised_exprs) == 2
+    assert expr_recovered.lhs == expr.lhs

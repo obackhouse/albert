@@ -298,23 +298,18 @@ def factorise(exprs: list[Expression]) -> list[Expression]:
         factor = max(factors, key=lambda k: factors[k])
 
         # For each expression that contains this factor, remove it and group them
-        group: list[Expression] = []
-        new_to_factorise: list[Expression] = []
+        group: list[tuple[Tensor, Base]] = []
+        new_to_factorise: list[tuple[Tensor, Base]] = []
         for expr in to_factorise:
-            assert expr.rhs._children is not None
-            if factor in expr.rhs._children:
-                group.append(
-                    Expression(
-                        expr.lhs, Mul(*[child for child in expr.rhs._children if child != factor])
-                    )
-                )
+            if factor in expr.rhs.children:
+                group.append((expr.lhs, Mul(*[child for child in expr.rhs.children if child != factor])))
             else:
-                new_to_factorise.append(expr)
+                new_to_factorise.append((expr.lhs, expr.rhs))
         to_factorise = new_to_factorise
 
         # Combine the group into sums for each unique output
-        for output in set(expr.lhs for expr in group):
-            group_out = [expr.rhs for expr in group if expr.lhs == output]
+        for output in set(output for output, _ in group):
+            group_out = [child for out, child in group if out == output]
             new_exprs.append(Expression(output, Mul(factor, Add(*group_out))))
 
     return new_exprs
