@@ -7,9 +7,9 @@ from pdaggerq import pq_helper
 
 from albert.code.einsum import EinsumCodeGenerator
 from albert.expression import Expression
-from albert.opt._gristmill import optimise_gristmill
-from albert.qc._pdaggerq import import_from_pdaggerq, remove_reference_energy
-from albert.qc.spin import ghf_to_rhf
+from albert.opt import optimise
+from albert.qc._pdaggerq import remove_reference_energy
+from albert.qc import import_expression, adapt_spin
 from albert.tensor import Tensor
 
 # Suppress warnings since we're outputting the code to stdout
@@ -30,15 +30,14 @@ pq.add_st_operator(1.0, ["v"], ["t1", "t2"])
 pq.simplify()
 expr = pq.strings()
 expr = remove_reference_energy(expr)
-expr = import_from_pdaggerq(expr)
-expr = ghf_to_rhf(expr).collect()
-output = Tensor(name="e_cc")
+expr = import_expression(expr, name="e_cc")
+exprs = adapt_spin(expr, target_spin="rhf")
 
 # Optimise the energy expression
-exprs = optimise_gristmill([Expression(output, expr)], strategy="exhaust")
+exprs = optimise(exprs, strategy="exhaust")
 
 # Generate the code for the energy expression
-codegen("energy", [output], exprs)
+codegen("energy", [expr.lhs for expr in exprs], exprs)
 
 # Find the T1 expression
 pq.clear()
@@ -47,9 +46,8 @@ pq.add_st_operator(1.0, ["f"], ["t1", "t2"])
 pq.add_st_operator(1.0, ["v"], ["t1", "t2"])
 pq.simplify()
 expr_t1 = pq.strings()
-expr_t1 = import_from_pdaggerq(expr_t1)
-expr_t1 = ghf_to_rhf(expr_t1).collect()
-output_t1 = Tensor(*expr_t1.external_indices, name="t1new")
+expr_t1 = import_expression(expr_t1, name="t1new")
+exprs_t1 = adapt_spin(expr_t1, target_spin="rhf")
 
 # Find the T2 expression
 pq.clear()
@@ -58,20 +56,19 @@ pq.add_st_operator(1.0, ["f"], ["t1", "t2"])
 pq.add_st_operator(1.0, ["v"], ["t1", "t2"])
 pq.simplify()
 expr_t2 = pq.strings()
-expr_t2 = import_from_pdaggerq(expr_t2)
-expr_t2 = ghf_to_rhf(expr_t2).collect()
-output_t2 = Tensor(*expr_t2.external_indices, name="t2new")
+expr_t2 = import_expression(expr_t2, name="t2new")
+exprs_t2 = adapt_spin(expr_t2, target_spin="rhf")
 
 # Optimise the T1 and T2 expressions
-exprs = optimise_gristmill(
-    [Expression(output_t1, expr_t1), Expression(output_t2, expr_t2)],
+exprs = optimise(
+    exprs_t1 + exprs_t2,
     strategy="trav",
 )
 
 # Generate the code for the T1 and T2 expressions
 codegen(
     "update_amplitudes",
-    [output_t1, output_t2],
+    [expr.lhs for expr in (exprs_t1 + exprs_t2)],
     exprs,
     as_dict=True,
 )

@@ -786,6 +786,7 @@ def optimise(
         return expressions
 
     # Canonicalise the terms in the expressions
+    expressions = list(expressions)
     for i, expression in enumerate(expressions):
         expressions[i] = _canonicalise_expression(expression, indices)
 

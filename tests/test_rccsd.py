@@ -10,8 +10,8 @@ from pyscf import ao2mo, cc, gto, scf
 
 from albert.code.einsum import EinsumCodeGenerator
 from albert.opt import optimise as _optimise
-from albert.qc._pdaggerq import import_from_pdaggerq, remove_reference_energy
-from albert.qc.spin import ghf_to_rhf
+from albert.qc._pdaggerq import remove_reference_energy
+from albert.qc import import_expression, adapt_spin
 from albert.tensor import Tensor
 from albert.expression import Expression
 
@@ -26,27 +26,26 @@ def _kwargs(strategy, transposes, greedy_cutoff, drop_cutoff):
 
 
 @pytest.mark.parametrize(
-    "optimise, method, canonicalise, kwargs",
+    "optimise, method, kwargs",
     [
-        (False, None, False, _kwargs(None, None, None, None)),
-        (True, "gristmill", True, _kwargs("trav", "natural", -1, -1)),
-        (True, "gristmill", True, _kwargs("opt", "natural", -1, -1)),
-        (True, "gristmill", False, _kwargs("greedy", "ignore", -1, 2)),
-        (True, "gristmill", True, _kwargs("greedy", "ignore", 2, 2)),
-        (True, "albert", True, {}),
+        (False, None, _kwargs(None, None, None, None)),
+        (True, "gristmill", _kwargs("trav", "natural", -1, -1)),
+        (True, "gristmill", _kwargs("greedy", "ignore", -1, 2)),
+        (True, "gristmill", _kwargs("greedy", "ignore", 2, 2)),
+        (True, "albert", {}),
     ],
 )
-def test_rccsd_einsum(helper, optimise, method, canonicalise, kwargs):
+def test_rccsd_einsum(helper, optimise, method, kwargs):
     with open(f"{os.path.dirname(__file__)}/_test_rccsd.py", "w") as file:
         try:
-            _test_rccsd_einsum(helper, file, optimise, method, canonicalise, kwargs)
+            _test_rccsd_einsum(helper, file, optimise, method, kwargs)
         except Exception as e:
             raise e
         finally:
             os.remove(f"{os.path.dirname(__file__)}/_test_rccsd.py")
 
 
-def _test_rccsd_einsum(helper, file, optimise, method, canonicalise, kwargs):
+def _test_rccsd_einsum(helper, file, optimise, method, kwargs):
     codegen = EinsumCodeGenerator(stdout=file)
     codegen.preamble()
 
@@ -59,17 +58,12 @@ def _test_rccsd_einsum(helper, file, optimise, method, canonicalise, kwargs):
     pq.simplify()
     energy = pq.strings()
     energy = remove_reference_energy(energy)
-    energy = import_from_pdaggerq(energy)
-    energy = ghf_to_rhf(energy)
-    if canonicalise:
-        energy = energy.canonicalise(indices=True).collect()
-    output = Tensor(name="e_cc")
-
-    exprs = [Expression(output, energy)]
+    energy = import_expression(energy, package="pdaggerq", name="e_cc")
+    exprs = adapt_spin(energy, target_spin="rhf")
     if optimise:
         exprs = _optimise(exprs, method=method, **kwargs)
 
-    codegen("energy", [output], exprs)
+    codegen("energy", [expr.lhs for expr in exprs], exprs)
 
     pq.clear()
     pq.set_left_operators([["e1(i,a)"]])
@@ -77,13 +71,8 @@ def _test_rccsd_einsum(helper, file, optimise, method, canonicalise, kwargs):
     pq.add_st_operator(1.0, ["v"], ["t1", "t2"])
     pq.simplify()
     t1 = pq.strings()
-    t1 = import_from_pdaggerq(t1, index_spins=dict(i="a", a="a"))
-    t1 = ghf_to_rhf(t1)
-    if canonicalise:
-        t1 = t1.canonicalise(indices=True).collect()
-    output_t1 = Tensor(
-        *sorted(t1.external_indices, key=lambda i: "ijab".index(i.name)), name="t1new"
-    )
+    t1 = import_expression(t1, package="pdaggerq", index_spins=dict(i="a", a="a"), name="t1new")
+    t1 = adapt_spin(t1, target_spin="rhf")
 
     pq.clear()
     pq.set_left_operators([["e2(i,j,b,a)"]])
@@ -91,19 +80,14 @@ def _test_rccsd_einsum(helper, file, optimise, method, canonicalise, kwargs):
     pq.add_st_operator(1.0, ["v"], ["t1", "t2"])
     pq.simplify()
     t2 = pq.strings()
-    t2 = import_from_pdaggerq(t2, index_spins=dict(i="a", j="b", a="a", b="b"))
-    t2 = ghf_to_rhf(t2)
-    if canonicalise:
-        t2 = t2.canonicalise(indices=True).collect()
-    output_t2 = Tensor(
-        *sorted(t2.external_indices, key=lambda i: "ijab".index(i.name)), name="t2new"
-    )
+    t2 = import_expression(t2, package="pdaggerq", index_spins=dict(i="a", j="b", a="a", b="b"), name="t2new")
+    t2 = adapt_spin(t2, target_spin="rhf")
 
-    exprs = [Expression(output_t1, t1), Expression(output_t2, t2)]
+    exprs = t1 + t2
     if optimise:
         exprs = _optimise(exprs, method=method, **kwargs)
 
-    codegen("update_amplitudes", [output_t1, output_t2], exprs, as_dict=True)
+    codegen("update_amplitudes", [expr.lhs for expr in exprs], exprs, as_dict=True)
 
     module = importlib.import_module(f"_test_rccsd")
     energy = module.energy
