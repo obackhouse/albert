@@ -14,7 +14,7 @@ from albert.symmetry import Permutation, Symmetry
 from albert.tensor import Tensor
 
 if TYPE_CHECKING:
-    from typing import Any, Optional
+    from typing import Any, Literal, Optional
 
     from albert.base import Base
 
@@ -263,7 +263,7 @@ def count_flops(expr: Base, sizes: Optional[dict[str | None, int]] = None) -> in
 def optimise_eom(
     returns: list[Tensor],
     exprs: list[Expression],
-    method: str = "auto",
+    method: Literal["auto", "gristmill", "albert", "legacy"] = "auto",
     **kwargs: Any,
 ) -> tuple[tuple[list[Tensor], list[Expression]], tuple[list[Tensor], list[Expression]]]:
     """Perform common subexpression elimination for EOM expressions.
@@ -273,7 +273,7 @@ def optimise_eom(
     Args:
         returns: The return tensors.
         exprs: The tensor expressions to be optimised.
-        method: The optimisation method to use. Options are `"auto"`, `"gristmill"`.
+        method: The optimisation method to use.
         **kwargs: Additional keyword arguments to pass to the optimiser.
 
     Returns:
