@@ -266,7 +266,7 @@ def factorise(exprs: list[Expression]) -> list[Expression]:
     #  a) a Mul with at most two non-scalar children
     #  b) a non-scalar
     new_exprs: list[Expression] = []
-    to_factorise: list[Expression] = []
+    to_factorise: list[tuple[Tensor, Base]] = []
     for expr in exprs:
         if isinstance(expr.rhs, Mul):
             children = [child for child in expr.rhs._children if not isinstance(child, Scalar)]
@@ -276,7 +276,7 @@ def factorise(exprs: list[Expression]) -> list[Expression]:
                     "parenthesising the expressions first.",
                 )
             if len(children) == 2:
-                to_factorise.append(expr)
+                to_factorise.append((expr.lhs, expr.rhs))
             else:
                 new_exprs.append(expr)
         else:
@@ -285,9 +285,9 @@ def factorise(exprs: list[Expression]) -> list[Expression]:
     while to_factorise:
         # Get all the possible factors
         factors: dict[Base, int] = {}
-        for expr in to_factorise:
-            assert expr.rhs._children is not None
-            children = [child for child in expr.rhs._children if not isinstance(child, Scalar)]
+        for lhs, rhs in to_factorise:
+            assert rhs._children is not None
+            children = [child for child in rhs._children if not isinstance(child, Scalar)]
             assert len(children) == 2
             for child in children:
                 if child not in factors:
@@ -300,11 +300,13 @@ def factorise(exprs: list[Expression]) -> list[Expression]:
         # For each expression that contains this factor, remove it and group them
         group: list[tuple[Tensor, Base]] = []
         new_to_factorise: list[tuple[Tensor, Base]] = []
-        for expr in to_factorise:
-            if factor in expr.rhs.children:
-                group.append((expr.lhs, Mul(*[child for child in expr.rhs.children if child != factor])))
+        for lhs, rhs in to_factorise:
+            if factor in rhs.children:
+                group.append(
+                    (lhs, Mul(*[child for child in rhs.children if child != factor]))
+                )
             else:
-                new_to_factorise.append((expr.lhs, expr.rhs))
+                new_to_factorise.append((lhs, rhs))
         to_factorise = new_to_factorise
 
         # Combine the group into sums for each unique output
@@ -723,6 +725,15 @@ def eliminate_and_factorise_common_subexpressions(
 
     # Renumber intermediates, also sorts the expressions
     exprs = renumber_intermediates(exprs)
+
+    # Sum expressions with the same output
+    groups: dict[Tensor, Base] = {}
+    for expr in exprs:
+        if expr.lhs not in groups:
+            groups[expr.lhs] = expr.rhs
+        else:
+            groups[expr.lhs] = groups[expr.lhs] + expr.rhs
+    exprs = [Expression(lhs, rhs) for lhs, rhs in groups.items()]
 
     unused = set(interm.name for interm in unused_intermediates(exprs))
     undefined = set(interm.name for interm in undefined_intermediates(exprs))
