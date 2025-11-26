@@ -6,11 +6,9 @@ import warnings
 from pdaggerq import pq_helper
 
 from albert.code.einsum import EinsumCodeGenerator
-from albert.expression import Expression
 from albert.opt import optimise
+from albert.qc import adapt_spin, import_expression
 from albert.qc._pdaggerq import remove_reference_energy
-from albert.qc import import_expression, adapt_spin
-from albert.tensor import Tensor
 
 # Suppress warnings since we're outputting the code to stdout
 warnings.filterwarnings("ignore")

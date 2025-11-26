@@ -14,7 +14,7 @@ from albert.symmetry import Permutation, Symmetry
 from albert.tensor import Tensor
 
 if TYPE_CHECKING:
-    from typing import Any, Optional, Literal
+    from typing import Any, Literal, Optional
 
     from albert.base import Base
 

@@ -302,9 +302,7 @@ def factorise(exprs: list[Expression]) -> list[Expression]:
         new_to_factorise: list[tuple[Tensor, Base]] = []
         for lhs, rhs in to_factorise:
             if factor in rhs.children:
-                group.append(
-                    (lhs, Mul(*[child for child in rhs.children if child != factor]))
-                )
+                group.append((lhs, Mul(*[child for child in rhs.children if child != factor])))
             else:
                 new_to_factorise.append((lhs, rhs))
         to_factorise = new_to_factorise
