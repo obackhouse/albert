@@ -10,8 +10,8 @@ from pyscf import ao2mo, cc, gto, scf
 
 from albert.code.einsum import EinsumCodeGenerator
 from albert.opt import optimise as _optimise
-from albert.qc._pdaggerq import import_from_pdaggerq, remove_reference_energy
-from albert.qc.spin import ghf_to_uhf
+from albert.qc._pdaggerq import remove_reference_energy
+from albert.qc import import_expression, adapt_spin
 from albert.tensor import Tensor
 from albert.expression import Expression
 
@@ -26,24 +26,24 @@ def _kwargs(strategy, transposes, greedy_cutoff, drop_cutoff):
 
 
 @pytest.mark.parametrize(
-    "optimise, canonicalise, kwargs",
+    "optimise, kwargs",
     [
-        (False, False, _kwargs(None, None, None, None)),
-        (True, False, _kwargs("greedy", "ignore", -1, 2)),
-        (True, True, _kwargs("greedy", "ignore", 2, 2)),
+        (False, _kwargs(None, None, None, None)),
+        (True, _kwargs("greedy", "ignore", -1, 2)),
+        (True, _kwargs("greedy", "ignore", 2, 2)),
     ],
 )
-def test_uccsd_einsum(helper, optimise, canonicalise, kwargs):
+def test_uccsd_einsum(helper, optimise, kwargs):
     with open(f"{os.path.dirname(__file__)}/_test_uccsd.py", "w") as file:
         try:
-            _test_uccsd_einsum(helper, file, optimise, canonicalise, kwargs)
+            _test_uccsd_einsum(helper, file, optimise, kwargs)
         except Exception as e:
             raise e
         finally:
             os.remove(f"{os.path.dirname(__file__)}/_test_uccsd.py")
 
 
-def _test_uccsd_einsum(helper, file, optimise, canonicalise, kwargs):
+def _test_uccsd_einsum(helper, file, optimise, kwargs):
     codegen = EinsumCodeGenerator(stdout=file)
     codegen.preamble()
 
@@ -56,17 +56,12 @@ def _test_uccsd_einsum(helper, file, optimise, canonicalise, kwargs):
     pq.simplify()
     energy = pq.strings()
     energy = remove_reference_energy(energy)
-    energy = import_from_pdaggerq(energy)
-    energy = ghf_to_uhf(energy)
-    if canonicalise:
-        energy = tuple(e.canonicalise(indices=True).collect() for e in energy)
-    output = tuple(Tensor(name="e_cc") for _ in energy)
-
-    exprs = [Expression(o, e) for o, e in zip(output, energy)]
+    energy = import_expression(energy, package="pdaggerq", name="e_cc")
+    exprs = adapt_spin(energy, target_spin="uhf")
     if optimise:
         exprs = _optimise(exprs, **kwargs)
 
-    codegen("energy", output, exprs)
+    codegen("energy", [expr.lhs for expr in exprs], exprs)
 
     pq.clear()
     pq.set_left_operators([["e1(i,a)"]])
@@ -74,14 +69,8 @@ def _test_uccsd_einsum(helper, file, optimise, canonicalise, kwargs):
     pq.add_st_operator(1.0, ["v"], ["t1", "t2"])
     pq.simplify()
     t1 = pq.strings()
-    t1 = import_from_pdaggerq(t1)
-    t1 = ghf_to_uhf(t1)
-    if canonicalise:
-        t1 = tuple(t.canonicalise(indices=True).collect() for t in t1)
-    output_t1 = tuple(
-        Tensor(*sorted(t.external_indices, key=lambda i: "ijab".index(i.name)), name=f"t1new")
-        for i, t in enumerate(t1)
-    )
+    t1 = import_expression(t1, package="pdaggerq", name="t1new")
+    t1 = adapt_spin(t1, target_spin="uhf")
 
     pq.clear()
     pq.set_left_operators([["e2(i,j,b,a)"]])
@@ -89,23 +78,19 @@ def _test_uccsd_einsum(helper, file, optimise, canonicalise, kwargs):
     pq.add_st_operator(1.0, ["v"], ["t1", "t2"])
     pq.simplify()
     t2 = pq.strings()
-    t2_expr = tuple()
-    for spins in ("aaaa", "abab", "baba", "bbbb"):
-        index_spins = dict(zip("ijab", spins))
-        t2_expr += ghf_to_uhf(import_from_pdaggerq(t2, index_spins=index_spins))
-    t2 = t2_expr
-    if canonicalise:
-        t2 = tuple(t.canonicalise(indices=True).collect() for t in t2)
-    output_t2 = tuple(
-        Tensor(*sorted(t.external_indices, key=lambda i: "ijab".index(i.name)), name=f"t2new")
-        for i, t in enumerate(t2)
-    )
+    t2 = [
+        import_expression(
+            t2, package="pdaggerq", index_spins=dict(zip("ijab", spins)), name="t2new"
+        )
+        for spins in ("aaaa", "abab", "baba", "bbbb")
+    ]
+    t2 = adapt_spin(t2, target_spin="uhf")
 
-    exprs = [Expression(o, t) for o, t in zip(output_t1 + output_t2, t1 + t2)]
+    exprs = t1 + t2
     if optimise:
         exprs = _optimise(exprs, **kwargs)
 
-    codegen("update_amplitudes", output_t1 + output_t2, exprs, as_dict=True)
+    codegen("update_amplitudes", [expr.lhs for expr in exprs], exprs, as_dict=True)
 
     module = importlib.import_module(f"_test_uccsd")
     energy = module.energy

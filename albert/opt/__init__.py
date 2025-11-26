@@ -27,7 +27,12 @@ def optimise(
     Returns:
         The optimised expressions, as tuples of the output tensor and the expression.
     """
-    if method == "gristmill" or method == "auto":
+    if method == "auto":
+        try:
+            return optimise_gristmill(exprs, **kwargs)
+        except ImportError:
+            return optimise_albert(exprs, **kwargs)
+    elif method == "gristmill":
         return optimise_gristmill(exprs, **kwargs)
     elif method == "albert":
         return optimise_albert(exprs, **kwargs)

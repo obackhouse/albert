@@ -123,7 +123,7 @@ def _matches_filter(node: Base, type_filter: TypeOrFilter[Base]) -> bool:
 
 
 def _sign_penalty(base: Base) -> int:
-    """Return a penalty for the sign in scalars in a base object.
+    """Return a penalty for the sign in scalars in a `Base` object.
 
     Args:
         base: Base object to check.
@@ -131,6 +131,9 @@ def _sign_penalty(base: Base) -> int:
     Returns:
         Penalty for the sign.
     """
+    # TODO: Improve check for Scalar
+    if hasattr(base, "value"):
+        return 1 if getattr(base, "value") < 0 else -1
     if not base.children:
         return 0
     penalty = 1
