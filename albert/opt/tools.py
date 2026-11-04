@@ -6,6 +6,7 @@ from collections import defaultdict
 from typing import TYPE_CHECKING
 
 from albert import _default_sizes
+from albert.algebra import Mul
 from albert.canon import canonicalise_indices
 from albert.expression import Expression
 from albert.index import Index
@@ -258,6 +259,36 @@ def count_flops(expr: Base, sizes: Optional[dict[str | None, int]] = None) -> in
                 flops += count_flops(child, sizes)
 
     return flops
+
+
+def get_flop_scaling(expr: Base, space: str | tuple[str, ...] | None) -> int:
+    """Get the leading FLOP scaling exponent for an index space.
+
+    Args:
+        expr: The expression to analyse.
+        space: The index space whose exponent to return. For a tuple of spaces, the total exponent
+            is returned.
+
+    Returns:
+        The largest exponent of ``space`` in the FLOP count.
+    """
+    scaling = 0
+
+    def check_space(s: str | None) -> bool:
+        if isinstance(space, str):
+            return s == space
+        elif isinstance(space, tuple):
+            return s in space
+        return True
+
+    def _get_mul_scaling(mul: Mul) -> Base:
+        nonlocal scaling
+        indices = {index for child in mul.children for index in child.external_indices}
+        scaling = max(scaling, sum(check_space(index.space) for index in indices))
+        return mul
+
+    expr.apply(_get_mul_scaling, Mul)
+    return scaling
 
 
 def optimise_eom(
