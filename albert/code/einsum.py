@@ -161,7 +161,7 @@ class EinsumCodeGenerator(BaseCodeGenerator):
                 done.add(name)
         self.blank()
         self.write("Returns:")
-        done: set[str] = set()
+        done = set()
         for ret, desc in rets.items():
             name = self.get_return(ret)
             if name not in done:

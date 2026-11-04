@@ -9,7 +9,7 @@ keywords = [
     "quantum", "chemistry",
 ]
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.12"
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
     "Intended Audience :: Science/Research",
@@ -17,10 +17,9 @@ classifiers = [
     "Topic :: Scientific/Engineering",
     "Topic :: Software Development",
     "Programming Language :: Python",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Operating System :: MacOS :: MacOS X",
     "Operating System :: POSIX :: Linux",
 ]
@@ -47,10 +46,6 @@ dev = [
     "numpy>=2.0.0",  # For testing
     "pyscf>=1.7.0",  # For testing
     "pdaggerq@git+https://github.com/edeprince3/pdaggerq.git@master",  # For testing
-    "sympy>=1.9",  # For [drudge]
-    "drudge@git+https://github.com/obackhouse/drudge.git@master",  # For [drudge]
-    "gristmill@git+https://github.com/obackhouse/gristmill.git@master",  # For [drudge]
-    "dummyrdd@git+https://github.com/tschijnmo/DummyRDD.git@master",  # For [drudge]
 ]
 drudge = [
     "sympy>=1.9",
@@ -62,7 +57,7 @@ drudge = [
 [tool.black]
 line-length = 100
 target-version = [
-    "py39",
+    "py312",
 ]
 include = '\.pyi?$'
 exclude = """
@@ -152,7 +147,7 @@ convention = "google"
 known-first-party = ["albert"]
 
 [tools.mypy]
-python_version = "3.10"
+python_version = "3.12"
 exclude = """
 /(
     | __pycache__

@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     from albert.index import Index
 
     Path = tuple[tuple[int, int], ...]
-    Memo = dict[Base, Tensor]
+    Memo = dict[tuple[tuple[Index, ...], Base], Tensor]
     Intermediates = dict[Tensor, Expression]
 
 
@@ -142,6 +142,7 @@ class ConstrictableBiclique:
     right: Subset
     coefficient: float
     internal_indices: tuple[Index, ...]
+    expression_id: int = 0
 
     def get_index_partition(self) -> IndexPartition:
         """Get the index partition for this biclique.
@@ -275,21 +276,37 @@ def build_bipartite_subgraphs(
                 # Add to the appropriate graph
                 if partition not in graphs:
                     graphs[partition] = nx.Graph()
+                    graphs[partition].graph["expression_graphs"] = {}
                 graph = graphs[partition]
+                expression_graphs = graph.graph["expression_graphs"]
+                expression_graph = expression_graphs.setdefault(id(expr), nx.Graph())
 
                 # Add the nodes
                 u = (left, 0)
                 v = (right, 1)
                 if u not in graph:
                     graph.add_node(u, bipartite=0, vertex=left)
+                if u not in expression_graph:
+                    expression_graph.add_node(u, bipartite=0, vertex=left)
                 if v not in graph:
                     graph.add_node(v, bipartite=1, vertex=right)
+                if v not in expression_graph:
+                    expression_graph.add_node(v, bipartite=1, vertex=right)
 
                 # Add the edge
                 if graph.has_edge(u, v):
                     graph[u][v]["excess"] = min(graph[u][v]["excess"], excess_cost)
                 else:
                     graph.add_edge(u, v, excess=excess_cost, term=mul, coefficient=scalar)
+
+                if expression_graph.has_edge(u, v):
+                    expression_graph[u][v]["excess"] = min(
+                        expression_graph[u][v]["excess"], excess_cost
+                    )
+                else:
+                    expression_graph.add_edge(
+                        u, v, excess=excess_cost, term=mul, coefficient=scalar
+                    )
 
     return graphs
 
@@ -366,63 +383,64 @@ def find_constrictable_bicliques(
     """
     # TODO: prefer star seeds?
 
-    # Get the vertex sets
-    sets_left, sets_right = bipartite_vertex_sets(graph)
-    if not sets_left or not sets_right:
-        return
-
-    # Build extended graph: all edges within each set are added to form cliques
-    graph_ext = graph.copy()
-    graph_ext.add_nodes_from(graph.nodes(data=True))
-    graph_ext.add_edges_from(graph.edges(data=True))
-    graph_ext.add_edges_from(itertools.combinations(sets_left, 2))
-    graph_ext.add_edges_from(itertools.combinations(sets_right, 2))
-
-    # Find all maximal bicliques in the extended graph
-    for clique in nx.find_cliques(graph_ext):
-        # Find nodes in each set
-        left = [n for n in clique if n in sets_left]
-        right = [n for n in clique if n in sets_right]
-        if not left or not right:
+    expression_graphs = graph.graph.get("expression_graphs", {0: graph})
+    for expression_id, expression_graph in expression_graphs.items():
+        # Get the vertex sets for a single expression. A biclique must describe terms that
+        # coexist in at least one expression; combining the edges of unrelated outputs can create
+        # a factorization that is not valid for any one output.
+        sets_left, sets_right = bipartite_vertex_sets(expression_graph)
+        if not sets_left or not sets_right:
             continue
 
-        # Ensure edges are unique
-        ids = [
-            graph[u][v]["term"] for u, v in itertools.product(left, right) if graph.has_edge(u, v)
-        ]
-        if len(ids) != len(set(ids)):
-            continue
+        # Build extended graph: all edges within each set are added to form cliques.
+        graph_ext = expression_graph.copy()
+        graph_ext.add_edges_from(itertools.combinations(sets_left, 2))
+        graph_ext.add_edges_from(itertools.combinations(sets_right, 2))
 
-        # Reject trivial bicliques
-        num_tensors_left = sum(len(graph.nodes[u]["vertex"].tensors) for u in left)
-        num_tensors_right = sum(len(graph.nodes[v]["vertex"].tensors) for v in right)
-        if num_tensors_left == num_tensors_right == 1:
-            continue
+        # Find all maximal bicliques in this expression's graph.
+        for clique in nx.find_cliques(graph_ext):
+            left = [n for n in clique if n in sets_left]
+            right = [n for n in clique if n in sets_right]
+            if not left or not right:
+                continue
 
-        # Perform rank-1 decomposition of the coefficient matrix
-        coefficient, coefficient_left, coefficient_right = decompose_edge_coefficients(
-            graph, left, right
-        )
-        if coefficient == 0.0:
-            continue
+            # Ensure edges are unique.
+            ids = [
+                expression_graph[u][v]["term"]
+                for u, v in itertools.product(left, right)
+                if expression_graph.has_edge(u, v)
+            ]
+            if len(ids) != len(set(ids)):
+                continue
 
-        # Create the constrictable biclique
-        cb = ConstrictableBiclique(
-            left=Subset(
-                vertices=frozenset(left),
-                coefficients=coefficient_left,
-                external_indices=tuple(sorted(partition.external_left)),
-            ),
-            right=Subset(
-                vertices=frozenset(right),
-                coefficients=coefficient_right,
-                external_indices=tuple(sorted(partition.external_right)),
-            ),
-            coefficient=coefficient,
-            internal_indices=tuple(sorted(partition.internal)),
-        )
+            # Reject trivial bicliques.
+            num_tensors_left = sum(len(expression_graph.nodes[u]["vertex"].tensors) for u in left)
+            num_tensors_right = sum(len(expression_graph.nodes[v]["vertex"].tensors) for v in right)
+            if num_tensors_left == num_tensors_right == 1:
+                continue
 
-        yield cb
+            # Perform rank-1 decomposition of the coefficient matrix.
+            coefficient, coefficient_left, coefficient_right = decompose_edge_coefficients(
+                expression_graph, left, right
+            )
+            if coefficient == 0.0:
+                continue
+
+            yield ConstrictableBiclique(
+                left=Subset(
+                    vertices=frozenset(left),
+                    coefficients=coefficient_left,
+                    external_indices=tuple(sorted(partition.external_left)),
+                ),
+                right=Subset(
+                    vertices=frozenset(right),
+                    coefficients=coefficient_right,
+                    external_indices=tuple(sorted(partition.external_right)),
+                ),
+                coefficient=coefficient,
+                internal_indices=tuple(sorted(partition.internal)),
+                expression_id=expression_id,
+            )
 
 
 def select_constrictable_bicliques(
@@ -447,12 +465,13 @@ def select_constrictable_bicliques(
     best_scores: list[int] = []
     for partition, graph in graphs.items():
         for cb in find_constrictable_bicliques(graph, partition):
+            expression_graph = graph.graph.get("expression_graphs", {}).get(cb.expression_id, graph)
             gross_saving = cb.gross_saving(sizes)
             excess = sum(
-                graph[u][v]["excess"]
+                expression_graph[u][v]["excess"]
                 for u in cb.left.vertices
                 for v in cb.right.vertices
-                if graph.has_edge(u, v)
+                if expression_graph.has_edge(u, v)
             )
             score = gross_saving - excess
             if len(best) < number:
@@ -502,7 +521,9 @@ def build_intermediates(
                 for key in side.vertices
             ]
         )
-        return Expression(tensor, expr)
+        # Keep the intermediate's tensor axes in the same order as the expression that computes
+        # them. The consumers will then use this exact axis order when contracting the tensor.
+        return Expression(tensor.copy(*expr.external_indices), expr)
 
     return _build(biclique.left, tensors[0]), _build(biclique.right, tensors[1])
 
@@ -530,6 +551,10 @@ def rewrite_with_constriction(
         for u, v in itertools.product(biclique.left.vertices, biclique.right.vertices)
         if graph.has_edge(u, v)
     }
+
+    expression_terms = set(expr.rhs.expand().children)
+    if not covered.issubset(expression_terms):
+        return expr
 
     # Rewrite the expression
     terms: list[Base] = []
@@ -580,7 +605,11 @@ def remove_trivial(exprs: list[Expression]) -> list[Expression]:
         rhs = exprs[i].rhs.expand()
         tensors = list(rhs.search(Tensor))
         scalar = prod([scalar.value for scalar in rhs.search(Scalar)])
-        if len(tensors) == 1 and isclose(scalar, 1.0):
+        if (
+            len(tensors) == 1
+            and isclose(scalar, 1.0)
+            and tensors[0].indices == exprs[i].lhs.indices
+        ):
             name_old = exprs[i].lhs.name
             name_new = tensors[0].name
             exprs = [rename_tensors(expr, name_old, name_new) for expr in exprs]
@@ -610,13 +639,13 @@ def renumber_intermediates(
     # Filter for intermediate tensors
     pattern = re.compile(re.escape(format_str).replace(r"\{\}", r"(\d+)"))
     tensors = {t for t in tensors if pattern.fullmatch(t)}
-    tensors = sorted(
+    tensors_list = sorted(
         tensors,
         key=lambda tensor: int(pattern.fullmatch(tensor).group(1)),  # type: ignore[union-attr]
     )
 
     # Build mapping
-    mapping: dict[str, str] = {name: format_str.format(i) for i, name in enumerate(tensors)}
+    mapping: dict[str, str] = {name: format_str.format(i) for i, name in enumerate(tensors_list)}
 
     # Rename tensors
     for old, new in mapping.items():
@@ -628,7 +657,7 @@ def renumber_intermediates(
 def _canonicalise_expression(expr: Expression, indices: list[Index]) -> Expression:
     """Canonicalise an expression."""
     rhs_canon = canonicalise_indices(expr.rhs.canonicalise(), extra_indices=indices)
-    index_map = dict(zip(expr.lhs.external_indices, rhs_canon.external_indices))
+    index_map = dict(zip(expr.rhs.external_indices, rhs_canon.external_indices))
     lhs_canon = expr.lhs.map_indices(index_map)
     return Expression(lhs_canon, rhs_canon.collect())
 
@@ -643,16 +672,18 @@ def _check_memo(
     intermediates: Intermediates,
     intermediate: Tensor,
     memo: Memo,
+    indices: list[Index],
 ) -> Tensor:
     """Check the memo to avoid duplicate intermediates."""
     expression = intermediates[intermediate]
-    key = canonicalise_indices(expression.rhs)
+    canonical = _canonicalise_expression(expression, indices)
+    key = (canonical.lhs.indices, canonical.rhs)
     if key in memo:
-        memo_mapped = memo[key].copy(*intermediate.indices)
-        intermediates[intermediate] = Expression(intermediate, memo_mapped)
+        memo_mapped = memo[key].copy(*expression.lhs.indices)
+        intermediates[intermediate] = Expression(expression.lhs, memo_mapped)
         return memo_mapped
-    memo[key] = intermediate
-    return intermediate
+    memo[key] = expression.lhs
+    return expression.lhs
 
 
 def optimise(
@@ -714,7 +745,11 @@ def optimise(
     ) -> list[Expression]:
         # Get the index partition and graph
         partition = biclique.get_index_partition()
-        graph = graphs[partition]
+        graph = (
+            graphs[partition]
+            .graph.get("expression_graphs", {})
+            .get(biclique.expression_id, graphs[partition])
+        )
 
         # Initialise intermediate tensors
         n = len(intermediates)
@@ -731,13 +766,9 @@ def optimise(
             [intermediates[left], intermediates[right]], intermediates, memo
         )
 
-        # Canonicalise the intermediates
-        intermediates[left] = _canonicalise_expression(intermediates[left], indices)
-        intermediates[right] = _canonicalise_expression(intermediates[right], indices)
-
         # Check the memo to avoid duplicates
-        left = _check_memo(intermediates, left, memo)
-        right = _check_memo(intermediates, right, memo)
+        left = _check_memo(intermediates, left, memo, indices)
+        right = _check_memo(intermediates, right, memo, indices)
 
         # Rewrite the expression
         term = Mul.factory(Scalar.factory(float(biclique.coefficient)), left, right)
@@ -796,9 +827,5 @@ def optimise(
     expressions = list(intermediates.values()) + [*expressions]
     expressions = remove_trivial(expressions)
     expressions = renumber_intermediates(expressions, format_str=intermediate_format)
-
-    # Canonicalise the final expressions
-    for i, expr in enumerate(expressions):
-        expressions[i] = _canonicalise_expression(expr, indices)
 
     return expressions

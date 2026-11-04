@@ -67,9 +67,7 @@ def ghf_to_uhf(
                 new_exprs[new_mul.external_indices] += new_mul
 
     # Expand and collect
-    new_exprs = tuple(expr.expand().collect() for expr in new_exprs.values())
-
-    return new_exprs
+    return tuple(expr.expand().collect() for expr in new_exprs.values())
 
 
 def uhf_to_rhf(expr: Base, canonicalise: bool = True) -> Base:

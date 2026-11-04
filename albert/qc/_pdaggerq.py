@@ -404,7 +404,7 @@ def remove_reference_energy(terms: list[list[str]]) -> list[list[str]]:
     for term in terms:
         if term[0].startswith("+1.0") and term[1] == "f(i,i)":
             continue
-        if term[0].startswith("-0.5") and term[1] == "<j,i||j,i>":
+        if term[0].startswith("-0.5") and term[1] in ("<j,i||j,i>", "<i,j||i,j>"):
             continue
         terms_new.append(term)
     return terms_new

@@ -33,12 +33,12 @@ def substitute_expressions(exprs: list[Expression]) -> list[Expression]:
     expr = [Expression(e.lhs, e.rhs.expand()) for e in exprs]
 
     # Find original set of indices for canonicalisation
-    extra_indices: set[Index] = set()
+    extra_indices_set: set[Index] = set()
     for e in expr:
         for tensor in e.rhs.search(Tensor):
-            extra_indices.update(tensor.external_indices)
-            extra_indices.update(tensor.internal_indices)
-    extra_indices = sorted(extra_indices)
+            extra_indices_set.update(tensor.external_indices)
+            extra_indices_set.update(tensor.internal_indices)
+    extra_indices = sorted(extra_indices_set)
 
     memo = dict(found=False, counter=0)
     while True:
@@ -56,7 +56,7 @@ def substitute_expressions(exprs: list[Expression]) -> list[Expression]:
 
                         # Find the index substitution
                         index_map = dict(
-                            zip(e_src.external_indices, tensor.external_indices)  # noqa: B023
+                            zip(e_src.lhs.indices, tensor.external_indices)  # noqa: B023
                         )
                         for tensor in e_src.rhs.search(Tensor):  # noqa: B023
                             for index in tensor.external_indices:
@@ -114,7 +114,7 @@ def combine_expressions(exprs: list[Expression]) -> list[Expression]:
             expr_factors[Expression(expr.lhs, mul_no_factor)] += factor
 
     # Find the unique expressions
-    exprs: list[Expression] = []
+    exprs = []
     for expr, factor in expr_factors.items():
         exprs.append(Expression(expr.lhs, factor * expr.rhs))
 
@@ -384,7 +384,7 @@ def optimise_eom(
         exprs_dep[i] = Expression(expr.lhs, rhs)
 
     # Re-optimise the output
-    exprs_dep: list[Expression] = [Expression(expr.lhs, expr.rhs.expand()) for expr in exprs_dep]
+    exprs_dep = [Expression(expr.lhs, expr.rhs.expand()) for expr in exprs_dep]
     exprs_dep = substitute_expressions(exprs_dep)
     exprs_dep = optimise(exprs_dep, method, **kwargs)
 

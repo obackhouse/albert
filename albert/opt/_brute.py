@@ -511,17 +511,17 @@ def absorb_trivial_intermediates(exprs: list[Expression]) -> list[Expression]:
     """
     trivial: dict[str, bool] = {}
     definitions: dict[str, Expression] = {}
-    for i, expr in enumerate(exprs):
+    for expr in exprs:
         if expr.lhs.name.startswith("tmp") and isinstance(expr.rhs, Tensor):
-            # If the output has multiple single tensor expressions, it's not trivial
-            trivial[expr.lhs.name] = expr.lhs.name not in trivial and True
+            trivial[expr.lhs.name] = expr.lhs.name not in trivial
             definitions[expr.lhs.name] = expr
 
     def _apply(node: Tensor) -> Tensor:
         while trivial.get(node.name, False):
             expr = definitions[node.name]
+            rhs: Tensor = expr.rhs  # type: ignore[assignment]
             index_map = dict(zip(expr.lhs.indices, node.indices))
-            node = expr.rhs.map_indices(index_map)  # type: ignore[assignment]
+            node = rhs.map_indices(index_map)  # type: ignore[assignment]
         return node
 
     return [

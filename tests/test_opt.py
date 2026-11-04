@@ -1,7 +1,8 @@
+import numpy as np
 import pytest
 
 from albert.expression import Expression
-from albert.opt.tools import substitute_expressions
+from albert.opt.tools import sort_expressions, substitute_expressions
 from albert.opt import optimise
 from albert.tensor import Tensor
 from albert.index import from_list
@@ -80,3 +81,85 @@ def test_optimise(method: str):
     expr_recovered = substitute_expressions(optimised_exprs)[0]
     assert len(optimised_exprs) == 2
     assert expr_recovered.lhs == expr.lhs
+
+
+def _evaluate_schedule(expressions, arrays):
+    """Evaluate an ordered tensor schedule with NumPy."""
+    values = dict(arrays)
+    assigned = set()
+    for expression in sort_expressions(expressions):
+        value = expression.rhs.evaluate(values, np.einsum)
+        permutation = tuple(
+            expression.rhs.external_indices.index(index) for index in expression.lhs.indices
+        )
+        value = value.transpose(permutation)
+        if expression.lhs.name in assigned:
+            values[expression.lhs.name] += value
+        else:
+            values[expression.lhs.name] = value
+            assigned.add(expression.lhs.name)
+    return values
+
+
+def test_optimise_albert_preserves_intermediate_axis_order():
+    i, j, k, l = from_list(["i", "j", "k", "l"])
+    lhs = Tensor(i, j, name="r")
+    rhs = Tensor(i, k, l, name="a") * (
+        Tensor(k, l, j, name="b") + Tensor(k, l, j, name="c")
+    )
+    expr = Expression(lhs, rhs)
+
+    rng = np.random.default_rng(123)
+    arrays = {name: rng.normal(size=(3, 3, 3)) for name in ("a", "b", "c")}
+    expected = np.einsum("ikl,klj->ij", arrays["a"], arrays["b"]) + np.einsum(
+        "ikl,klj->ij", arrays["a"], arrays["c"]
+    )
+
+    optimised = optimise([expr], method="albert", sizes={None: 3})
+    actual = _evaluate_schedule(optimised, arrays)["r"]
+
+    assert np.allclose(actual, expected)
+
+
+def test_optimise_albert_does_not_merge_partial_bicliques_across_outputs():
+    i, j, k, l = from_list(["i", "j", "k", "l"])
+    a = Tensor(i, k, l, name="a")
+    b = Tensor(k, l, j, name="b")
+    c = Tensor(k, l, j, name="c")
+    d = Tensor(k, l, j, name="d")
+    expressions = [
+        Expression(Tensor(i, j, name="r1"), a * b + a * c),
+        Expression(Tensor(i, j, name="r2"), a * b + a * d),
+    ]
+
+    rng = np.random.default_rng(456)
+    arrays = {name: rng.normal(size=(3, 3, 3)) for name in ("a", "b", "c", "d")}
+    expected = {
+        "r1": np.einsum("ikl,klj->ij", arrays["a"], arrays["b"])
+        + np.einsum("ikl,klj->ij", arrays["a"], arrays["c"]),
+        "r2": np.einsum("ikl,klj->ij", arrays["a"], arrays["b"])
+        + np.einsum("ikl,klj->ij", arrays["a"], arrays["d"]),
+    }
+
+    optimised = optimise(expressions, method="albert", sizes={None: 3})
+    actual = _evaluate_schedule(optimised, arrays)
+
+    assert np.allclose(actual["r1"], expected["r1"])
+    assert np.allclose(actual["r2"], expected["r2"])
+
+
+def test_optimise_albert_preserves_matrix_chain_contractions():
+    i, j, k, l = from_list(["i", "j", "k", "l"])
+    expr = Expression(
+        Tensor(i, j, name="r"),
+        Tensor(i, k, name="a") * Tensor(k, l, name="b") * Tensor(l, j, name="c"),
+    )
+
+    rng = np.random.default_rng(789)
+    arrays = {name: rng.normal(size=(3, 3)) for name in ("a", "b", "c")}
+    expected = np.einsum("ik,kl,lj->ij", arrays["a"], arrays["b"], arrays["c"])
+
+    optimised = optimise([expr], method="albert", sizes={None: 3})
+    actual = _evaluate_schedule(optimised, arrays)["r"]
+
+    assert np.allclose(actual, expected)

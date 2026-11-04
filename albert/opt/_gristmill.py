@@ -141,14 +141,16 @@ def optimise_gristmill(
 
             # Set the symmetry
             if tensor.symmetry is not None and base not in done:
-                assert all(len(p.permutation) == tensor.rank for p in tensor.symmetry.permutations)
-                perms = [
-                    drudge.Perm(list(p.permutation), drudge.NEG if p.sign == -1 else drudge.IDENT)
-                    for p in tensor.symmetry.permutations
-                    if p.permutation != tuple(range(len(p.permutation)))
-                ]
-                perms = perms or [None]
-                dr.set_symm(base, *perms)
+                if all(len(p.permutation) == tensor.rank for p in tensor.symmetry.permutations):
+                    perms = [
+                        drudge.Perm(
+                            list(p.permutation), drudge.NEG if p.sign == -1 else drudge.IDENT
+                        )
+                        for p in tensor.symmetry.permutations
+                        if p.permutation != tuple(range(len(p.permutation)))
+                    ]
+                    perms = perms or [None]
+                    dr.set_symm(base, *perms)
 
             # Set the class
             if base not in classes:
@@ -173,7 +175,7 @@ def optimise_gristmill(
     )
 
     # Convert the terms back to expressions
-    exprs: list[Expression] = []
+    exprs = []
     for term in terms:
         # Convert the LHS
         base = term.lhs if isinstance(term.lhs, sympy.Symbol) else term.lhs.base
