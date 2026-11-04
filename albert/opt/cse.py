@@ -662,10 +662,9 @@ def _canonicalise_expression(expr: Expression, indices: list[Index]) -> Expressi
     return Expression(lhs_canon, rhs_canon.collect())
 
 
-@lru_cache(maxsize=2**14)
-def _count_flops_expression(expr: Expression) -> int:
+def _count_flops_expression(expr: Expression, sizes: dict[str | None, int] | None = None) -> int:
     """Count the number of floating point operations in an expression."""
-    return sum(count_flops(mul) for mul in expr.rhs.expand().children)
+    return sum(count_flops(mul, sizes=sizes) for mul in expr.rhs.expand().children)
 
 
 def _check_memo(
@@ -728,12 +727,16 @@ def optimise(
                     seen.add(index)
                     indices.append(index)
 
+    @lru_cache(maxsize=2**14)
+    def _count_flops(expr: Expression) -> int:
+        return _count_flops_expression(expr, sizes=sizes)
+
     def _cost(expressions: list[Expression], intermediates: Intermediates) -> int:
         cost = 0
         for expr in expressions:
-            cost += _count_flops_expression(expr)
+            cost += _count_flops_expression(expr, sizes=sizes)
         for intermediate in intermediates.values():
-            cost += _count_flops_expression(intermediate)
+            cost += _count_flops_expression(intermediate, sizes=sizes)
         return cost
 
     def _optimise_biclique(
