@@ -300,7 +300,7 @@ class Add(Algebraic):
                 other.append(child)
 
         # Build a key for interning
-        key = (cls, value, tuple(other), symmetry)  # Commutative but not canonical
+        key = (cls, value, tuple((type(child), child) for child in other), symmetry)
 
         def create() -> Base:
             if not other:
@@ -489,7 +489,7 @@ class Mul(Algebraic):
             return cls_scalar.factory(0.0)
 
         # Build a key for interning
-        key = (cls, value, tuple(other), symmetry)  # Commutative but not canonical
+        key = (cls, value, tuple((type(child), child) for child in other), symmetry)
 
         def create() -> Base:
             if not other:
