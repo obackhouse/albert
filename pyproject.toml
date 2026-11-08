@@ -1,0 +1,83 @@
+[build-system]
+requires = ["scikit-build-core>=0.10", "pybind11>=2.13"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "albert"
+version = "0.1.0"
+description = "Toolbox for manipulating, optimising, and generating code for Einstein summations"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.14.0",
+    "mypy>=1.18.0",
+    "pytest>=7.0.0",
+]
+
+[tool.scikit-build]
+wheel.packages = ["python/albert"]
+cmake.build-type = "Release"
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+include = ["pyproject.toml", "python/**/*.py", "python/**/*.pyi", "tests/**/*.py"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle (errors)
+    "W",  # pycodestyle (warnings)
+    "F",  # pyflakes
+    "I",  # isort
+    "D",  # pydocstyle
+    "PL",  # pylint
+    "UP",  # pyupgrade
+    "SIM",  # flake8-simplify
+    "TID",  # flake8-tidy-imports
+]
+ignore = [
+    "D105",  # missing-docstring-in-magic-method
+    "D107",  # missing-docstring-in-init
+    "PLR2004",  # magic-value-comparison
+]
+
+[tool.ruff.lint.per-file-ignores]
+"python/albert/__init__.py" = [
+    "D205",  # missing-blank-line-after-summary
+    "D212",  # multi-line-summary-first-line
+    "D415",  # missing-terminal-punctuation
+]
+"python/**/__init__.py" = [
+    "I001",  # unsorted-imports
+    "F401",  # unused-import
+]
+"tests/**/*.py" = [
+    "D100",  # missing-docstring-in-public-module
+    "D101",  # missing-docstring-in-public-class
+    "D102",  # missing-docstring-in-public-function
+    "D103",  # undocumented-public-function
+    "D104",  # undocumented-public-package
+    "PLC",  # pylint (convention)
+    "PLR",  # pylint (refactor)
+    "PLW",  # pylint (warning)
+    "SIM",  # flake8-simplify
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.isort]
+known-first-party = ["albert"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+implicit_reexport = true
