@@ -3,6 +3,7 @@
 #include "cost.h"
 #include "expression.h"
 #include "permutation.h"
+#include "parenthesize.h"
 #include "search.h"
 #include "simplify.h"
 
@@ -28,6 +29,47 @@ albert::SearchOrder parse_search_order(const std::string& order) {
 Py_hash_t python_hash(std::uint64_t hash) {
     const auto result = static_cast<Py_hash_t>(hash);
     return result == -1 ? -2 : result;
+}
+
+albert::ScalingCaps parse_scaling_caps(const py::object& mapping) {
+    albert::ScalingCaps result;
+    for (const auto& item : mapping.cast<py::dict>()) {
+        std::vector<std::string> spaces;
+        if (py::isinstance<py::str>(item.first)) {
+            spaces.push_back(item.first.cast<std::string>());
+        } else if (py::isinstance<py::tuple>(item.first)) {
+            spaces = item.first.cast<std::vector<std::string>>();
+        } else {
+            throw py::value_error("scaling limit keys must be a space name or tuple of names");
+        }
+        if (spaces.empty()) {
+            throw py::value_error("scaling limit space tuples cannot be empty");
+        }
+        const auto maximum = item.second.cast<std::size_t>();
+        result.emplace_back(std::move(spaces), maximum);
+    }
+    return result;
+}
+
+albert::ScalingLimits parse_scaling_limits(const py::object& limits) {
+    if (limits.is_none()) {
+        return {};
+    }
+    return {parse_scaling_caps(limits.attr("time")),
+            parse_scaling_caps(limits.attr("memory"))};
+}
+
+std::vector<std::string> parse_space_argument(const py::object& space) {
+    if (py::isinstance<py::str>(space)) {
+        return {space.cast<std::string>()};
+    }
+    if (py::isinstance<py::tuple>(space)) {
+        auto result = space.cast<std::vector<std::string>>();
+        if (!result.empty()) {
+            return result;
+        }
+    }
+    throw py::value_error("space must be a space name or nonempty tuple of names");
 }
 
 }  // namespace
@@ -58,6 +100,9 @@ PYBIND11_MODULE(_core, module) {
         .def_readonly("reads", &albert::CostEstimate::reads)
         .def_readonly("writes", &albert::CostEstimate::writes)
         .def_readonly("total", &albert::CostEstimate::total);
+    py::class_<albert::ParenthesizationCandidate>(module, "ParenthesizationCandidate")
+        .def_readonly("path", &albert::ParenthesizationCandidate::path)
+        .def_readonly("cost", &albert::ParenthesizationCandidate::cost);
     module.def("canonical_key", &albert::canonical_key, py::arg("node"));
     module.def(
         "estimate_cost",
@@ -96,11 +141,34 @@ PYBIND11_MODULE(_core, module) {
         },
         py::arg("node"), py::arg("metadata") = py::none());
     module.def("expand", &albert::expand, py::arg("node"));
+    module.def("flatten", &albert::flatten, py::arg("node"));
     module.def("collect", &albert::collect, py::arg("node"));
     module.def("squeeze", &albert::squeeze, py::arg("node"));
-    module.def("remove_neutral_elements", &albert::remove_neutral_elements,
-               py::arg("node"));
+    module.def("prune", &albert::prune, py::arg("node"));
     module.def("simplify", &albert::simplify, py::arg("node"));
+    module.def(
+        "parenthesization_candidates",
+        [](const albert::Mul& node, const py::object& metadata,
+           const py::object& scaling_limits, std::size_t max_candidates,
+           std::size_t exhaustive_limit, const py::object& cost_model) {
+            const auto spaces = metadata.attr("spaces").cast<albert::IndexSpaces>();
+            const auto sizes = metadata.attr("sizes").cast<albert::SpaceSizes>();
+            albert::CostModel model;
+            if (!cost_model.is_none()) {
+                model.multiply = cost_model.attr("multiply").cast<double>();
+                model.add = cost_model.attr("add").cast<double>();
+                model.read = cost_model.attr("read").cast<double>();
+                model.write = cost_model.attr("write").cast<double>();
+            }
+            return albert::parenthesization_candidates(
+                node, spaces, sizes, parse_scaling_limits(scaling_limits),
+                max_candidates, exhaustive_limit, model);
+        },
+        py::arg("node"), py::arg("metadata"),
+        py::arg("scaling_limits") = py::none(), py::arg("max_candidates") = 8,
+        py::arg("exhaustive_limit") = 5, py::arg("cost_model") = py::none());
+    module.def("apply_parenthesization", &albert::apply_parenthesization,
+               py::arg("node"), py::arg("candidate"));
 
     py::class_<albert::Node, albert::NodePtr>(module, "Node")
         .def_property_readonly("kind", [node_kind_enum](const albert::Node& node) -> py::object {
@@ -130,6 +198,17 @@ PYBIND11_MODULE(_core, module) {
         })
         .def_property_readonly("external_indices", &albert::Node::external_indices)
         .def_property_readonly("internal_indices", &albert::Node::internal_indices)
+        .def(
+            "scaling_exponent",
+            [](const albert::NodePtr& self, const py::object& space,
+               const std::string& which, const py::object& metadata) {
+                const auto spaces = metadata.attr("spaces")
+                                        .cast<albert::IndexSpaces>();
+                return albert::scaling_exponent(
+                    self, spaces, parse_space_argument(space), which);
+            },
+            py::arg("space"), py::arg("which"), py::arg("metadata"),
+            "Return the maximum index-space exponent for a contraction tree.")
         .def("map_indices",
              [](const albert::NodePtr& self,
                 const std::unordered_map<std::string, std::string>& mapping) {

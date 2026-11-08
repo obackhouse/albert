@@ -11,6 +11,7 @@ from albert._core import (
     Expression,
     Mul,
     Node,
+    ParenthesizationCandidate,
     Permutation,
     Scalar,
     Tensor,
@@ -19,12 +20,15 @@ from albert._core import (
     collect,
     estimate_cost,
     expand,
-    remove_neutral_elements,
+    flatten,
+    apply_parenthesization,
+    parenthesization_candidates,
+    prune,
     simplify,
     squeeze,
 )
 from albert.metadata import Metadata
-from albert.options import CostModel, NodeKind, PhaseFactor, SearchOrder
+from albert.options import CostModel, NodeKind, PhaseFactor, ScalingLimits, SearchOrder
 
 __all__ = [
     "Add",
@@ -38,15 +42,20 @@ __all__ = [
     "NodeKind",
     "PhaseFactor",
     "Permutation",
+    "ParenthesizationCandidate",
     "Scalar",
     "SearchOrder",
+    "ScalingLimits",
     "Tensor",
     "canonical_key",
     "canonicalize",
+    "apply_parenthesization",
     "collect",
     "estimate_cost",
     "expand",
-    "remove_neutral_elements",
+    "flatten",
+    "parenthesization_candidates",
+    "prune",
     "simplify",
     "squeeze",
 ]

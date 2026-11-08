@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import IntEnum, StrEnum
 
 
 @dataclass(frozen=True)
 class CostModel:
-    """Relative weights for arithmetic and memory traffic in a cost estimate."""
+    """Cost model weights."""
 
     multiply: float = 1.0
     add: float = 1.0
@@ -26,6 +26,30 @@ class CostModel:
         ):
             if not math.isfinite(weight) or weight < 0:
                 raise ValueError(f"{name} cost weight must be finite and nonnegative")
+
+
+@dataclass(frozen=True)
+class ScalingLimits:
+    """Scaling exponent limits."""
+
+    time: dict[tuple[str, ...] | str, int] = field(default_factory=dict)
+    memory: dict[tuple[str, ...] | str, int] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        """Validate space keys and nonnegative exponent caps."""
+        for name in ("time", "memory"):
+            limits = getattr(self, name)
+            for key, limit in limits.items():
+                if isinstance(key, str):
+                    valid_key = bool(key)
+                else:
+                    valid_key = (
+                        isinstance(key, tuple) and bool(key) and all(isinstance(space, str) and space for space in key)
+                    )
+                if not valid_key:
+                    raise ValueError(f"{name} keys must be a space name or nonempty tuple of names")
+                if isinstance(limit, bool) or not isinstance(limit, int) or limit < 0:
+                    raise ValueError(f"{name} limits must be nonnegative integers")
 
 
 class PhaseFactor(IntEnum):

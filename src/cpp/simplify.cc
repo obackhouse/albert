@@ -216,6 +216,32 @@ bool contains_add(const NodePtr& node) {
     return false;
 }
 
+NodePtr flatten_impl(const NodePtr& node) {
+    if (node->kind() == NodeKind::Scalar || node->kind() == NodeKind::Tensor) {
+        return node;
+    }
+    Children children;
+    bool changed = false;
+    for (const auto& child : node->children()) {
+        auto flattened = flatten_impl(child);
+        changed = changed || flattened != child;
+        if (node->kind() == NodeKind::Mul && flattened->kind() == NodeKind::Mul) {
+            const auto& nested = flattened->children();
+            children.insert(children.end(), nested.begin(), nested.end());
+            changed = true;
+        } else {
+            children.push_back(std::move(flattened));
+        }
+    }
+    if (!changed) {
+        return node;
+    }
+    if (node->kind() == NodeKind::Add) {
+        return std::make_shared<Add>(std::move(children));
+    }
+    return std::make_shared<Mul>(std::move(children));
+}
+
 }  // namespace
 
 NodePtr expand(const NodePtr& node) {
@@ -224,6 +250,11 @@ NodePtr expand(const NodePtr& node) {
         return node;
     }
     return make_expanded(polynomial(node));
+}
+
+NodePtr flatten(const NodePtr& node) {
+    require_node(node);
+    return flatten_impl(node);
 }
 
 NodePtr collect(const NodePtr& node) {
@@ -280,7 +311,7 @@ NodePtr squeeze(const NodePtr& node) {
     return node;
 }
 
-NodePtr remove_neutral_elements(const NodePtr& node) {
+NodePtr prune(const NodePtr& node) {
     require_node(node);
     if (node->kind() == NodeKind::Add) {
         Children children;
@@ -326,7 +357,7 @@ NodePtr simplify(const NodePtr& node) {
             return current_node;
         });
         updated = albert::apply(updated, [](const NodePtr& current_node) {
-            return remove_neutral_elements(current_node);
+            return prune(current_node);
         });
         updated = albert::apply(updated, [](const NodePtr& current_node) {
             return squeeze(current_node);

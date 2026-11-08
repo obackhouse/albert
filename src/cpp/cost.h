@@ -31,4 +31,8 @@ CostEstimate estimate_cost(const NodePtr& node, const IndexSpaces& spaces,
                            const SpaceSizes& sizes,
                            const CostModel& model = {});
 
+std::size_t scaling_exponent(const NodePtr& node, const IndexSpaces& spaces,
+                             const std::vector<std::string>& selected_spaces,
+                             const std::string& which);
+
 }  // namespace albert

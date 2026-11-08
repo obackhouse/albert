@@ -1,6 +1,6 @@
 import pytest
 
-from albert import Add, Mul, Scalar, Tensor, collect, expand, remove_neutral_elements, simplify, squeeze
+from albert import Add, Mul, Scalar, Tensor, collect, expand, flatten, prune, simplify, squeeze
 
 
 def _product_factors(term):
@@ -129,12 +129,40 @@ def test_squeeze_preserves_nodes_with_other_arities() -> None:
     assert squeeze(node) is node
 
 
-def test_remove_neutral_elements_from_add_and_mul() -> None:
+def test_flatten_only_flattens_nested_products() -> None:
+    a = Tensor("A", ["i"])
+    b = Tensor("B", ["j"])
+    c = Tensor("C", ["k"])
+    d = Tensor("D", ["i"])
+    e = Tensor("E", ["j"])
+    f = Tensor("F", ["k"])
+    sum_node = Add([Mul([a, Mul([b, c])]), Mul([d, Mul([e, f])])])
+
+    result = flatten(sum_node)
+
+    assert isinstance(result, Add)
+    assert result.children[0] == Mul([a, b, c])
+    assert result.children[1] == Mul([d, e, f])
+
+
+def test_flatten_preserves_additions_inside_products() -> None:
+    a = Tensor("A", ["i"])
+    b = Tensor("B", ["i"])
+    c = Tensor("C", ["i"])
+    expression = Mul([a, Mul([Add([b, c]), Scalar(2)])])
+
+    result = flatten(expression)
+
+    assert isinstance(result, Mul)
+    assert result.children == [a, Add([b, c]), Scalar(2)]
+
+
+def test_prune_removes_neutral_elements_from_add_and_mul() -> None:
     tensor_a = Tensor("A", [])
     tensor_b = Tensor("B", [])
 
-    sum_result = remove_neutral_elements(Add([Scalar(0), tensor_a]))
-    product_result = remove_neutral_elements(Mul([Scalar(1), tensor_b]))
+    sum_result = prune(Add([Scalar(0), tensor_a]))
+    product_result = prune(Mul([Scalar(1), tensor_b]))
 
     assert isinstance(sum_result, Add)
     assert sum_result.children == [tensor_a]
@@ -143,8 +171,8 @@ def test_remove_neutral_elements_from_add_and_mul() -> None:
 
 
 def test_remove_all_neutral_elements_returns_the_identity_scalar() -> None:
-    sum_result = remove_neutral_elements(Add([Scalar(0), Scalar(0)]))
-    product_result = remove_neutral_elements(Mul([Scalar(1), Scalar(1)]))
+    sum_result = prune(Add([Scalar(0), Scalar(0)]))
+    product_result = prune(Mul([Scalar(1), Scalar(1)]))
 
     assert isinstance(sum_result, Scalar)
     assert sum_result.value == 0

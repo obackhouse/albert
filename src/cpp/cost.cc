@@ -16,6 +16,12 @@ namespace {
 using AxisSet = std::set<std::string>;
 using IndexSpaceMap = std::unordered_map<std::string, std::string>;
 
+struct ScalingSummary {
+    AxisSet axes;
+    std::size_t time = 0;
+    std::size_t memory = 0;
+};
+
 struct Totals {
     double multiplications = 0.0;
     double additions = 0.0;
@@ -184,6 +190,76 @@ private:
     const SpaceSizes& sizes_;
 };
 
+class ScalingEstimator {
+public:
+    ScalingEstimator(const IndexSpaceMap& index_spaces,
+                     const std::vector<std::string>& selected_spaces)
+        : index_spaces_(index_spaces), selected_spaces_(selected_spaces) {}
+
+    std::size_t count(const AxisSet& axes) const {
+        std::size_t result = 0;
+        for (const auto& axis : axes) {
+            const auto space = index_spaces_.find(axis);
+            if (space == index_spaces_.end()) {
+                throw std::invalid_argument("index " + axis + " does not belong to a space");
+            }
+            if (std::find(selected_spaces_.begin(), selected_spaces_.end(), space->second) !=
+                selected_spaces_.end()) {
+                ++result;
+            }
+        }
+        return result;
+    }
+
+    ScalingSummary visit(const NodePtr& node) const {
+        if (const auto* tensor = dynamic_cast<const Tensor*>(node.get())) {
+            ScalingSummary result;
+            AxisSet all_axes(tensor->indices().begin(), tensor->indices().end());
+            const auto external = tensor->external_indices();
+            result.axes.insert(external.begin(), external.end());
+            result.time = all_axes.size() == result.axes.size() ? 0 : count(all_axes);
+            result.memory = count(all_axes);
+            return result;
+        }
+        if (node->kind() == NodeKind::Scalar) {
+            return {};
+        }
+        if (node->kind() == NodeKind::Add) {
+            ScalingSummary result;
+            for (const auto& child : node->children()) {
+                const auto child_summary = visit(child);
+                result.time = std::max(result.time, child_summary.time);
+                result.memory = std::max(result.memory, child_summary.memory);
+            }
+            const auto external = node->external_indices();
+            result.axes.insert(external.begin(), external.end());
+            result.memory = std::max(result.memory, count(result.axes));
+            return result;
+        }
+        if (node->children().empty()) {
+            return {};
+        }
+        auto result = visit(node->children().front());
+        for (std::size_t i = 1; i < node->children().size(); ++i) {
+            auto right = visit(node->children()[i]);
+            AxisSet operation_axes = result.axes;
+            operation_axes.insert(right.axes.begin(), right.axes.end());
+            AxisSet output_axes;
+            std::set_symmetric_difference(
+                result.axes.begin(), result.axes.end(), right.axes.begin(), right.axes.end(),
+                std::inserter(output_axes, output_axes.end()));
+            result.time = std::max({result.time, right.time, count(operation_axes)});
+            result.memory = std::max({result.memory, right.memory, count(output_axes)});
+            result.axes = std::move(output_axes);
+        }
+        return result;
+    }
+
+private:
+    const IndexSpaceMap& index_spaces_;
+    const std::vector<std::string>& selected_spaces_;
+};
+
 void validate_model(const CostModel& model) {
     const double weights[] = {model.multiply, model.add, model.read, model.write};
     for (const auto weight : weights) {
@@ -228,6 +304,23 @@ CostEstimate estimate_cost(const NodePtr& node, const IndexSpaces& spaces,
         totals.writes,
         total,
     };
+}
+
+std::size_t scaling_exponent(const NodePtr& node, const IndexSpaces& spaces,
+                             const std::vector<std::string>& selected_spaces,
+                             const std::string& which) {
+    if (!node) {
+        throw std::invalid_argument("AST node cannot be null");
+    }
+    if (which != "time" && which != "memory") {
+        throw std::invalid_argument("which must be 'time' or 'memory'");
+    }
+    if (selected_spaces.empty()) {
+        throw std::invalid_argument("space must name at least one index space");
+    }
+    const auto index_spaces = make_index_space_map(spaces);
+    const auto summary = ScalingEstimator(index_spaces, selected_spaces).visit(node);
+    return which == "time" ? summary.time : summary.memory;
 }
 
 }  // namespace albert

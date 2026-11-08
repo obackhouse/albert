@@ -1,10 +1,8 @@
 from collections.abc import Callable, Sequence
+from typing import Literal
 
-from albert.metadata import Metadata as _Metadata
-from albert.options import CostModel as _CostModel
-from albert.options import NodeKind as _NodeKind
-from albert.options import PhaseFactor as _PhaseFactor
-from albert.options import SearchOrder as _SearchOrder
+from albert.metadata import Metadata
+from albert.options import CostModel, NodeKind, PhaseFactor, ScalingLimits, SearchOrder
 
 class CanonicalKey:
     def __eq__(self, other: object) -> bool: ...
@@ -17,23 +15,33 @@ class CostEstimate:
     writes: float
     total: float
 
+class ParenthesizationCandidate:
+    path: list[tuple[int, int]]
+    cost: CostEstimate
+
 class Node:
-    kind: _NodeKind
+    kind: NodeKind
     children: list[Node]
     external_indices: list[str]
     internal_indices: list[str]
 
+    def scaling_exponent(
+        self,
+        space: str | tuple[str, ...],
+        which: Literal["time", "memory"],
+        metadata: Metadata,
+    ) -> int: ...
     def search(
         self,
         predicate: Callable[[Node], bool],
         max_depth: int | None = None,
-        order: _SearchOrder = _SearchOrder.PREORDER,
+        order: SearchOrder = SearchOrder.PREORDER,
     ) -> list[Node]: ...
     def find(
         self,
         predicate: Callable[[Node], bool],
         max_depth: int | None = None,
-        order: _SearchOrder = _SearchOrder.PREORDER,
+        order: SearchOrder = SearchOrder.PREORDER,
     ) -> Node | None: ...
     def delete(
         self,
@@ -91,15 +99,25 @@ class Expression:
 
 class Permutation:
     permutation: list[int]
-    phase: _PhaseFactor
+    phase: PhaseFactor
 
-    def __init__(self, permutation: Sequence[int], phase: _PhaseFactor = _PhaseFactor.POSITIVE) -> None: ...
+    def __init__(self, permutation: Sequence[int], phase: PhaseFactor = PhaseFactor.POSITIVE) -> None: ...
 
 def canonical_key(node: Node) -> CanonicalKey: ...
-def estimate_cost(node: Node, metadata: _Metadata, cost_model: _CostModel = ...) -> CostEstimate: ...
-def canonicalize(node: Node, metadata: _Metadata | None = None) -> Node: ...
+def estimate_cost(node: Node, metadata: Metadata, cost_model: CostModel = ...) -> CostEstimate: ...
+def parenthesization_candidates(
+    node: Mul,
+    metadata: Metadata,
+    scaling_limits: ScalingLimits | None = ...,
+    max_candidates: int = ...,
+    exhaustive_limit: int = ...,
+    cost_model: CostModel | None = ...,
+) -> list[ParenthesizationCandidate]: ...
+def apply_parenthesization(node: Mul, candidate: ParenthesizationCandidate) -> Node: ...
+def canonicalize(node: Node, metadata: Metadata | None = None) -> Node: ...
 def expand(node: Node) -> Node: ...
+def flatten(node: Node) -> Node: ...
 def collect(node: Node) -> Node: ...
 def squeeze(node: Node) -> Node: ...
-def remove_neutral_elements(node: Node) -> Node: ...
+def prune(node: Node) -> Node: ...
 def simplify(node: Node) -> Node: ...
