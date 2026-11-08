@@ -1,4 +1,6 @@
-from albert import Add, Mul, Scalar, Tensor, simplify
+from itertools import product
+
+from albert import Add, Mul, Scalar, Tensor, canonicalize, simplify
 
 
 def test_indexed_tensor_expression_expands_and_matches_expected_ast() -> None:
@@ -108,3 +110,50 @@ def test_larger_repeated_sums_collect_all_coefficients_after_expansion() -> None
         ("C", "D"): 2,
         ("C", "E"): 1,
     }
+
+
+def test_eight_layer_indexed_sum_product_expands_and_collects_long_expression() -> None:
+    layer_sums = []
+    for layer in range(8):
+        left = Tensor(f"A{layer}", [f"i{layer}", f"i{layer + 1}"])
+        right = Tensor(f"B{layer}", [f"i{layer}", f"i{layer + 1}"])
+        layer_sums.append(Add([left, right]))
+
+    result = simplify(Mul(layer_sums))
+
+    assert isinstance(result, Add)
+    assert len(result.children) == 256
+    assert result.external_indices == ["i0", "i8"]
+    assert len(result.search(lambda node: isinstance(node, Tensor))) == 2048
+    assert all(isinstance(term, Mul) and len(term.children) == 8 for term in result.children)
+    actual_paths = {tuple(factor.symbol for factor in term.children) for term in result.children}
+    expected_paths = {
+        tuple(f"{'AB'[choice]}{layer}" for layer, choice in enumerate(choices)) for choices in product((0, 1), repeat=8)
+    }
+    assert actual_paths == expected_paths
+
+
+def test_long_sum_of_contractions_canonicalizes_factor_order_and_dummy_names() -> None:
+    terms = []
+    renamed_terms = []
+    for term_number in range(32):
+        factors = []
+        renamed_factors = []
+        for pair_number in range(4):
+            symbol = f"T{term_number}_{pair_number}"
+            index = f"d{term_number}_{pair_number}"
+            renamed_index = f"x{term_number}_{pair_number}"
+            factors.extend([Tensor(f"{symbol}a", [index]), Tensor(f"{symbol}b", [index])])
+            renamed_factors.extend([Tensor(f"{symbol}b", [renamed_index]), Tensor(f"{symbol}a", [renamed_index])])
+
+        terms.append(Mul(factors))
+        renamed_terms.append(Mul(renamed_factors))
+
+    expression = Add(terms)
+    renamed_expression = Add(renamed_terms)
+
+    canonical = canonicalize(expression)
+
+    assert len(canonical.children) == 32
+    assert len(canonical.search(lambda node: isinstance(node, Tensor))) == 256
+    assert canonical == canonicalize(renamed_expression)

@@ -1,4 +1,5 @@
 #include "algebra.h"
+#include "canonicalize.h"
 #include "expression.h"
 #include "permutation.h"
 #include "search.h"
@@ -50,6 +51,23 @@ PYBIND11_MODULE(_core, module) {
             return python_hash(key.hash());
         });
     module.def("canonical_key", &albert::canonical_key, py::arg("node"));
+    module.def(
+        "canonicalize",
+        [](const albert::NodePtr& node, const py::object& metadata) {
+            albert::CanonicalizationMetadata canonical_metadata;
+            if (!metadata.is_none()) {
+                canonical_metadata.spaces = metadata.attr("spaces")
+                                                .cast<std::unordered_map<
+                                                    std::string,
+                                                    std::vector<std::string>>>();
+                canonical_metadata.symmetries = metadata.attr("symmetries")
+                                                    .cast<std::unordered_map<
+                                                        std::string,
+                                                        std::vector<albert::Permutation>>>();
+            }
+            return albert::canonicalize(node, canonical_metadata);
+        },
+        py::arg("node"), py::arg("metadata") = py::none());
     module.def("expand", &albert::expand, py::arg("node"));
     module.def("collect", &albert::collect, py::arg("node"));
     module.def("squeeze", &albert::squeeze, py::arg("node"));
