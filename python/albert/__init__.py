@@ -26,6 +26,7 @@ from albert._core import (
     prune,
     simplify,
     squeeze,
+    topological_sort,
 )
 from albert.metadata import Metadata
 from albert.options import CostModel, NodeKind, PhaseFactor, ScalingLimits, SearchOrder
@@ -58,4 +59,5 @@ __all__ = [
     "prune",
     "simplify",
     "squeeze",
+    "topological_sort",
 ]

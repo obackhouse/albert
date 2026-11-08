@@ -6,6 +6,7 @@
 #include "parenthesize.h"
 #include "search.h"
 #include "simplify.h"
+#include "sort.h"
 
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
@@ -368,4 +369,9 @@ PYBIND11_MODULE(_core, module) {
         .def(py::init<albert::Children>())
         .def_property_readonly("arity", &albert::Mul::arity)
         .def_property_readonly("children", &albert::Mul::children);
+
+    module.def("topological_sort", &albert::topological_sort,
+               py::arg("expressions"),
+               "Return expressions in stable dependency order.");
+
 }
