@@ -7,6 +7,7 @@ albert
 from albert._core import (
     Add,
     CanonicalKey,
+    Expression,
     Mul,
     Node,
     Scalar,
@@ -24,6 +25,7 @@ from albert.options import NodeKind, SearchOrder
 __all__ = [
     "Add",
     "CanonicalKey",
+    "Expression",
     "Metadata",
     "Mul",
     "Node",

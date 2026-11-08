@@ -23,6 +23,11 @@ def test_tensor_keeps_order_and_duplicate_indices() -> None:
     assert value.indices == ["i", "k", "i"]
 
 
+def test_leaf_nodes_expose_empty_children() -> None:
+    assert Scalar(2.0).children == []
+    assert Tensor("T", ["i", "j"]).children == []
+
+
 def test_add_mul_store_their_children() -> None:
     first = Scalar(2.0)
     second = Scalar(3.0)

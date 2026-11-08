@@ -1,4 +1,5 @@
 #include "algebra.h"
+#include "expression.h"
 #include "search.h"
 #include "simplify.h"
 
@@ -188,6 +189,12 @@ PYBIND11_MODULE(_core, module) {
         .def_property_readonly("symbol", &albert::Tensor::symbol)
         .def_property_readonly("rank", &albert::Tensor::rank)
         .def_property_readonly("indices", &albert::Tensor::indices);
+
+    py::class_<albert::Expression>(module, "Expression")
+        .def(py::init<std::shared_ptr<albert::Tensor>, albert::NodePtr>(),
+             py::arg("lhs"), py::arg("rhs"))
+        .def_property_readonly("lhs", &albert::Expression::lhs)
+        .def_property_readonly("rhs", &albert::Expression::rhs);
 
     py::class_<albert::Add, albert::Node, std::shared_ptr<albert::Add>>(
         module, "Add")
