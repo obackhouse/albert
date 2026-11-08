@@ -7,6 +7,7 @@ albert
 from albert._core import (
     Add,
     CanonicalKey,
+    CostEstimate,
     Expression,
     Mul,
     Node,
@@ -16,17 +17,20 @@ from albert._core import (
     canonical_key,
     canonicalize,
     collect,
+    estimate_cost,
     expand,
     remove_neutral_elements,
     simplify,
     squeeze,
 )
 from albert.metadata import Metadata
-from albert.options import NodeKind, PhaseFactor, SearchOrder
+from albert.options import CostModel, NodeKind, PhaseFactor, SearchOrder
 
 __all__ = [
     "Add",
     "CanonicalKey",
+    "CostEstimate",
+    "CostModel",
     "Expression",
     "Metadata",
     "Mul",
@@ -40,6 +44,7 @@ __all__ = [
     "canonical_key",
     "canonicalize",
     "collect",
+    "estimate_cost",
     "expand",
     "remove_neutral_elements",
     "simplify",

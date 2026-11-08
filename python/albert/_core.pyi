@@ -1,6 +1,7 @@
 from collections.abc import Callable, Sequence
 
 from albert.metadata import Metadata as _Metadata
+from albert.options import CostModel as _CostModel
 from albert.options import NodeKind as _NodeKind
 from albert.options import PhaseFactor as _PhaseFactor
 from albert.options import SearchOrder as _SearchOrder
@@ -8,6 +9,13 @@ from albert.options import SearchOrder as _SearchOrder
 class CanonicalKey:
     def __eq__(self, other: object) -> bool: ...
     def __hash__(self) -> int: ...
+
+class CostEstimate:
+    multiplications: float
+    additions: float
+    reads: float
+    writes: float
+    total: float
 
 class Node:
     kind: _NodeKind
@@ -88,6 +96,7 @@ class Permutation:
     def __init__(self, permutation: Sequence[int], phase: _PhaseFactor = _PhaseFactor.POSITIVE) -> None: ...
 
 def canonical_key(node: Node) -> CanonicalKey: ...
+def estimate_cost(node: Node, metadata: _Metadata, cost_model: _CostModel = ...) -> CostEstimate: ...
 def canonicalize(node: Node, metadata: _Metadata | None = None) -> Node: ...
 def expand(node: Node) -> Node: ...
 def collect(node: Node) -> Node: ...

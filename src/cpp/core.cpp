@@ -1,5 +1,6 @@
 #include "algebra.h"
 #include "canonicalize.h"
+#include "cost.h"
 #include "expression.h"
 #include "permutation.h"
 #include "search.h"
@@ -50,7 +51,33 @@ PYBIND11_MODULE(_core, module) {
         .def("__hash__", [](const albert::CanonicalKey& key) {
             return python_hash(key.hash());
         });
+    py::class_<albert::CostEstimate>(module, "CostEstimate",
+                                     "Operation and traffic counts with their weighted total.")
+        .def_readonly("multiplications", &albert::CostEstimate::multiplications)
+        .def_readonly("additions", &albert::CostEstimate::additions)
+        .def_readonly("reads", &albert::CostEstimate::reads)
+        .def_readonly("writes", &albert::CostEstimate::writes)
+        .def_readonly("total", &albert::CostEstimate::total);
     module.def("canonical_key", &albert::canonical_key, py::arg("node"));
+    module.def(
+        "estimate_cost",
+        [](const albert::NodePtr& node, const py::object& metadata,
+           const py::object& cost_model) {
+            const auto spaces = metadata.attr("spaces")
+                                    .cast<albert::IndexSpaces>();
+            const auto sizes = metadata.attr("sizes")
+                                   .cast<albert::SpaceSizes>();
+            albert::CostModel model;
+            if (!cost_model.is_none()) {
+                model.multiply = cost_model.attr("multiply").cast<double>();
+                model.add = cost_model.attr("add").cast<double>();
+                model.read = cost_model.attr("read").cast<double>();
+                model.write = cost_model.attr("write").cast<double>();
+            }
+            return albert::estimate_cost(node, spaces, sizes, model);
+        },
+        py::arg("node"), py::arg("metadata"), py::arg("cost_model") = py::none(),
+        "Estimate arithmetic operations and memory traffic for an AST.");
     module.def(
         "canonicalize",
         [](const albert::NodePtr& node, const py::object& metadata) {
