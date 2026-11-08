@@ -8,11 +8,11 @@ from albert._core import (
     Add,
     Mul,
     Node,
-    NodeKind,
     Scalar,
     Tensor,
 )
 from albert.metadata import Metadata
+from albert.options import NodeKind, SearchOrder
 
 __all__ = [
     "Add",
@@ -21,5 +21,6 @@ __all__ = [
     "Node",
     "NodeKind",
     "Scalar",
+    "SearchOrder",
     "Tensor",
 ]

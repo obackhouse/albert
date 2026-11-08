@@ -1,0 +1,64 @@
+from collections.abc import Callable, Sequence
+
+from albert.options import NodeKind as _NodeKind
+from albert.options import SearchOrder as _SearchOrder
+
+class Node:
+    kind: _NodeKind
+    children: list[Node]
+
+    def search(
+        self,
+        predicate: Callable[[Node], bool],
+        max_depth: int | None = None,
+        order: _SearchOrder = _SearchOrder.PREORDER,
+    ) -> list[Node]: ...
+    def find(
+        self,
+        predicate: Callable[[Node], bool],
+        max_depth: int | None = None,
+        order: _SearchOrder = _SearchOrder.PREORDER,
+    ) -> Node | None: ...
+    def delete(
+        self,
+        predicate: Callable[[Node], bool],
+        max_depth: int | None = None,
+    ) -> Node: ...
+    def apply(
+        self,
+        filter: Callable[[Node], Node],
+        predicate: Callable[[Node], bool] | None = None,
+        max_depth: int | None = None,
+    ) -> Node: ...
+    def __add__(self, other: Node | float) -> Node: ...
+    def __radd__(self, other: float) -> Node: ...
+    def __sub__(self, other: Node | float) -> Node: ...
+    def __rsub__(self, other: float) -> Node: ...
+    def __mul__(self, other: Node | float) -> Node: ...
+    def __rmul__(self, other: float) -> Node: ...
+    def __pos__(self) -> Node: ...
+    def __neg__(self) -> Node: ...
+
+class Scalar(Node):
+    value: float
+
+    def __init__(self, value: float) -> None: ...
+
+class Tensor(Node):
+    symbol: str
+    rank: int
+    indices: list[str]
+
+    def __init__(self, symbol: str, indices: Sequence[str]) -> None: ...
+
+class Add(Node):
+    arity: int
+    children: list[Node]
+
+    def __init__(self, children: Sequence[Node]) -> None: ...
+
+class Mul(Node):
+    arity: int
+    children: list[Node]
+
+    def __init__(self, children: Sequence[Node]) -> None: ...

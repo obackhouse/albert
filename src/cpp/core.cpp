@@ -1,4 +1,5 @@
 #include "algebra.h"
+#include "search.h"
 
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
@@ -7,20 +8,84 @@
 
 namespace py = pybind11;
 
+namespace {
+
+albert::SearchOrder parse_search_order(const std::string& order) {
+    if (order == "preorder") {
+        return albert::SearchOrder::PreOrder;
+    }
+    if (order == "postorder") {
+        return albert::SearchOrder::PostOrder;
+    }
+    throw py::value_error("order must be SearchOrder.PREORDER or SearchOrder.POSTORDER");
+}
+
+}  // namespace
+
 PYBIND11_MODULE(_core, module) {
     module.doc() = "C++ extension module for albert.";
 
-    py::enum_<albert::NodeKind>(module, "NodeKind")
-        .value("SCALAR", albert::NodeKind::Scalar)
-        .value("TENSOR", albert::NodeKind::Tensor)
-        .value("ADD", albert::NodeKind::Add)
-        .value("MUL", albert::NodeKind::Mul);
+    const auto node_kind_enum = py::module_::import("albert.options").attr("NodeKind");
 
     py::class_<albert::Node, albert::NodePtr>(module, "Node")
-        .def_property_readonly("kind", &albert::Node::kind)
+        .def_property_readonly("kind", [node_kind_enum](const albert::Node& node) -> py::object {
+            switch (node.kind()) {
+                case albert::NodeKind::Scalar:
+                    return node_kind_enum.attr("SCALAR");
+                case albert::NodeKind::Tensor:
+                    return node_kind_enum.attr("TENSOR");
+                case albert::NodeKind::Add:
+                    return node_kind_enum.attr("ADD");
+                case albert::NodeKind::Mul:
+                    return node_kind_enum.attr("MUL");
+            }
+            throw py::value_error("unknown node kind");
+        })
         .def_property_readonly("children", [](const albert::Node& node) {
             return node.children();
         })
+        .def("search",
+             [](const albert::NodePtr& self, py::function predicate,
+                std::optional<std::size_t> max_depth, const std::string& order) {
+                 auto callback = [&predicate](const albert::NodePtr& node) {
+                     return predicate(node).cast<bool>();
+                 };
+                 return albert::search(self, callback, max_depth, parse_search_order(order));
+             },
+             py::arg("predicate"), py::arg("max_depth") = std::nullopt,
+             py::arg("order") = "preorder")
+        .def("find",
+             [](const albert::NodePtr& self, py::function predicate,
+                std::optional<std::size_t> max_depth, const std::string& order) {
+                 auto callback = [&predicate](const albert::NodePtr& node) {
+                     return predicate(node).cast<bool>();
+                 };
+                 return albert::find(self, callback, max_depth, parse_search_order(order));
+             },
+             py::arg("predicate"), py::arg("max_depth") = std::nullopt,
+             py::arg("order") = "preorder")
+        .def("delete",
+             [](const albert::NodePtr& self, py::function predicate,
+                std::optional<std::size_t> max_depth) {
+                 auto callback = [&predicate](const albert::NodePtr& node) {
+                     return predicate(node).cast<bool>();
+                 };
+                 return albert::delete_nodes(self, callback, max_depth);
+             },
+             py::arg("predicate"), py::arg("max_depth") = std::nullopt)
+        .def("apply",
+             [](const albert::NodePtr& self, py::function filter,
+                py::object predicate, std::optional<std::size_t> max_depth) {
+                 auto transform = [&filter](const albert::NodePtr& node) {
+                     return filter(node).cast<albert::NodePtr>();
+                 };
+                 auto callback = [&predicate](const albert::NodePtr& node) {
+                     return predicate.is_none() || predicate(node).cast<bool>();
+                 };
+                 return albert::apply(self, transform, callback, max_depth);
+             },
+             py::arg("filter"), py::arg("predicate") = py::none(),
+             py::arg("max_depth") = std::nullopt)
         .def("__add__",
              [](albert::NodePtr lhs, albert::NodePtr rhs) {
                  return std::move(lhs) + std::move(rhs);
