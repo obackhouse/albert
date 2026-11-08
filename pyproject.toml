@@ -40,6 +40,7 @@ select = [
     "D",  # pydocstyle
     "PL",  # pylint
     "UP",  # pyupgrade
+    "TC",  # flake8-type-checking
     "SIM",  # flake8-simplify
     "TID",  # flake8-tidy-imports
 ]

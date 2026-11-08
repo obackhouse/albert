@@ -1,5 +1,6 @@
 #include "algebra.h"
 #include "expression.h"
+#include "permutation.h"
 #include "search.h"
 #include "simplify.h"
 
@@ -33,6 +34,7 @@ PYBIND11_MODULE(_core, module) {
     module.doc() = "C++ extension module for albert.";
 
     const auto node_kind_enum = py::module_::import("albert.options").attr("NodeKind");
+    const auto phase_factor_enum = py::module_::import("albert.options").attr("PhaseFactor");
 
     py::class_<albert::CanonicalKey>(module, "CanonicalKey")
         .def("__eq__",
@@ -195,6 +197,23 @@ PYBIND11_MODULE(_core, module) {
              py::arg("lhs"), py::arg("rhs"))
         .def_property_readonly("lhs", &albert::Expression::lhs)
         .def_property_readonly("rhs", &albert::Expression::rhs);
+
+    py::class_<albert::Permutation>(module, "Permutation")
+        .def(py::init([](std::vector<int> permutation, int phase) {
+                 if (phase != 1 && phase != -1) {
+                     throw py::value_error("phase must be PhaseFactor.POSITIVE or NEGATIVE");
+                 }
+                 return albert::Permutation(
+                     std::move(permutation),
+                     static_cast<albert::PhaseFactor>(phase));
+             }),
+             py::arg("permutation"), py::arg("phase") = 1)
+        .def_property_readonly("permutation", &albert::Permutation::permutation)
+        .def_property_readonly("phase", [phase_factor_enum](const albert::Permutation& permutation) {
+            return phase_factor_enum.attr(permutation.phase() == albert::PhaseFactor::Positive
+                                              ? "POSITIVE"
+                                              : "NEGATIVE");
+        });
 
     py::class_<albert::Add, albert::Node, std::shared_ptr<albert::Add>>(
         module, "Add")

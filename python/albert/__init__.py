@@ -10,6 +10,7 @@ from albert._core import (
     Expression,
     Mul,
     Node,
+    Permutation,
     Scalar,
     Tensor,
     canonical_key,
@@ -20,7 +21,7 @@ from albert._core import (
     squeeze,
 )
 from albert.metadata import Metadata
-from albert.options import NodeKind, SearchOrder
+from albert.options import NodeKind, PhaseFactor, SearchOrder
 
 __all__ = [
     "Add",
@@ -30,6 +31,8 @@ __all__ = [
     "Mul",
     "Node",
     "NodeKind",
+    "PhaseFactor",
+    "Permutation",
     "Scalar",
     "SearchOrder",
     "Tensor",

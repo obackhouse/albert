@@ -2,7 +2,14 @@
 
 from __future__ import annotations
 
-from enum import StrEnum
+from enum import IntEnum, StrEnum
+
+
+class PhaseFactor(IntEnum):
+    """Tensor symmetry phase factors."""
+
+    POSITIVE = 1
+    NEGATIVE = -1
 
 
 class NodeKind(StrEnum):

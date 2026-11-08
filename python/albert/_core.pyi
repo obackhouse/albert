@@ -1,6 +1,7 @@
 from collections.abc import Callable, Sequence
 
 from albert.options import NodeKind as _NodeKind
+from albert.options import PhaseFactor as _PhaseFactor
 from albert.options import SearchOrder as _SearchOrder
 
 class CanonicalKey:
@@ -74,6 +75,12 @@ class Expression:
     rhs: Node
 
     def __init__(self, lhs: Tensor, rhs: Node) -> None: ...
+
+class Permutation:
+    permutation: list[int]
+    phase: _PhaseFactor
+
+    def __init__(self, permutation: Sequence[int], phase: _PhaseFactor = _PhaseFactor.POSITIVE) -> None: ...
 
 def canonical_key(node: Node) -> CanonicalKey: ...
 def expand(node: Node) -> Node: ...
