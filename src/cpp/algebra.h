@@ -28,6 +28,9 @@ private:
     Children children_;
 };
 
+std::vector<std::string> external_indices(const Node& node);
+std::vector<std::string> internal_indices(const Node& node);
+
 NodePtr operator+(NodePtr lhs, NodePtr rhs);
 NodePtr operator+(NodePtr lhs, double rhs);
 NodePtr operator+(double lhs, NodePtr rhs);

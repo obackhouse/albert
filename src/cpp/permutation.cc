@@ -1,6 +1,9 @@
 #include "permutation.h"
 
+#include "algebra.h"
+
 #include <stdexcept>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -28,6 +31,33 @@ const std::vector<int>& Permutation::permutation() const noexcept {
 
 PhaseFactor Permutation::phase() const noexcept {
     return phase_;
+}
+
+NodePtr permute_indices(const NodePtr& node,
+                        const std::vector<int>& permutation) {
+    return permute_indices(node, Permutation(permutation));
+}
+
+NodePtr permute_indices(const NodePtr& node,
+                        const Permutation& permutation) {
+    if (!node) {
+        throw std::invalid_argument("AST node cannot be null");
+    }
+    const auto indices = node->external_indices();
+    if (permutation.permutation().size() != indices.size()) {
+        throw std::invalid_argument(
+            "permutation length must match the number of external indices");
+    }
+
+    std::unordered_map<std::string, std::string> mapping;
+    mapping.reserve(indices.size());
+    for (std::size_t position = 0; position < indices.size(); ++position) {
+        const auto source = indices[position];
+        const auto target = indices[static_cast<std::size_t>(
+            permutation.permutation()[position])];
+        mapping.emplace(source, target);
+    }
+    return albert::map_indices(node, mapping);
 }
 
 }  // namespace albert

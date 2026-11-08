@@ -1,6 +1,6 @@
 import pytest
 
-from albert import Permutation, PhaseFactor
+from albert import Add, Mul, Permutation, PhaseFactor, Scalar, Tensor
 
 
 def test_permutation_stores_the_order_and_defaults_to_positive_phase() -> None:
@@ -15,6 +15,46 @@ def test_permutation_accepts_negative_phase() -> None:
 
     assert permutation.permutation == [1, 0]
     assert permutation.phase is PhaseFactor.NEGATIVE
+
+
+def test_node_permute_indices_accepts_a_permutation_or_sequence() -> None:
+    expression = Mul([Tensor("A", ["i", "j"]), Tensor("B", ["j", "k"])])
+    expected = Mul([Tensor("A", ["k", "j"]), Tensor("B", ["j", "i"])])
+
+    by_class = expression.permute_indices(Permutation([1, 0], PhaseFactor.NEGATIVE))
+    by_sequence = expression.permute_indices([1, 0])
+
+    assert by_class == expected
+    assert by_sequence == expected
+    assert by_class.children[0].indices[1] == "j"
+
+
+def test_node_permute_indices_checks_external_index_arity() -> None:
+    tensor = Tensor("A", ["i", "j"])
+
+    with pytest.raises(ValueError, match="number of external indices"):
+        tensor.permute_indices([0])
+
+
+def test_node_permute_indices_applies_a_three_index_cycle() -> None:
+    tensor = Tensor("T", ["i", "j", "k"])
+
+    result = tensor.permute_indices([1, 2, 0])
+
+    assert result == Tensor("T", ["j", "k", "i"])
+
+
+def test_node_permute_indices_updates_every_add_operand() -> None:
+    expression = Add([Tensor("A", ["i", "j"]), Tensor("B", ["j", "i"])])
+
+    result = expression.permute_indices(Permutation([1, 0]))
+
+    assert result == Add([Tensor("A", ["j", "i"]), Tensor("B", ["i", "j"])])
+
+
+@pytest.mark.parametrize("node", [Scalar(1.0), Add([]), Mul([])])
+def test_node_permute_indices_handles_nodes_without_external_indices(node) -> None:
+    assert node.permute_indices([]) is node
 
 
 def test_empty_permutation_is_valid() -> None:

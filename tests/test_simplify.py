@@ -21,7 +21,7 @@ def test_expand_distributes_a_product_over_a_sum() -> None:
     assert _product_factors(result.children[1]) == [b, c]
 
 
-def test_expand_preserves_ranked_indices_and_contracted_factors() -> None:
+def test_expand_preserves_ranked_indices_and_internal_factors() -> None:
     a = Tensor("A", ["i", "j"])
     b = Tensor("B", ["i", "k"])
     c = Tensor("C", ["k", "j"])
@@ -178,7 +178,7 @@ def test_simplify_expands_small_products_of_sums() -> None:
     assert _product_factors(result.children[1]) == [b, c]
 
 
-def test_simplify_expands_indexed_sums_while_preserving_free_indices() -> None:
+def test_simplify_expands_indexed_sums_while_preserving_external_indices() -> None:
     a = Tensor("A", ["i"])
     b = Tensor("B", ["i"])
     c = Tensor("C", ["j"])
@@ -193,7 +193,7 @@ def test_simplify_expands_indexed_sums_while_preserving_free_indices() -> None:
     assert [factor.indices for factor in first_term] == [["i"], ["j"]]
 
 
-def test_simplify_handles_a_contracted_tensor_product() -> None:
+def test_simplify_handles_a_product_with_internal_indices() -> None:
     a = Tensor("A", ["i", "k"])
     b = Tensor("B", ["k", "j"])
     expression = Mul([Scalar(1), a, b])

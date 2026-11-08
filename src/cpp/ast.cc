@@ -1,10 +1,62 @@
 #include "ast.h"
 
+#include "algebra.h"
+
+#include <algorithm>
 #include <limits>
 #include <stdexcept>
+#include <unordered_map>
 #include <utility>
 
 namespace albert {
+namespace {
+
+NodePtr map_indices_impl(
+    const NodePtr& node,
+    const std::unordered_map<std::string, std::string>& mapping,
+    std::unordered_map<const Node*, NodePtr>& mapped_nodes) {
+    const auto cached = mapped_nodes.find(node.get());
+    if (cached != mapped_nodes.end()) {
+        return cached->second;
+    }
+
+    NodePtr mapped = node;
+    if (const auto* tensor = dynamic_cast<const Tensor*>(node.get())) {
+        auto indices = tensor->indices();
+        bool changed = false;
+        for (auto& index : indices) {
+            const auto replacement = mapping.find(index);
+            if (replacement != mapping.end() && replacement->second != index) {
+                index = replacement->second;
+                changed = true;
+            }
+        }
+        if (changed) {
+            mapped = std::make_shared<Tensor>(tensor->symbol(), std::move(indices));
+        }
+    } else if (!node->children().empty()) {
+        Children children;
+        children.reserve(node->children().size());
+        bool changed = false;
+        for (const auto& child : node->children()) {
+            auto mapped_child = map_indices_impl(child, mapping, mapped_nodes);
+            changed = changed || mapped_child != child;
+            children.push_back(std::move(mapped_child));
+        }
+        if (changed) {
+            if (node->kind() == NodeKind::Add) {
+                mapped = std::make_shared<Add>(std::move(children));
+            } else {
+                mapped = std::make_shared<Mul>(std::move(children));
+            }
+        }
+    }
+
+    mapped_nodes.emplace(node.get(), mapped);
+    return mapped;
+}
+
+}  // namespace
 
 Node::Node(NodeKind kind) noexcept : kind_(kind) {}
 
@@ -41,6 +93,27 @@ std::uint32_t Tensor::rank() const noexcept {
 
 const std::vector<std::string>& Tensor::indices() const noexcept {
     return indices_;
+}
+
+NodePtr map_indices(
+    const NodePtr& node,
+    const std::unordered_map<std::string, std::string>& mapping) {
+    if (!node) {
+        throw std::invalid_argument("AST node cannot be null");
+    }
+    if (mapping.empty()) {
+        return node;
+    }
+    const auto external = node->external_indices();
+    for (const auto& [index, replacement] : mapping) {
+        static_cast<void>(replacement);
+        if (std::find(external.begin(), external.end(), index) == external.end()) {
+            throw std::invalid_argument(
+                "map_indices keys must be external indices of the node");
+        }
+    }
+    std::unordered_map<const Node*, NodePtr> mapped_nodes;
+    return map_indices_impl(node, mapping, mapped_nodes);
 }
 
 }  // namespace albert

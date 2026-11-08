@@ -22,7 +22,7 @@ void validate_children(const Children& children) {
     }
 }
 
-std::vector<std::string> free_indices(const Node& node) {
+std::vector<std::string> external_indices_impl(const Node& node) {
     if (const auto* tensor = dynamic_cast<const Tensor*>(&node)) {
         std::unordered_map<std::string, std::size_t> counts;
         for (const auto& index : tensor->indices()) {
@@ -41,13 +41,13 @@ std::vector<std::string> free_indices(const Node& node) {
         if (add->children().empty()) {
             return {};
         }
-        return free_indices(*add->children().front());
+        return external_indices_impl(*add->children().front());
     }
     if (const auto* mul = dynamic_cast<const Mul*>(&node)) {
         std::unordered_map<std::string, std::size_t> counts;
         std::vector<std::string> order;
         for (const auto& child : mul->children()) {
-            for (const auto& index : free_indices(*child)) {
+            for (const auto& index : external_indices_impl(*child)) {
                 if (counts.find(index) == counts.end()) {
                     order.push_back(index);
                 }
@@ -65,22 +65,74 @@ std::vector<std::string> free_indices(const Node& node) {
     return {};
 }
 
+std::vector<std::string> internal_indices_impl(const Node& node) {
+    if (const auto* tensor = dynamic_cast<const Tensor*>(&node)) {
+        std::unordered_map<std::string, std::size_t> counts;
+        for (const auto& index : tensor->indices()) {
+            ++counts[index];
+        }
+        std::vector<std::string> result;
+        for (const auto& index : tensor->indices()) {
+            if (counts[index] > 1) {
+                result.push_back(index);
+            }
+        }
+        return result;
+    }
+    if (const auto* mul = dynamic_cast<const Mul*>(&node)) {
+        std::unordered_map<std::string, std::size_t> counts;
+        std::vector<std::string> order;
+        for (const auto& child : mul->children()) {
+            for (const auto& index : external_indices_impl(*child)) {
+                if (counts.find(index) == counts.end()) {
+                    order.push_back(index);
+                }
+                ++counts[index];
+            }
+        }
+        std::vector<std::string> result;
+        for (const auto& index : order) {
+            if (counts[index] > 1) {
+                result.push_back(index);
+            }
+        }
+        return result;
+    }
+    return {};
+}
+
 void validate_add_indices(const Children& children) {
     if (children.empty()) {
         return;
     }
-    auto expected = free_indices(*children.front());
+    auto expected = external_indices_impl(*children.front());
     std::sort(expected.begin(), expected.end());
     for (std::size_t position = 1; position < children.size(); ++position) {
-        auto current = free_indices(*children[position]);
+        auto current = external_indices_impl(*children[position]);
         std::sort(current.begin(), current.end());
         if (current != expected) {
-            throw std::invalid_argument("Add operands must have the same free indices");
+            throw std::invalid_argument("Add operands must have the same external indices");
         }
     }
 }
 
 }  // namespace
+
+std::vector<std::string> external_indices(const Node& node) {
+    return external_indices_impl(node);
+}
+
+std::vector<std::string> internal_indices(const Node& node) {
+    return internal_indices_impl(node);
+}
+
+std::vector<std::string> Node::external_indices() const {
+    return albert::external_indices(*this);
+}
+
+std::vector<std::string> Node::internal_indices() const {
+    return albert::internal_indices(*this);
+}
 
 Add::Add(Children children)
     : Node(NodeKind::Add), children_(std::move(children)) {

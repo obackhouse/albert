@@ -83,6 +83,24 @@ PYBIND11_MODULE(_core, module) {
         .def("__hash__", [](const albert::NodePtr& self) {
             return python_hash(self->structural_hash());
         })
+        .def_property_readonly("external_indices", &albert::Node::external_indices)
+        .def_property_readonly("internal_indices", &albert::Node::internal_indices)
+        .def("map_indices",
+             [](const albert::NodePtr& self,
+                const std::unordered_map<std::string, std::string>& mapping) {
+                 return albert::map_indices(self, mapping);
+             },
+             py::arg("mapping"))
+        .def("permute_indices",
+             [](const albert::NodePtr& self, const py::object& permutation) {
+                 if (py::isinstance<albert::Permutation>(permutation)) {
+                     return albert::permute_indices(
+                         self, permutation.cast<albert::Permutation>());
+                 }
+                 return albert::permute_indices(
+                     self, permutation.cast<std::vector<int>>());
+             },
+             py::arg("permutation"))
         .def_property_readonly("children", [](const albert::Node& node) {
             return node.children();
         })

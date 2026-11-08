@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace albert {
@@ -33,12 +34,17 @@ private:
 };
 
 CanonicalKey canonical_key(const NodePtr& node);
+NodePtr map_indices(
+    const NodePtr& node,
+    const std::unordered_map<std::string, std::string>& mapping);
 
 class Node {
 public:
     virtual ~Node() = default;
     NodeKind kind() const noexcept;
     virtual const Children& children() const noexcept;
+    std::vector<std::string> external_indices() const;
+    std::vector<std::string> internal_indices() const;
     std::uint64_t structural_hash() const noexcept;
     bool structurally_equal(const Node& other) const noexcept;
 

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ast.h"
+
 #include <cstdint>
 #include <vector>
 
@@ -22,5 +24,10 @@ private:
     std::vector<int> permutation_;
     PhaseFactor phase_;
 };
+
+NodePtr permute_indices(const NodePtr& node,
+                        const std::vector<int>& permutation);
+NodePtr permute_indices(const NodePtr& node,
+                        const Permutation& permutation);
 
 }  // namespace albert

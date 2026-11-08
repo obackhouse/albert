@@ -33,7 +33,7 @@ def test_simplify_collects_coefficients_after_distributing_indexed_products() ->
     assert result.find(lambda node: isinstance(node, Add)) is None
 
 
-def test_large_indexed_product_expands_to_all_tensor_contraction_paths() -> None:
+def test_large_indexed_product_expands_to_all_internal_index_paths() -> None:
     x_terms = [
         Mul([Tensor("A", ["i", "x"]), Tensor("B", ["x", "j"])]),
         Mul([Tensor("C", ["i", "y"]), Tensor("D", ["y", "j"])]),
