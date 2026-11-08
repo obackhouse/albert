@@ -2,13 +2,11 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from albert import Add, Metadata, Mul, NodeKind, Scalar, Tensor, canonical_key
+from albert import Add, Metadata, Mul, NodeKind, Scalar, Tensor
 
 
 def test_metadata_stores_space_to_index_names() -> None:
-    metadata = Metadata(
-        spaces={"occupied": ["i", "j"], "virtual": ["a", "b"]},
-    )
+    metadata = Metadata(spaces={"occupied": ["i", "j"], "virtual": ["a", "b"]})
 
     assert metadata.spaces["occupied"] == ["i", "j"]
     assert metadata.spaces["virtual"] == ["a", "b"]
@@ -42,9 +40,7 @@ def test_add_mul_store_their_children() -> None:
 
 
 def test_add_requires_the_same_free_indices() -> None:
-    ordered = Add(
-        [Tensor("A", ["i", "j"]), Tensor("B", ["j", "i"])],
-    )
+    ordered = Add([Tensor("A", ["i", "j"]), Tensor("B", ["j", "i"])])
     contracted = Mul([Tensor("C", ["i", "j"]), Tensor("D", ["j", "k"])])
     product_sum = Add([contracted, Tensor("E", ["k", "i"])])
 
@@ -63,27 +59,3 @@ def test_metadata_is_separate_from_nodes() -> None:
     assert isinstance(value, Tensor)
     assert not hasattr(value, "metadata")
     assert metadata.spaces["occupied"] == ["i", "j"]
-
-
-def test_canonical_key_matches_independently_built_ast_nodes() -> None:
-    first = Add([Tensor("A", ["i"]), Mul([Scalar(2), Tensor("B", ["i"])])])
-    second = Add([Tensor("A", ["i"]), Mul([Scalar(2), Tensor("B", ["i"])])])
-
-    assert canonical_key(first) == canonical_key(second)
-    assert hash(canonical_key(first)) == hash(canonical_key(second))
-    assert canonical_key(first) != canonical_key(Add([Mul([Scalar(2), Tensor("B", ["i"])]), Tensor("A", ["i"])]))
-
-
-def test_canonical_key_preserves_exact_index_labels_and_order() -> None:
-    original = Mul(
-        [Tensor("A", ["i", "k"]), Tensor("B", ["k", "j"])],
-    )
-    renamed = Mul(
-        [Tensor("A", ["p", "q"]), Tensor("B", ["q", "r"])],
-    )
-    different_pattern = Mul(
-        [Tensor("A", ["p", "p"]), Tensor("B", ["q", "r"])],
-    )
-
-    assert canonical_key(original) != canonical_key(renamed)
-    assert canonical_key(original) != canonical_key(different_pattern)

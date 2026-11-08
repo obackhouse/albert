@@ -21,6 +21,11 @@ albert::SearchOrder parse_search_order(const std::string& order) {
     throw py::value_error("order must be SearchOrder.PREORDER or SearchOrder.POSTORDER");
 }
 
+Py_hash_t python_hash(std::uint64_t hash) {
+    const auto result = static_cast<Py_hash_t>(hash);
+    return result == -1 ? -2 : result;
+}
+
 }  // namespace
 
 PYBIND11_MODULE(_core, module) {
@@ -28,6 +33,19 @@ PYBIND11_MODULE(_core, module) {
 
     const auto node_kind_enum = py::module_::import("albert.options").attr("NodeKind");
 
+    py::class_<albert::CanonicalKey>(module, "CanonicalKey")
+        .def("__eq__",
+             [](const albert::CanonicalKey& self,
+                const py::object& other) -> py::object {
+                 if (!py::isinstance<albert::CanonicalKey>(other)) {
+                     return py::reinterpret_borrow<py::object>(Py_NotImplemented);
+                 }
+                 return py::bool_(self == other.cast<albert::CanonicalKey>());
+             },
+             py::is_operator())
+        .def("__hash__", [](const albert::CanonicalKey& key) {
+            return python_hash(key.hash());
+        });
     module.def("canonical_key", &albert::canonical_key, py::arg("node"));
     module.def("expand", &albert::expand, py::arg("node"));
     module.def("collect", &albert::collect, py::arg("node"));
@@ -49,6 +67,18 @@ PYBIND11_MODULE(_core, module) {
                     return node_kind_enum.attr("MUL");
             }
             throw py::value_error("unknown node kind");
+        })
+        .def("__eq__",
+             [](const albert::NodePtr& self, const py::object& other) -> py::object {
+                 if (!py::isinstance<albert::Node>(other)) {
+                     return py::reinterpret_borrow<py::object>(Py_NotImplemented);
+                 }
+                 const auto other_node = other.cast<albert::NodePtr>();
+                 return py::bool_(self->structurally_equal(*other_node));
+             },
+             py::is_operator())
+        .def("__hash__", [](const albert::NodePtr& self) {
+            return python_hash(self->structural_hash());
         })
         .def_property_readonly("children", [](const albert::Node& node) {
             return node.children();

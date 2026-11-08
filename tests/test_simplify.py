@@ -65,15 +65,7 @@ def test_expand_of_a_leaf_has_uniform_add_mul_depth() -> None:
 
 def test_collect_combines_duplicate_terms_and_coefficients() -> None:
     tensor = Tensor("A", [])
-    expression = Add(
-        [
-            tensor,
-            tensor,
-            Mul([Scalar(3), tensor]),
-            Scalar(2),
-            Scalar(4),
-        ],
-    )
+    expression = Add([tensor, tensor, Mul([Scalar(3), tensor]), Scalar(2), Scalar(4)])
 
     result = collect(expression)
 
@@ -162,13 +154,7 @@ def test_remove_all_neutral_elements_returns_the_identity_scalar() -> None:
 
 def test_simplify_collects_removes_identities_and_squeezes() -> None:
     tensor = Tensor("A", [])
-    expression = Add(
-        [
-            Scalar(0),
-            Mul([Scalar(1), tensor]),
-            tensor,
-        ],
-    )
+    expression = Add([Scalar(0), Mul([Scalar(1), tensor]), tensor])
 
     result = simplify(expression)
 
@@ -224,13 +210,7 @@ def test_simplify_collects_terms_across_a_larger_distributive_expression() -> No
     c = Tensor("C", ["j"])
     d = Tensor("D", ["k"])
     e = Tensor("E", ["k"])
-    expression = Mul(
-        [
-            Add([a, a, b]),
-            Add([c, c]),
-            Add([d, e]),
-        ],
-    )
+    expression = Mul([Add([a, a, b]), Add([c, c]), Add([d, e])])
 
     result = simplify(expression)
 

@@ -2,12 +2,7 @@ from albert import Add, Mul, Node, NodeKind, Scalar, SearchOrder, Tensor
 
 
 def _expression() -> Add:
-    return Add(
-        [
-            Tensor("A", ["i"]),
-            Mul([Tensor("B", ["i", "j"]), Tensor("C", ["j"]), Scalar(2.0)]),
-        ],
-    )
+    return Add([Tensor("A", ["i"]), Mul([Tensor("B", ["i", "j"]), Tensor("C", ["j"]), Scalar(2.0)])])
 
 
 def test_search_visits_nodes_in_preorder_and_postorder() -> None:

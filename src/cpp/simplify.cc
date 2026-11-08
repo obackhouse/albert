@@ -3,6 +3,7 @@
 #include "algebra.h"
 #include "search.h"
 
+#include <algorithm>
 #include <cmath>
 #include <iterator>
 #include <limits>
@@ -16,6 +17,40 @@ namespace {
 
 using Monomial = Children;
 using Polynomial = std::vector<Monomial>;
+constexpr std::uint64_t kFactorHashOffset = 14695981039346656037ULL;
+constexpr std::uint64_t kFactorHashPrime = 1099511628211ULL;
+
+void hash_factor_byte(std::uint64_t& hash, std::uint8_t byte) noexcept {
+    hash ^= byte;
+    hash *= kFactorHashPrime;
+}
+
+std::uint64_t factors_hash(const Children& factors) noexcept {
+    std::uint64_t hash = kFactorHashOffset;
+    const auto size = static_cast<std::uint64_t>(factors.size());
+    for (unsigned int shift = 0; shift < 64; shift += 8) {
+        hash_factor_byte(hash, static_cast<std::uint8_t>(size >> shift));
+    }
+    for (const auto& factor : factors) {
+        const auto value = factor->structural_hash();
+        for (unsigned int shift = 0; shift < 64; shift += 8) {
+            hash_factor_byte(hash, static_cast<std::uint8_t>(value >> shift));
+        }
+    }
+    return hash;
+}
+
+bool same_factors(const Children& lhs, const Children& rhs) noexcept {
+    if (lhs.size() != rhs.size()) {
+        return false;
+    }
+    for (std::size_t i = 0; i < lhs.size(); ++i) {
+        if (!lhs[i]->structurally_equal(*rhs[i])) {
+            return false;
+        }
+    }
+    return true;
+}
 
 void require_node(const NodePtr& node) {
     if (!node) {
@@ -199,15 +234,18 @@ NodePtr collect(const NodePtr& node) {
     }
 
     std::vector<LikeTerm> terms;
-    std::unordered_map<std::string, std::size_t> term_indices;
+    std::unordered_map<std::uint64_t, std::vector<std::size_t>> term_indices;
     for (const auto& child : sum->children()) {
         auto candidate = split_coefficient(child);
-        const auto key = canonical_key(std::make_shared<Mul>(candidate.factors));
-        const auto inserted = term_indices.emplace(std::move(key), terms.size());
-        if (inserted.second) {
+        auto& bucket = term_indices[factors_hash(candidate.factors)];
+        const auto match = std::find_if(bucket.begin(), bucket.end(), [&](std::size_t i) {
+            return same_factors(terms[i].factors, candidate.factors);
+        });
+        if (match == bucket.end()) {
+            bucket.push_back(terms.size());
             terms.push_back(std::move(candidate));
         } else {
-            terms[inserted.first->second].coefficient += candidate.coefficient;
+            terms[*match].coefficient += candidate.coefficient;
         }
     }
 
@@ -302,7 +340,7 @@ NodePtr simplify(const NodePtr& node) {
             }
             return current_node;
         });
-        if (canonical_key(current) == canonical_key(updated)) {
+        if (current->structurally_equal(*updated)) {
             return updated;
         }
         current = std::move(updated);
