@@ -19,6 +19,8 @@ class Node;
 using NodePtr = std::shared_ptr<Node>;
 using Children = std::vector<NodePtr>;
 
+std::string canonical_key(const NodePtr& node);
+
 class Node {
 public:
     virtual ~Node() = default;

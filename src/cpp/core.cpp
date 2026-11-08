@@ -1,5 +1,6 @@
 #include "algebra.h"
 #include "search.h"
+#include "simplify.h"
 
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
@@ -26,6 +27,14 @@ PYBIND11_MODULE(_core, module) {
     module.doc() = "C++ extension module for albert.";
 
     const auto node_kind_enum = py::module_::import("albert.options").attr("NodeKind");
+
+    module.def("canonical_key", &albert::canonical_key, py::arg("node"));
+    module.def("expand", &albert::expand, py::arg("node"));
+    module.def("collect", &albert::collect, py::arg("node"));
+    module.def("squeeze", &albert::squeeze, py::arg("node"));
+    module.def("remove_neutral_elements", &albert::remove_neutral_elements,
+               py::arg("node"));
+    module.def("simplify", &albert::simplify, py::arg("node"));
 
     py::class_<albert::Node, albert::NodePtr>(module, "Node")
         .def_property_readonly("kind", [node_kind_enum](const albert::Node& node) -> py::object {
