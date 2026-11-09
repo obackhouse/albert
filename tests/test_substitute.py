@@ -1,6 +1,12 @@
 import pytest
 
-from albert import Add, Expression, Mul, Tensor, substitute_expressions
+from albert import Add, Expression, Metadata, Mul, Tensor, substitute_expressions
+
+
+def metadata() -> Metadata:
+    return Metadata(
+        spaces={"I": ["i", "j", "l"], "J": ["k", "q", "r"]},
+    )
 
 
 def test_substitutes_dependencies_recursively_and_removes_definitions() -> None:
@@ -8,7 +14,7 @@ def test_substitutes_dependencies_recursively_and_removes_definitions() -> None:
     second = Expression(Tensor("U", ["j"]), Add([Tensor("T", ["j"]), Tensor("D", ["j"])]))
     output = Expression(Tensor("Y", ["l"]), Mul([Tensor("U", ["l"]), Tensor("C", ["l"])]))
 
-    result = substitute_expressions([first, second, output])
+    result = substitute_expressions([first, second, output], metadata())
 
     assert [expression.lhs.symbol for expression in result] == ["Y"]
     assert {tensor.symbol for tensor in result[0].rhs.search(lambda node: isinstance(node, Tensor))} == {
@@ -27,14 +33,15 @@ def test_maps_each_reference_to_its_own_indices_and_avoids_capture() -> None:
     first = Expression(Tensor("X", ["j", "k"]), Mul([Tensor("T", ["j"]), Tensor("C", ["j", "k"])]))
     second = Expression(Tensor("Y", ["l"]), Mul([Tensor("T", ["l"]), Tensor("D", ["l"])]))
 
-    result = substitute_expressions([definition, first, second])
+    meta = Metadata(spaces={"I": ["i", "j", "l"], "K": ["k", "q", "r"]})
+    result = substitute_expressions([definition, first, second], meta)
     by_symbol = {expression.lhs.symbol: expression for expression in result}
     x_tensors = by_symbol["X"].rhs.search(lambda node: isinstance(node, Tensor))
     a_tensor = next(tensor for tensor in x_tensors if tensor.symbol == "A")
     b_tensor = next(tensor for tensor in x_tensors if tensor.symbol == "B")
 
     assert a_tensor.indices[0] == "j"
-    assert a_tensor.indices[1] != "k"
+    assert a_tensor.indices[1] == "q"
     assert b_tensor.indices == [a_tensor.indices[1]]
     assert by_symbol["X"].rhs.external_indices == ["k"]
     assert (
@@ -50,7 +57,7 @@ def test_maps_each_reference_to_its_own_indices_and_avoids_capture() -> None:
 def test_keeps_definitions_that_no_other_expression_uses() -> None:
     expression = Expression(Tensor("Y", ["i"]), Add([Tensor("A", ["i"]), Tensor("B", ["i"])]))
 
-    result = substitute_expressions([expression])
+    result = substitute_expressions([expression], metadata())
 
     assert len(result) == 1
     assert result[0].lhs == expression.lhs
@@ -62,4 +69,4 @@ def test_rejects_dependency_cycles() -> None:
     second = Expression(Tensor("B", ["i"]), Tensor("A", ["i"]))
 
     with pytest.raises(ValueError, match="cycle"):
-        substitute_expressions([first, second])
+        substitute_expressions([first, second], metadata())

@@ -14,8 +14,13 @@ from albert import (
     Scalar,
     ScalingLimits,
     Tensor,
+    canonical_key,
+    canonicalize,
+    collect,
     common_subexpression_elimination,
     estimate_cost,
+    expand,
+    substitute_expressions,
 )
 
 DATA = Path(__file__).parent / "data" / "cse_regressions"
@@ -68,6 +73,24 @@ def test_ccd_cse_keeps_the_long_contraction_cost_below_regression_threshold() ->
     result = common_subexpression_elimination(expressions, meta, cost_model=COST_MODEL)
 
     assert total_cost(result, meta) < 48_000_000_000
+
+
+def test_ccd_terms_round_trip_through_cse_and_substitution() -> None:
+    case = load_cases("rhf_cc.json")["CCD"]
+    meta = metadata(case)
+    expression = Expression(decode(case["expressions"][0]["lhs"]), decode(case["expressions"][0]["rhs"]))
+    input_expression = Expression(expression.lhs, canonicalize(expand(expression.rhs), meta))
+
+    result = common_subexpression_elimination([input_expression], meta, cost_model=COST_MODEL)
+    assert len(result) > 1
+
+    restored = substitute_expressions(result, meta)
+
+    assert len(restored) == 1
+    restored_rhs = canonicalize(expand(restored[0].rhs), meta)
+    assert canonical_key(canonicalize(collect(restored_rhs), meta)) == canonical_key(
+        canonicalize(collect(input_expression.rhs), meta)
+    )
 
 
 def test_df_tt_cse_respects_scaling_limits_without_losing_flop_performance() -> None:

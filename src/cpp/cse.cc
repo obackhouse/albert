@@ -247,7 +247,19 @@ std::vector<GraphRecord> build_graphs(const std::vector<Expression>& expressions
     std::vector<GraphRecord> graphs;
     for (std::size_t expression_id = 0; expression_id < expressions.size(); ++expression_id) {
         std::unordered_map<IndexPartition, BipartiteGraph, IndexPartitionHash> expression_graphs;
+        std::vector<std::pair<NodePtr, std::size_t>> unique_terms;
         for (const auto& term : terms(expressions[expression_id].rhs())) {
+            const auto found = std::find_if(
+                unique_terms.begin(), unique_terms.end(), [&](const auto& item) {
+                    return item.first->structurally_equal(*term);
+                });
+            if (found == unique_terms.end()) {
+                unique_terms.emplace_back(term, 1);
+            } else {
+                ++found->second;
+            }
+        }
+        for (const auto& [term, multiplicity] : unique_terms) {
             if (has_three_use_index(term)) {
                 continue;
             }
@@ -318,7 +330,8 @@ std::vector<GraphRecord> build_graphs(const std::vector<Expression>& expressions
                 }
                 const auto partition = IndexPartition::from_vertices(*product, left, right);
                 auto& graph = expression_graphs[partition];
-                graph.add_edge(left, right, term, scalar_coefficient(term),
+                graph.add_edge(left, right, term,
+                               scalar_coefficient(term) * static_cast<double>(multiplicity),
                                std::max(0.0, candidate.cost.multiplications -
                                                   best->cost.multiplications));
             }

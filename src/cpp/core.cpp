@@ -422,8 +422,14 @@ PYBIND11_MODULE(_core, module) {
     module.def("topological_sort", &albert::topological_sort,
                py::arg("expressions"),
                "Return expressions in stable dependency order.");
-    module.def("substitute_expressions", &albert::substitute_expressions,
-               py::arg("expressions"),
+    module.def("substitute_expressions",
+               [](std::vector<albert::Expression> expressions,
+                  const py::object& metadata) {
+                   const auto spaces = metadata.attr("spaces")
+                                           .cast<albert::IndexSpaces>();
+                   return albert::substitute_expressions(std::move(expressions), spaces);
+               },
+               py::arg("expressions"), py::arg("metadata"),
                "Inline expression definitions into their dependents.");
     module.def(
         "common_subexpression_elimination",

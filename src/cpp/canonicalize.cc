@@ -4,6 +4,8 @@
 #include "search.h"
 
 #include <algorithm>
+#include <cctype>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <exception>
@@ -114,7 +116,23 @@ SpaceMap make_space_map(const CanonicalizationMetadata& metadata) {
 
 std::string index_space(const std::string& index, const SpaceMap& spaces) {
     const auto found = spaces.find(index);
-    return found == spaces.end() ? std::string{} : found->second;
+    if (found != spaces.end()) {
+        return found->second;
+    }
+    constexpr const char* prefix = "__internal_";
+    constexpr std::size_t prefix_size = 11;
+    if (index.compare(0, prefix_size, prefix) == 0 && index.size() > prefix_size + 3 &&
+        index.compare(index.size() - 2, 2, "__") == 0) {
+        const auto body = index.substr(prefix_size, index.size() - prefix_size - 2);
+        const auto separator = body.rfind('_');
+        if (separator != std::string::npos && separator != 0 &&
+            separator + 1 < body.size() &&
+            std::all_of(body.begin() + static_cast<std::ptrdiff_t>(separator + 1),
+                        body.end(), [](unsigned char value) { return std::isdigit(value); })) {
+            return body.substr(0, separator);
+        }
+    }
+    return {};
 }
 
 std::vector<std::string> space_labels(const std::string& space,
@@ -283,7 +301,6 @@ std::vector<LabelGroup> internal_label_groups(
     }
 
     std::vector<LabelGroup> groups;
-    std::size_t space_number = 0;
     for (auto& [space, sources] : grouped_sources) {
         LabelGroup group{space, sources, {}};
         const auto available = space_labels(space, metadata);
@@ -300,8 +317,9 @@ std::vector<LabelGroup> internal_label_groups(
              position < sources.size(); ++position) {
             std::string generated;
             do {
-                generated = "__internal_" + std::to_string(space_number) + "_" +
-                            std::to_string(position);
+                generated = "__internal_" +
+                            (space.empty() ? std::string("unknown") : space) + "_" +
+                            std::to_string(position) + "__";
                 if (used_indices.find(generated) != used_indices.end() ||
                     reserved_external.find(generated) != reserved_external.end()) {
                     generated.push_back('_');
@@ -312,7 +330,6 @@ std::vector<LabelGroup> internal_label_groups(
         }
         std::sort(group.targets.begin(), group.targets.end());
         groups.push_back(std::move(group));
-        ++space_number;
     }
     return groups;
 }
