@@ -30,7 +30,15 @@ from albert._core import (
     topological_sort,
 )
 from albert.metadata import Metadata
-from albert.options import CostModel, NodeKind, PhaseFactor, ScalingLimits, SearchOrder
+from albert.options import (
+    CostModel,
+    NodeKind,
+    PathRequest,
+    PathRequests,
+    PhaseFactor,
+    ScalingLimits,
+    SearchOrder,
+)
 
 __all__ = [
     "Add",
@@ -42,6 +50,8 @@ __all__ = [
     "Mul",
     "Node",
     "NodeKind",
+    "PathRequest",
+    "PathRequests",
     "PhaseFactor",
     "Permutation",
     "ParenthesizationCandidate",

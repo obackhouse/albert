@@ -20,7 +20,6 @@ class CostModel:
     cost_factor_aggregation: Literal["product", "maximum"] = "product"
 
     def __post_init__(self) -> None:
-        """Reject weights that cannot form a useful nonnegative cost."""
         for name, weight in (
             ("multiply", self.multiply),
             ("add", self.add),
@@ -57,6 +56,60 @@ class ScalingLimits:
                     raise ValueError(f"{name} keys must be a space name or nonempty tuple of names")
                 if isinstance(limit, bool) or not isinstance(limit, int) or limit < 0:
                     raise ValueError(f"{name} limits must be nonnegative integers")
+
+
+@dataclass(frozen=True)
+class PathRequest:
+    """Path search budget."""
+
+    exhaustive: int = 0
+    branch: int = 0
+    greedy: int = 0
+    dynamic: bool = False
+
+    def __post_init__(self) -> None:
+        for name in ("exhaustive", "branch", "greedy"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError(f"{name} must be a nonnegative integer")
+        if not isinstance(self.dynamic, bool):
+            raise ValueError("dynamic must be a bool")
+
+
+@dataclass(frozen=True)
+class PathRequests:
+    """Path search budgets for factor number intervals."""
+
+    bounds: tuple[int, ...]
+    requests: tuple[PathRequest, ...]
+
+    def __post_init__(self) -> None:
+        if len(self.requests) != len(self.bounds) + 1:
+            raise ValueError("requests must contain one more item than bounds")
+        if any(isinstance(bound, bool) or not isinstance(bound, int) or bound < 1 for bound in self.bounds):
+            raise ValueError("bounds must be positive integers")
+        if tuple(sorted(set(self.bounds))) != self.bounds:
+            raise ValueError("bounds must be strictly increasing")
+        if any(not isinstance(request, PathRequest) for request in self.requests):
+            raise ValueError("requests must contain PathRequest values")
+
+    def for_size(self, operand_count: int) -> PathRequest:
+        """Return the request for an operand count."""
+        for bound, request in zip(self.bounds, self.requests[:-1], strict=True):
+            if operand_count <= bound:
+                return request
+        return self.requests[-1]
+
+    @classmethod
+    def default(cls, exhaustive_limit: int = 5, max_candidates: int = 64) -> PathRequests:
+        """Return the default unconstrained CSE sampling policy."""
+        if exhaustive_limit < 1 or max_candidates < 0:
+            raise ValueError("exhaustive_limit must be positive and max_candidates nonnegative")
+        small = PathRequest(exhaustive=max(0, max_candidates - 1), dynamic=max_candidates > 0)
+        return cls(
+            bounds=(exhaustive_limit,),
+            requests=(small, PathRequest(dynamic=True)),
+        )
 
 
 class PhaseFactor(IntEnum):

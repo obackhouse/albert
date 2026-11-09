@@ -2,7 +2,7 @@ from collections.abc import Callable, Sequence
 from typing import Literal
 
 from albert.metadata import Metadata
-from albert.options import CostModel, NodeKind, PhaseFactor, ScalingLimits, SearchOrder
+from albert.options import CostModel, NodeKind, PathRequests, PhaseFactor, ScalingLimits, SearchOrder
 
 class CanonicalKey:
     def __eq__(self, other: object) -> bool: ...
@@ -112,6 +112,7 @@ def parenthesization_candidates(
     max_candidates: int = ...,
     exhaustive_limit: int = ...,
     cost_model: CostModel | None = ...,
+    path_requests: PathRequests | None = ...,
 ) -> list[ParenthesizationCandidate]: ...
 def apply_parenthesization(node: Mul, candidate: ParenthesizationCandidate) -> Node: ...
 def topological_sort(expressions: Sequence[Expression]) -> list[Expression]: ...
@@ -124,6 +125,7 @@ def common_subexpression_elimination(
     max_path_samples: int = ...,
     max_bicliques: int = ...,
     exhaustive_limit: int = ...,
+    path_requests: PathRequests | None = ...,
 ) -> list[Expression]: ...
 def canonicalize(node: Node, metadata: Metadata | None = None) -> Node: ...
 def expand(node: Node) -> Node: ...

@@ -142,26 +142,27 @@ NodePtr parenthesize_products(const NodePtr& node, const IndexSpaces& spaces,
     }
     Mul tensor_product(std::move(tensors));
     std::vector<ParenthesizationCandidate> candidates;
-    if (tensor_product.children().size() > options.exhaustive_limit) {
-        auto& bucket = path_cache[tensor_product.structural_hash()];
-        const auto cached = std::find_if(bucket.begin(), bucket.end(), [&](const auto& entry) {
-            return entry.product->structurally_equal(tensor_product);
-        });
-        if (cached != bucket.end()) {
-            candidates = cached->candidates;
-        } else {
-            candidates = parenthesization_candidates(
-                tensor_product, spaces, sizes, options.scaling_limits, 1,
-                options.exhaustive_limit, options.cost_model, factors);
-            bucket.push_back({
-                std::make_shared<Mul>(Children(tensor_product.children().begin(),
-                                               tensor_product.children().end())),
-                candidates});
-        }
+    auto& bucket = path_cache[tensor_product.structural_hash()];
+    const auto cached = std::find_if(bucket.begin(), bucket.end(), [&](const auto& entry) {
+        return entry.product->structurally_equal(tensor_product);
+    });
+    if (cached != bucket.end()) {
+        candidates = cached->candidates;
     } else {
+        PathRequest request;
+        if (options.custom_path_requests) {
+            request = options.path_requests.for_size(tensor_product.children().size());
+        } else {
+            request.dynamic = tensor_product.children().size() > options.exhaustive_limit;
+            request.exhaustive = request.dynamic ? 0 : 1;
+        }
         candidates = parenthesization_candidates(
-            tensor_product, spaces, sizes, options.scaling_limits, 1,
-            options.exhaustive_limit, options.cost_model, factors);
+            tensor_product, spaces, sizes, options.scaling_limits,
+            request, 1, options.cost_model, factors);
+        bucket.push_back({
+            std::make_shared<Mul>(Children(tensor_product.children().begin(),
+                                           tensor_product.children().end())),
+            candidates});
     }
     if (candidates.empty()) {
         if (!options.scaling_limits.time.empty() || !options.scaling_limits.memory.empty()) {
@@ -261,21 +262,26 @@ std::vector<GraphRecord> build_graphs(const std::vector<Expression>& expressions
                 path_flop_model.read = 0.0;
                 path_flop_model.write = 0.0;
                 std::vector<ParenthesizationCandidate> candidates;
-                if (options.scaling_limits.time.empty() &&
-                    options.scaling_limits.memory.empty() &&
-                    term_tensors.size() <= options.exhaustive_limit &&
-                    options.max_path_samples > 0) {
-                    // Albert seeds paths with the FLOP-optimal DP path, then adds
-                    // exhaustive paths ranked by cotengra's FLOP + 64 * write cost.
+                const auto& request = options.path_requests.for_size(term_tensors.size());
+                if (request.dynamic && request.exhaustive > 0 &&
+                    options.max_path_samples > 0 &&
+                    options.scaling_limits.time.empty() &&
+                    options.scaling_limits.memory.empty()) {
+                    // Preserve the default sampler: seed with the FLOP-optimal
+                    // DP path, then rank exhaustive samples by FLOPs + 64 * writes.
                     candidates = parenthesization_candidates(
-                        *product, spaces, sizes, options.scaling_limits, 1, 0,
-                        path_flop_model);
+                        *product, spaces, sizes, options.scaling_limits,
+                        PathRequest{0, 0, 0, true}, 1, path_flop_model);
+                    const auto exhaustive_count = std::min(
+                        request.exhaustive, options.max_path_samples > 0
+                                                ? options.max_path_samples - 1
+                                                : std::size_t{0});
                     auto sample_model = path_flop_model;
                     sample_model.write = 64.0;
                     auto sampled = parenthesization_candidates(
                         *product, spaces, sizes, options.scaling_limits,
-                        options.max_path_samples - 1, options.exhaustive_limit,
-                        sample_model);
+                        PathRequest{exhaustive_count, 0, 0, false},
+                        exhaustive_count, sample_model);
                     for (auto& candidate : sampled) {
                         if (std::none_of(candidates.begin(), candidates.end(),
                                          [&](const auto& existing) {
@@ -287,8 +293,8 @@ std::vector<GraphRecord> build_graphs(const std::vector<Expression>& expressions
                 } else {
                     candidates = parenthesization_candidates(
                         *product, spaces, sizes, options.scaling_limits,
-                        options.max_path_samples, options.exhaustive_limit,
-                        path_flop_model);
+                        request,
+                        options.max_path_samples, path_flop_model);
                 }
                 bucket.push_back({product, std::move(candidates)});
                 cached = std::prev(bucket.end());
@@ -938,11 +944,28 @@ std::vector<Expression> common_subexpression_elimination(
     std::vector<Expression> expressions, const IndexSpaces& spaces,
     const SpaceSizes& sizes, const CostFactors& cost_factors,
     const CanonicalizationMetadata& canonicalization, const CSEOptions& options) {
+    auto resolved_options = options;
+    if (!resolved_options.custom_path_requests) {
+        const bool constrained = !options.scaling_limits.time.empty() ||
+                                 !options.scaling_limits.memory.empty();
+        PathRequest small_request;
+        small_request.exhaustive = constrained
+            ? options.max_path_samples
+            : options.max_path_samples > 0 ? options.max_path_samples - 1 : 0;
+        small_request.dynamic = !constrained && options.max_path_samples > 0;
+        if (options.exhaustive_limit == 0) {
+            resolved_options.path_requests = {{}, {{0, 0, 0, true}}};
+        } else {
+            resolved_options.path_requests = {
+                {options.exhaustive_limit},
+                {small_request, PathRequest{0, 0, 0, true}}};
+        }
+    }
     auto result = common_subexpression_elimination_impl(
         expressions, spaces, sizes, cost_factors,
-        canonicalization, options, true);
-    if (!options.scaling_limits.time.empty() ||
-        !options.scaling_limits.memory.empty()) {
+        canonicalization, resolved_options, true);
+    if (!resolved_options.scaling_limits.time.empty() ||
+        !resolved_options.scaling_limits.memory.empty()) {
         return result;
     }
     bool changed = false;
@@ -952,11 +975,11 @@ std::vector<Expression> common_subexpression_elimination(
     }
     auto normalized_result = common_subexpression_elimination_impl(
         std::move(normalized), spaces, sizes, cost_factors,
-        canonicalization, options, true);
+        canonicalization, resolved_options, true);
     const auto result_cost = total_cost(result, spaces, sizes, cost_factors,
-                                        options.cost_model);
+                                        resolved_options.cost_model);
     const auto normalized_cost = total_cost(normalized_result, spaces, sizes, cost_factors,
-                                            options.cost_model);
+                                            resolved_options.cost_model);
     return normalized_cost < result_cost ? normalized_result : result;
 }
 

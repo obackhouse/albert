@@ -12,6 +12,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
+#include <algorithm>
 #include <utility>
 
 namespace py = pybind11;
@@ -59,6 +60,24 @@ albert::ScalingLimits parse_scaling_limits(const py::object& limits) {
     }
     return {parse_scaling_caps(limits.attr("time")),
             parse_scaling_caps(limits.attr("memory"))};
+}
+
+albert::PathRequests parse_path_requests(const py::object& value) {
+    albert::PathRequests result;
+    result.bounds = value.attr("bounds").cast<std::vector<std::size_t>>();
+    for (const auto& request : value.attr("requests").cast<py::tuple>()) {
+        result.requests.push_back({
+            request.attr("exhaustive").cast<std::size_t>(),
+            request.attr("branch").cast<std::size_t>(),
+            request.attr("greedy").cast<std::size_t>(),
+            request.attr("dynamic").cast<bool>()});
+    }
+    if (result.requests.size() != result.bounds.size() + 1 ||
+        !std::is_sorted(result.bounds.begin(), result.bounds.end()) ||
+        std::adjacent_find(result.bounds.begin(), result.bounds.end()) != result.bounds.end()) {
+        throw py::value_error("PathRequests requires sorted bounds and one extra request");
+    }
+    return result;
 }
 
 albert::CostFactorAggregation parse_cost_factor_aggregation(const std::string& value) {
@@ -167,7 +186,8 @@ PYBIND11_MODULE(_core, module) {
         "parenthesization_candidates",
         [](const albert::Mul& node, const py::object& metadata,
            const py::object& scaling_limits, std::size_t max_candidates,
-           std::size_t exhaustive_limit, const py::object& cost_model) {
+           std::size_t exhaustive_limit, const py::object& cost_model,
+           const py::object& path_requests) {
             const auto spaces = metadata.attr("spaces").cast<albert::IndexSpaces>();
             const auto sizes = metadata.attr("sizes").cast<albert::SpaceSizes>();
             albert::CostModel model;
@@ -182,13 +202,20 @@ PYBIND11_MODULE(_core, module) {
                     cost_model.attr("cost_factor_aggregation").cast<std::string>());
             }
             const auto factors = metadata.attr("cost_factor").cast<albert::CostFactors>();
+            const auto limits = parse_scaling_limits(scaling_limits);
+            if (!path_requests.is_none()) {
+                const auto requests = parse_path_requests(path_requests);
+                return albert::parenthesization_candidates(
+                    node, spaces, sizes, limits,
+                    requests.for_size(node.children().size()), max_candidates, model, factors);
+            }
             return albert::parenthesization_candidates(
-                node, spaces, sizes, parse_scaling_limits(scaling_limits),
-                max_candidates, exhaustive_limit, model, factors);
+                node, spaces, sizes, limits, max_candidates, exhaustive_limit, model, factors);
         },
         py::arg("node"), py::arg("metadata"),
         py::arg("scaling_limits") = py::none(), py::arg("max_candidates") = 8,
-        py::arg("exhaustive_limit") = 5, py::arg("cost_model") = py::none());
+        py::arg("exhaustive_limit") = 5, py::arg("cost_model") = py::none(),
+        py::arg("path_requests") = py::none());
     module.def("apply_parenthesization", &albert::apply_parenthesization,
                py::arg("node"), py::arg("candidate"));
 
@@ -399,12 +426,17 @@ PYBIND11_MODULE(_core, module) {
         [](std::vector<albert::Expression> expressions, const py::object& metadata,
            const py::object& scaling_limits, const py::object& cost_model,
            const std::string& intermediate_format, std::size_t max_path_samples,
-           std::size_t max_bicliques, std::size_t exhaustive_limit) {
+           std::size_t max_bicliques, std::size_t exhaustive_limit,
+           const py::object& path_requests) {
             albert::CSEOptions options;
             options.intermediate_format = intermediate_format;
             options.max_path_samples = max_path_samples;
             options.max_bicliques = max_bicliques;
             options.exhaustive_limit = exhaustive_limit;
+            if (!path_requests.is_none()) {
+                options.custom_path_requests = true;
+                options.path_requests = parse_path_requests(path_requests);
+            }
             options.scaling_limits = parse_scaling_limits(scaling_limits);
             if (!cost_model.is_none()) {
                 options.cost_model.multiply = cost_model.attr("multiply").cast<double>();
@@ -434,6 +466,7 @@ PYBIND11_MODULE(_core, module) {
         py::arg("intermediate_format") = "__im{}__",
         py::arg("max_path_samples") = 64, py::arg("max_bicliques") = 8,
         py::arg("exhaustive_limit") = 5,
+        py::arg("path_requests") = py::none(),
         "Factor profitable common subexpressions across one or more expressions.");
 
 }

@@ -4,6 +4,8 @@ from albert import (
     CostModel,
     Metadata,
     Mul,
+    PathRequest,
+    PathRequests,
     ScalingLimits,
     Tensor,
     apply_parenthesization,
@@ -37,6 +39,40 @@ def test_parenthesization_candidates_are_ranked_and_capped(chain) -> None:
     candidates = parenthesization_candidates(node, metadata, max_candidates=2, exhaustive_limit=3)
 
     assert len(candidates) == 2
+    assert [candidate.cost.total for candidate in candidates] == sorted(
+        candidate.cost.total for candidate in candidates
+    )
+
+
+def test_path_requests_select_algorithms_by_operand_count(chain) -> None:
+    node, metadata, *_ = chain
+    requests = PathRequests(
+        bounds=(2,),
+        requests=(PathRequest(greedy=2), PathRequest(branch=2, greedy=3)),
+    )
+
+    assert requests.for_size(2) == PathRequest(greedy=2)
+    assert requests.for_size(3) == PathRequest(branch=2, greedy=3)
+    assert PathRequests.default() == PathRequests(
+        bounds=(5,),
+        requests=(PathRequest(exhaustive=63, dynamic=True), PathRequest(dynamic=True)),
+    )
+    with pytest.raises(ValueError, match="one more item"):
+        PathRequests(bounds=(2,), requests=(PathRequest(),))
+
+
+@pytest.mark.parametrize(
+    "path_request",
+    [PathRequest(branch=1), PathRequest(greedy=4), PathRequest(branch=2, greedy=4)],
+)
+def test_bounded_searches_return_valid_ranked_candidates(chain, path_request) -> None:
+    node, metadata, *_ = chain
+    policy = PathRequests(bounds=(), requests=(path_request,))
+
+    candidates = parenthesization_candidates(node, metadata, max_candidates=8, path_requests=policy)
+
+    assert candidates
+    assert all(len(candidate.path) == node.arity - 1 for candidate in candidates)
     assert [candidate.cost.total for candidate in candidates] == sorted(
         candidate.cost.total for candidate in candidates
     )

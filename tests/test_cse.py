@@ -4,6 +4,8 @@ from albert import (
     Expression,
     Metadata,
     Mul,
+    PathRequest,
+    PathRequests,
     Scalar,
     Tensor,
     canonical_key,
@@ -57,6 +59,20 @@ def test_cse_factors_a_shared_contraction_and_topologically_sorts() -> None:
     expected = collect(expand(shared_sum("Y").rhs))
     actual = collect(expand(inline(output.rhs)))
     assert canonical_key(canonicalize(actual, metadata())) == canonical_key(canonicalize(expected, metadata()))
+
+
+def test_cse_accepts_path_request_policy() -> None:
+    result = common_subexpression_elimination(
+        [shared_sum("Y")],
+        metadata(),
+        cost_model=CostModel(multiply=1, add=0, read=0, write=0),
+        path_requests=PathRequests(
+            bounds=(2,),
+            requests=(PathRequest(greedy=2), PathRequest(branch=1, greedy=2, dynamic=True)),
+        ),
+    )
+
+    assert len(result) == 3
 
 
 def test_cse_shares_generated_intermediates_across_outputs() -> None:

@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <functional>
 #include <limits>
+#include <optional>
 #include <set>
 #include <stdexcept>
 #include <unordered_map>
@@ -731,15 +732,170 @@ std::vector<ParenthesizationCandidate> dynamic_programming(
                                        cost_factors);
 }
 
+std::vector<ParenthesizationCandidate> branch_search(
+    const Mul& node, const LimitsChecker& checker, const IndexSpaces& spaces,
+    const SpaceSizes& sizes, const CostModel& model,
+    const CostFactors& cost_factors, std::size_t width) {
+    struct State {
+        std::vector<Active> active;
+        std::vector<Contraction> path;
+        double lower_bound = 0.0;
+    };
+    std::vector<Active> initial;
+    for (const auto& child : node.children()) {
+        initial.push_back({child, get_axes(child)});
+    }
+    double best_cost = std::numeric_limits<double>::infinity();
+    std::optional<ParenthesizationCandidate> best;
+    const auto node_budget = width * node.children().size();
+    std::size_t explored = 0;
+    std::function<void(const State&)> visit = [&](const State& state) {
+        if (explored >= node_budget) {
+            return;
+        }
+        if (state.active.size() == 1) {
+            auto candidate = make_candidate(state.path, node, spaces, sizes, model, cost_factors);
+            if (candidate.cost.total < best_cost) {
+                best_cost = candidate.cost.total;
+                best = std::move(candidate);
+            }
+            return;
+        }
+        if (state.lower_bound >= best_cost) {
+            return;
+        }
+        ++explored;
+        struct Choice {
+            std::size_t i;
+            std::size_t j;
+            Axes operation;
+            Axes output;
+            double score;
+        };
+        std::vector<Choice> choices;
+        for (std::size_t i = 0; i < state.active.size(); ++i) {
+            for (std::size_t j = i + 1; j < state.active.size(); ++j) {
+                auto operation = unite(state.active[i].axes, state.active[j].axes);
+                auto output = xor_axes(state.active[i].axes, state.active[j].axes);
+                if (checker.allows(operation, output)) {
+                    choices.push_back({i, j, std::move(operation), std::move(output), 0.0});
+                    choices.back().score = checker.size(choices.back().operation);
+                }
+            }
+        }
+        std::stable_sort(choices.begin(), choices.end(), [](const auto& lhs, const auto& rhs) {
+            return lhs.score < rhs.score;
+        });
+        if (choices.size() > width) {
+            choices.resize(width);
+        }
+        for (const auto& choice : choices) {
+            State next = state;
+            next.active.erase(next.active.begin() + static_cast<std::ptrdiff_t>(choice.j));
+            next.active.erase(next.active.begin() + static_cast<std::ptrdiff_t>(choice.i));
+            next.active.push_back({
+                std::make_shared<Mul>(Children{state.active[choice.i].node,
+                                               state.active[choice.j].node}),
+                choice.output});
+            next.path.emplace_back(choice.i, choice.j);
+            next.lower_bound += choice.score * model.multiply;
+            visit(next);
+        }
+    };
+    visit(State{std::move(initial), {}, 0.0});
+    return best ? std::vector<ParenthesizationCandidate>{std::move(*best)}
+                : std::vector<ParenthesizationCandidate>{};
+}
+
+std::vector<ParenthesizationCandidate> greedy_search(
+    const Mul& node, const LimitsChecker& checker, const IndexSpaces& spaces,
+    const SpaceSizes& sizes, const CostModel& model,
+    const CostFactors& cost_factors, std::size_t restarts) {
+    std::vector<ParenthesizationCandidate> candidates;
+    for (std::size_t restart = 0; restart < restarts; ++restart) {
+        std::vector<Active> active;
+        for (const auto& child : node.children()) {
+            active.push_back({child, get_axes(child)});
+        }
+        std::vector<Contraction> path;
+        while (active.size() > 1) {
+            struct Choice { std::size_t i; std::size_t j; double score; Axes output; };
+            std::vector<Choice> choices;
+            for (std::size_t i = 0; i < active.size(); ++i) {
+                for (std::size_t j = i + 1; j < active.size(); ++j) {
+                    const auto operation = unite(active[i].axes, active[j].axes);
+                    auto output = xor_axes(active[i].axes, active[j].axes);
+                    if (checker.allows(operation, output)) {
+                        choices.push_back({i, j, checker.size(operation), std::move(output)});
+                    }
+                }
+            }
+            if (choices.empty()) {
+                path.clear();
+                break;
+            }
+            std::stable_sort(choices.begin(), choices.end(), [](const auto& lhs, const auto& rhs) {
+                return lhs.score < rhs.score;
+            });
+            const auto choice_index = std::min(restart % std::min<std::size_t>(choices.size(), 3),
+                                               choices.size() - 1);
+            const auto choice = choices[choice_index];
+            path.emplace_back(choice.i, choice.j);
+            auto merged = std::make_shared<Mul>(Children{active[choice.i].node,
+                                                         active[choice.j].node});
+            active.erase(active.begin() + static_cast<std::ptrdiff_t>(choice.j));
+            active.erase(active.begin() + static_cast<std::ptrdiff_t>(choice.i));
+            active.push_back({std::move(merged), choice.output});
+        }
+        if (active.size() == 1 && path.size() + 1 == node.children().size()) {
+            auto candidate = make_candidate(path, node, spaces, sizes, model, cost_factors);
+            if (std::none_of(candidates.begin(), candidates.end(), [&](const auto& existing) {
+                    return existing.path == candidate.path;
+                })) {
+                candidates.push_back(std::move(candidate));
+            }
+        }
+    }
+    std::stable_sort(candidates.begin(), candidates.end(), [](const auto& lhs, const auto& rhs) {
+        return lhs.cost.total < rhs.cost.total;
+    });
+    return candidates;
+}
+
 }  // namespace
+
+const PathRequest& PathRequests::for_size(std::size_t operand_count) const {
+    if (requests.size() != bounds.size() + 1 ||
+        !std::is_sorted(bounds.begin(), bounds.end()) ||
+        std::adjacent_find(bounds.begin(), bounds.end()) != bounds.end()) {
+        throw std::invalid_argument("path request bounds and requests are inconsistent");
+    }
+    const auto found = std::lower_bound(bounds.begin(), bounds.end(), operand_count);
+    return requests[static_cast<std::size_t>(found - bounds.begin())];
+}
 
 std::vector<ParenthesizationCandidate> parenthesization_candidates(
     const Mul& node, const IndexSpaces& spaces, const SpaceSizes& sizes,
     const ScalingLimits& limits, std::size_t max_candidates,
     std::size_t exhaustive_limit, const CostModel& model,
     const CostFactors& cost_factors) {
+    PathRequest request;
+    request.dynamic = node.children().size() > exhaustive_limit;
+    request.exhaustive = request.dynamic ? 0 : max_candidates;
+    return parenthesization_candidates(node, spaces, sizes, limits, request,
+                                       max_candidates, model, cost_factors);
+}
+
+std::vector<ParenthesizationCandidate> parenthesization_candidates(
+    const Mul& node, const IndexSpaces& spaces, const SpaceSizes& sizes,
+    const ScalingLimits& limits, const PathRequest& request,
+    std::size_t max_candidates, const CostModel& model,
+    const CostFactors& cost_factors) {
     if (node.children().empty()) {
         throw std::invalid_argument("cannot parenthesize an empty Mul");
+    }
+    if (max_candidates == 0 && !request.dynamic) {
+        return {};
     }
     LimitsChecker checker(spaces, sizes, limits);
     for (const auto& child : node.children()) {
@@ -747,14 +903,43 @@ std::vector<ParenthesizationCandidate> parenthesization_candidates(
             return {};
         }
     }
-    if (node.children().size() > exhaustive_limit) {
+    if (max_candidates == 0) {
         return dynamic_programming(node, checker, spaces, sizes, limits,
                                    model, cost_factors);
     }
-    if (max_candidates == 0) {
-        return {};
+    std::vector<ParenthesizationCandidate> result;
+    auto append_unique = [&](std::vector<ParenthesizationCandidate> new_candidates) {
+        for (auto& candidate : new_candidates) {
+            if (std::none_of(result.begin(), result.end(), [&](const auto& existing) {
+                    return existing.path == candidate.path;
+                })) {
+                result.push_back(std::move(candidate));
+            }
+        }
+    };
+    if (request.dynamic) {
+        append_unique(dynamic_programming(node, checker, spaces, sizes, limits,
+                                          model, cost_factors));
     }
-    return exhaustive(node, checker, spaces, sizes, model, cost_factors, max_candidates);
+    if (request.exhaustive > 0) {
+        append_unique(exhaustive(node, checker, spaces, sizes, model, cost_factors,
+                                 request.exhaustive));
+    }
+    if (request.branch > 0) {
+        append_unique(branch_search(node, checker, spaces, sizes, model,
+                                    cost_factors, request.branch));
+    }
+    if (request.greedy > 0) {
+        append_unique(greedy_search(node, checker, spaces, sizes, model,
+                                   cost_factors, request.greedy));
+    }
+    std::stable_sort(result.begin(), result.end(), [](const auto& lhs, const auto& rhs) {
+        return lhs.cost.total < rhs.cost.total;
+    });
+    if (result.size() > max_candidates && max_candidates > 0) {
+        result.resize(max_candidates);
+    }
+    return result;
 }
 
 NodePtr apply_parenthesization(const Mul& node,
