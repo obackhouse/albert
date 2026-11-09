@@ -2,6 +2,7 @@
 
 #include "algebra.h"
 #include "search.h"
+#include "simplify.h"
 
 #include <algorithm>
 #include <cctype>
@@ -486,33 +487,37 @@ Form canonicalize_tensor(const Tensor& tensor,
 }
 
 NodePtr normalize_product(Children factors, double coefficient) {
+    if (coefficient != 1.0 || factors.empty()) {
+        factors.push_back(std::make_shared<Scalar>(coefficient));
+    }
+    NodePtr result = flatten(std::make_shared<Mul>(std::move(factors)));
+    const auto is_product = [](const NodePtr& node) {
+        return node->kind() == NodeKind::Mul;
+    };
+    result = albert::apply(
+        result, [](const NodePtr& node) { return fold_scalars(node); }, is_product);
+    result = albert::apply(
+        result, [](const NodePtr& node) { return prune_scalars(node); }, is_product);
+    result = albert::apply(
+        result, [](const NodePtr& node) { return squeeze(node); }, is_product);
+
+    const auto* product = dynamic_cast<const Mul*>(result.get());
+    if (!product) {
+        return result;
+    }
     Children non_scalars;
-    non_scalars.reserve(factors.size() + 1);
-    for (const auto& factor : factors) {
-        if (const auto* scalar = dynamic_cast<const Scalar*>(factor.get())) {
-            coefficient *= scalar->value();
-        } else if (factor->kind() == NodeKind::Mul) {
-            for (const auto& child : factor->children()) {
-                if (const auto* scalar = dynamic_cast<const Scalar*>(child.get())) {
-                    coefficient *= scalar->value();
-                } else {
-                    non_scalars.push_back(child);
-                }
-            }
+    NodePtr scalar;
+    for (const auto& factor : product->children()) {
+        if (factor->kind() == NodeKind::Scalar) {
+            scalar = factor;
         } else {
             non_scalars.push_back(factor);
         }
     }
-    if (coefficient == 0.0) {
-        return std::make_shared<Scalar>(0.0);
-    }
-    if (non_scalars.empty()) {
-        return std::make_shared<Scalar>(coefficient);
-    }
-    if (coefficient != 1.0) {
-        non_scalars.push_back(std::make_shared<Scalar>(coefficient));
-    }
     std::sort(non_scalars.begin(), non_scalars.end(), node_less);
+    if (scalar) {
+        non_scalars.push_back(std::move(scalar));
+    }
     if (non_scalars.size() == 1) {
         return non_scalars.front();
     }

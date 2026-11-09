@@ -558,7 +558,10 @@ NodePtr replace_covered(const NodePtr& rhs, const std::vector<NodePtr>& covered,
         return rhs;
     }
     remaining.push_back(replacement);
-    return collect(std::make_shared<Add>(std::move(remaining)));
+    return albert::apply(
+        std::make_shared<Add>(std::move(remaining)),
+        [](const NodePtr& node) { return collect(node); },
+        [](const NodePtr& node) { return node->kind() == NodeKind::Add; });
 }
 
 void validate_expression_axes(const Tensor& lhs, const NodePtr& rhs) {
@@ -584,7 +587,9 @@ std::vector<Expression> canonicalized_inputs(
     changed = false;
     for (const auto& expression : expressions) {
         auto canonical = canonicalize_with_mapping(expression.rhs(), canonicalization);
-        auto rhs = collect(canonical.node);
+        auto rhs = albert::apply(
+            canonical.node, [](const NodePtr& node) { return collect(node); },
+            [](const NodePtr& node) { return node->kind() == NodeKind::Add; });
         auto lhs = std::dynamic_pointer_cast<Tensor>(
             map_indices(expression.lhs(), canonical.external_index_mapping));
         if (!lhs) {

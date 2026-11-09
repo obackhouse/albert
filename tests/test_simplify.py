@@ -1,6 +1,18 @@
 import pytest
 
-from albert import Add, Mul, Scalar, Tensor, collect, expand, flatten, prune, simplify, squeeze
+from albert import (
+    Add,
+    Mul,
+    Scalar,
+    Tensor,
+    collect,
+    expand,
+    flatten,
+    fold_scalars,
+    prune_scalars,
+    simplify,
+    squeeze,
+)
 
 
 def _product_factors(term):
@@ -19,6 +31,37 @@ def test_expand_distributes_a_product_over_a_sum() -> None:
     assert len(result.children) == 2
     assert _product_factors(result.children[0]) == [a, c]
     assert _product_factors(result.children[1]) == [b, c]
+
+
+@pytest.mark.parametrize(
+    ("expression", "expected"),
+    [
+        (
+            Mul([Add([Tensor("A", []), Tensor("B", [])]), Tensor("C", [])]),
+            Add(
+                [
+                    Mul([Tensor("A", []), Tensor("C", [])]),
+                    Mul([Tensor("B", []), Tensor("C", [])]),
+                ]
+            ),
+        ),
+        (
+            Mul([Add([Tensor("A", []), Tensor("B", [])]), Add([Tensor("C", []), Tensor("D", [])])]),
+            Add(
+                [
+                    Mul([Tensor("A", []), Tensor("C", [])]),
+                    Mul([Tensor("A", []), Tensor("D", [])]),
+                    Mul([Tensor("B", []), Tensor("C", [])]),
+                    Mul([Tensor("B", []), Tensor("D", [])]),
+                ]
+            ),
+        ),
+        (Tensor("leaf", []), Add([Mul([Tensor("leaf", [])])])),
+    ],
+    ids=["one-sum", "product-of-two-sums", "leaf"],
+)
+def test_expand_parameterized_products(expression, expected) -> None:
+    assert expand(expression) == expected
 
 
 def test_expand_preserves_ranked_indices_and_internal_factors() -> None:
@@ -110,17 +153,43 @@ def test_collect_does_not_change_non_add_nodes() -> None:
 
 
 @pytest.mark.parametrize(
+    ("expression", "expected"),
+    [
+        (
+            Add([Tensor("A", []), Tensor("A", [])]),
+            Add([Mul([Scalar(2), Tensor("A", [])])]),
+        ),
+        (Add([Scalar(2), Scalar(3)]), Add([Scalar(5)])),
+        (
+            Add([Mul([Scalar(2), Tensor("A", [])]), Mul([Scalar(-2), Tensor("A", [])])]),
+            Add([Mul([Scalar(0), Tensor("A", [])])]),
+        ),
+        (
+            Add([Tensor("T", ["i", "j"]), Tensor("T", ["j", "i"])]),
+            Add([Tensor("T", ["i", "j"]), Tensor("T", ["j", "i"])]),
+        ),
+    ],
+    ids=["duplicate-terms", "scalar-terms", "canceling-coefficients", "distinct-index-order"],
+)
+def test_collect_parameterized_additions(expression, expected) -> None:
+    assert collect(expression) == expected
+
+
+@pytest.mark.parametrize(
     ("node", "expected"),
     [
         (Add([Tensor("A", [])]), Tensor("A", [])),
         (Mul([Tensor("A", [])]), Tensor("A", [])),
+        (Add([]), Add([])),
+        (Mul([Tensor("A", []), Tensor("B", [])]), Mul([Tensor("A", []), Tensor("B", [])])),
+        (Scalar(2), Scalar(2)),
     ],
+    ids=["singleton-add", "singleton-mul", "empty-add", "non-singleton-mul", "scalar"],
 )
 def test_squeeze_returns_the_only_child(node, expected) -> None:
     result = squeeze(node)
 
-    assert isinstance(result, Tensor)
-    assert result.symbol == expected.symbol
+    assert result == expected
 
 
 def test_squeeze_preserves_nodes_with_other_arities() -> None:
@@ -129,7 +198,7 @@ def test_squeeze_preserves_nodes_with_other_arities() -> None:
     assert squeeze(node) is node
 
 
-def test_flatten_only_flattens_nested_products() -> None:
+def test_flatten_flattens_nested_products_and_sums() -> None:
     a = Tensor("A", ["i"])
     b = Tensor("B", ["j"])
     c = Tensor("C", ["k"])
@@ -144,6 +213,16 @@ def test_flatten_only_flattens_nested_products() -> None:
     assert result.children[0] == Mul([a, b, c])
     assert result.children[1] == Mul([d, e, f])
 
+    sum_a = Tensor("SA", ["i"])
+    sum_b = Tensor("SB", ["i"])
+    sum_c = Tensor("SC", ["i"])
+    sum_d = Tensor("SD", ["i"])
+    nested_sum = Add([Add([sum_a, Add([sum_b, sum_c])]), Add([sum_d])])
+    flattened_sum = flatten(nested_sum)
+
+    assert isinstance(flattened_sum, Add)
+    assert flattened_sum.children == [sum_a, sum_b, sum_c, sum_d]
+
 
 def test_flatten_preserves_additions_inside_products() -> None:
     a = Tensor("A", ["i"])
@@ -157,12 +236,38 @@ def test_flatten_preserves_additions_inside_products() -> None:
     assert result.children == [a, Add([b, c]), Scalar(2)]
 
 
+@pytest.mark.parametrize("operator", [Add, Mul], ids=["add", "mul"])
+def test_flatten_recursively_flattens_each_associative_operator(operator) -> None:
+    a = Tensor("A", [])
+    b = Tensor("B", [])
+    c = Tensor("C", [])
+    d = Tensor("D", [])
+    node = operator([operator([a, operator([b, c])]), d])
+
+    assert flatten(node) == operator([a, b, c, d])
+
+
+@pytest.mark.parametrize(
+    "node",
+    [
+        Add([Tensor("A", []), Tensor("B", [])]),
+        Mul([Tensor("A", []), Tensor("B", [])]),
+        Mul([Add([Tensor("A", []), Tensor("B", [])]), Tensor("C", [])]),
+        Tensor("A", []),
+        Scalar(2),
+    ],
+    ids=["flat-add", "flat-mul", "mixed-nodes", "tensor", "scalar"],
+)
+def test_flatten_leaves_already_flat_or_non_associative_nodes_unchanged(node) -> None:
+    assert flatten(node) is node
+
+
 def test_prune_removes_neutral_elements_from_add_and_mul() -> None:
     tensor_a = Tensor("A", [])
     tensor_b = Tensor("B", [])
 
-    sum_result = prune(Add([Scalar(0), tensor_a]))
-    product_result = prune(Mul([Scalar(1), tensor_b]))
+    sum_result = prune_scalars(Add([Scalar(0), tensor_a]))
+    product_result = prune_scalars(Mul([Scalar(1), tensor_b]))
 
     assert isinstance(sum_result, Add)
     assert sum_result.children == [tensor_a]
@@ -171,13 +276,91 @@ def test_prune_removes_neutral_elements_from_add_and_mul() -> None:
 
 
 def test_remove_all_neutral_elements_returns_the_identity_scalar() -> None:
-    sum_result = prune(Add([Scalar(0), Scalar(0)]))
-    product_result = prune(Mul([Scalar(1), Scalar(1)]))
+    sum_result = prune_scalars(Add([Scalar(0), Scalar(0)]))
+    product_result = prune_scalars(Mul([Scalar(1), Scalar(1)]))
 
     assert isinstance(sum_result, Scalar)
     assert sum_result.value == 0
     assert isinstance(product_result, Scalar)
     assert product_result.value == 1
+
+
+def test_fold_scalars_combines_product_coefficients_and_scalar_only_products() -> None:
+    tensor = Tensor("A", [])
+
+    combined = fold_scalars(Mul([Scalar(2), tensor, Scalar(3)]))
+    scalar_only = fold_scalars(Mul([Scalar(2), Scalar(3)]))
+    empty_product = fold_scalars(Mul([]))
+    zero_product = fold_scalars(Mul([Scalar(0), tensor]))
+
+    assert isinstance(combined, Mul)
+    assert combined.children == [Scalar(6), tensor]
+    assert scalar_only == Scalar(6)
+    assert empty_product == Scalar(1)
+    assert zero_product == Scalar(0)
+
+
+@pytest.mark.parametrize(
+    ("product", "expected"),
+    [
+        (Mul([Scalar(2), Tensor("A", []), Scalar(3)]), Mul([Scalar(6), Tensor("A", [])])),
+        (Mul([Scalar(2), Scalar(3)]), Scalar(6)),
+        (Mul([Scalar(1), Tensor("A", [])]), Mul([Tensor("A", [])])),
+        (Mul([Scalar(0), Tensor("A", [])]), Scalar(0)),
+        (Mul([Tensor("A", []), Tensor("B", [])]), Mul([Tensor("A", []), Tensor("B", [])])),
+        (Mul([]), Scalar(1)),
+    ],
+    ids=["combine", "scalar-only", "unit-coefficient", "zero", "no-scalars", "empty"],
+)
+def test_fold_scalars_parameterized_products(product, expected) -> None:
+    assert fold_scalars(product) == expected
+
+
+def test_prune_scalars_handles_empty_nodes_and_zero_products() -> None:
+    tensor = Tensor("A", [])
+
+    assert prune_scalars(Add([])) == Scalar(0)
+    assert prune_scalars(Mul([])) == Scalar(1)
+    assert prune_scalars(Mul([Scalar(0), tensor])) == Scalar(0)
+
+
+@pytest.mark.parametrize(
+    ("node", "expected"),
+    [
+        (Add([Scalar(0), Tensor("A", [])]), Add([Tensor("A", [])])),
+        (Add([Scalar(0), Scalar(0)]), Scalar(0)),
+        (Mul([Scalar(1), Tensor("A", [])]), Mul([Tensor("A", [])])),
+        (Mul([Scalar(1), Scalar(1)]), Scalar(1)),
+        (Mul([Scalar(0), Tensor("A", [])]), Scalar(0)),
+        (Add([]), Scalar(0)),
+        (Mul([]), Scalar(1)),
+        (Mul([Tensor("A", []), Tensor("B", [])]), Mul([Tensor("A", []), Tensor("B", [])])),
+    ],
+    ids=[
+        "remove-additive-zero",
+        "all-additive-zeros",
+        "remove-multiplicative-one",
+        "all-ones",
+        "zero-product",
+        "empty-add",
+        "empty-mul",
+        "no-op",
+    ],
+)
+def test_prune_scalars_parameterized_nodes(node, expected) -> None:
+    assert prune_scalars(node) == expected
+
+
+def test_apply_predicate_targets_the_selected_node_types() -> None:
+    a = Tensor("A", [])
+    b = Tensor("B", [])
+    expression = Mul([Add([Scalar(0), a]), Mul([Scalar(1), b])])
+
+    result = expression.apply(prune_scalars, predicate=lambda node: isinstance(node, Add))
+
+    assert isinstance(result, Mul)
+    assert result.children[0] == Add([a])
+    assert result.children[1] == Mul([Scalar(1), b])
 
 
 def test_simplify_collects_removes_identities_and_squeezes() -> None:

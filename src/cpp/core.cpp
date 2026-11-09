@@ -180,8 +180,9 @@ PYBIND11_MODULE(_core, module) {
     module.def("expand", &albert::expand, py::arg("node"));
     module.def("flatten", &albert::flatten, py::arg("node"));
     module.def("collect", &albert::collect, py::arg("node"));
+    module.def("fold_scalars", &albert::fold_scalars, py::arg("node"));
     module.def("squeeze", &albert::squeeze, py::arg("node"));
-    module.def("prune", &albert::prune, py::arg("node"));
+    module.def("prune_scalars", &albert::prune_scalars, py::arg("node"));
     module.def("simplify", &albert::simplify, py::arg("node"));
     module.def(
         "parenthesization_candidates",

@@ -216,21 +216,19 @@ bool contains_add(const NodePtr& node) {
     return false;
 }
 
-NodePtr flatten_impl(const NodePtr& node) {
-    if (node->kind() == NodeKind::Scalar || node->kind() == NodeKind::Tensor) {
+NodePtr flatten_node(const NodePtr& node) {
+    if (node->kind() != NodeKind::Add && node->kind() != NodeKind::Mul) {
         return node;
     }
     Children children;
     bool changed = false;
     for (const auto& child : node->children()) {
-        auto flattened = flatten_impl(child);
-        changed = changed || flattened != child;
-        if (node->kind() == NodeKind::Mul && flattened->kind() == NodeKind::Mul) {
-            const auto& nested = flattened->children();
+        if (child->kind() == node->kind()) {
+            const auto& nested = child->children();
             children.insert(children.end(), nested.begin(), nested.end());
             changed = true;
         } else {
-            children.push_back(std::move(flattened));
+            children.push_back(child);
         }
     }
     if (!changed) {
@@ -240,6 +238,23 @@ NodePtr flatten_impl(const NodePtr& node) {
         return std::make_shared<Add>(std::move(children));
     }
     return std::make_shared<Mul>(std::move(children));
+}
+
+bool is_associative_node(const NodePtr& node) {
+    return node->kind() == NodeKind::Add || node->kind() == NodeKind::Mul;
+}
+
+bool is_add_node(const NodePtr& node) { return node->kind() == NodeKind::Add; }
+
+bool is_mul_node(const NodePtr& node) { return node->kind() == NodeKind::Mul; }
+
+bool is_singleton_associative_node(const NodePtr& node) {
+    return is_associative_node(node) && node->children().size() == 1;
+}
+
+bool is_expandable_product(const NodePtr& node) {
+    return node->kind() == NodeKind::Mul && contains_add(node) &&
+           expansion_size(node, kMaxExpansionTerms) <= kMaxExpansionTerms;
 }
 
 }  // namespace
@@ -254,7 +269,9 @@ NodePtr expand(const NodePtr& node) {
 
 NodePtr flatten(const NodePtr& node) {
     require_node(node);
-    return flatten_impl(node);
+    return albert::apply(
+        node, [](const NodePtr& current) { return flatten_node(current); },
+        [](const NodePtr& current) { return is_associative_node(current); });
 }
 
 NodePtr collect(const NodePtr& node) {
@@ -304,14 +321,43 @@ NodePtr collect(const NodePtr& node) {
 
 NodePtr squeeze(const NodePtr& node) {
     require_node(node);
-    if ((node->kind() == NodeKind::Add || node->kind() == NodeKind::Mul) &&
-        node->children().size() == 1) {
+    if (is_singleton_associative_node(node)) {
         return node->children().front();
     }
     return node;
 }
 
-NodePtr prune(const NodePtr& node) {
+NodePtr fold_scalars(const NodePtr& node) {
+    require_node(node);
+    if (node->kind() != NodeKind::Mul) {
+        return node;
+    }
+
+    double coefficient = 1.0;
+    Children factors;
+    factors.reserve(node->children().size() + 1);
+    bool found_scalar = false;
+    for (const auto& child : node->children()) {
+        if (const auto* scalar = dynamic_cast<const Scalar*>(child.get())) {
+            coefficient *= scalar->value();
+            found_scalar = true;
+        } else {
+            factors.push_back(child);
+        }
+    }
+    if (!found_scalar) {
+        return node->children().empty() ? std::make_shared<Scalar>(1.0) : node;
+    }
+    if (coefficient == 0.0 || factors.empty()) {
+        return std::make_shared<Scalar>(coefficient);
+    }
+    if (coefficient != 1.0) {
+        factors.insert(factors.begin(), std::make_shared<Scalar>(coefficient));
+    }
+    return std::make_shared<Mul>(std::move(factors));
+}
+
+NodePtr prune_scalars(const NodePtr& node) {
     require_node(node);
     if (node->kind() == NodeKind::Add) {
         Children children;
@@ -321,6 +367,9 @@ NodePtr prune(const NodePtr& node) {
             }
         }
         if (children.size() == node->children().size()) {
+            if (children.empty()) {
+                return std::make_shared<Scalar>(0.0);
+            }
             return node;
         }
         if (children.empty()) {
@@ -329,6 +378,10 @@ NodePtr prune(const NodePtr& node) {
         return std::make_shared<Add>(std::move(children));
     }
     if (node->kind() == NodeKind::Mul) {
+        if (std::any_of(node->children().begin(), node->children().end(),
+                        [](const NodePtr& child) { return is_scalar_value(child, 0.0); })) {
+            return std::make_shared<Scalar>(0.0);
+        }
         Children children;
         for (const auto& child : node->children()) {
             if (!is_scalar_value(child, 1.0)) {
@@ -336,6 +389,9 @@ NodePtr prune(const NodePtr& node) {
             }
         }
         if (children.size() == node->children().size()) {
+            if (children.empty()) {
+                return std::make_shared<Scalar>(1.0);
+            }
             return node;
         }
         if (children.empty()) {
@@ -350,27 +406,24 @@ NodePtr simplify(const NodePtr& node) {
     require_node(node);
     auto current = node;
     for (std::size_t pass = 0; pass < 8; ++pass) {
-        auto updated = albert::apply(current, [](const NodePtr& current_node) {
-            if (current_node->kind() == NodeKind::Add) {
-                return collect(current_node);
-            }
-            return current_node;
-        });
-        updated = albert::apply(updated, [](const NodePtr& current_node) {
-            return prune(current_node);
-        });
-        updated = albert::apply(updated, [](const NodePtr& current_node) {
-            return squeeze(current_node);
-        });
-        updated = albert::apply(updated, [](const NodePtr& current_node) {
-            if (current_node->kind() == NodeKind::Mul &&
-                contains_add(current_node) &&
-                expansion_size(current_node, kMaxExpansionTerms) <=
-                    kMaxExpansionTerms) {
-                return expand(current_node);
-            }
-            return current_node;
-        });
+        auto updated = albert::apply(
+            current, [](const NodePtr& node) { return flatten_node(node); },
+            [](const NodePtr& node) { return is_associative_node(node); });
+        updated = albert::apply(
+            updated, [](const NodePtr& node) { return fold_scalars(node); },
+            [](const NodePtr& node) { return is_mul_node(node); });
+        updated = albert::apply(
+            updated, [](const NodePtr& node) { return collect(node); },
+            [](const NodePtr& node) { return is_add_node(node); });
+        updated = albert::apply(
+            updated, [](const NodePtr& node) { return prune_scalars(node); },
+            [](const NodePtr& node) { return is_associative_node(node); });
+        updated = albert::apply(
+            updated, [](const NodePtr& node) { return squeeze(node); },
+            [](const NodePtr& node) { return is_singleton_associative_node(node); });
+        updated = albert::apply(
+            updated, [](const NodePtr& node) { return expand(node); },
+            [](const NodePtr& node) { return is_expandable_product(node); });
         if (current->structurally_equal(*updated)) {
             return updated;
         }
