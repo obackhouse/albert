@@ -1,6 +1,7 @@
 #include "algebra.h"
 #include "canonicalize.h"
 #include "cost.h"
+#include "cse.h"
 #include "expression.h"
 #include "permutation.h"
 #include "parenthesize.h"
@@ -58,6 +59,16 @@ albert::ScalingLimits parse_scaling_limits(const py::object& limits) {
     }
     return {parse_scaling_caps(limits.attr("time")),
             parse_scaling_caps(limits.attr("memory"))};
+}
+
+albert::CostFactorAggregation parse_cost_factor_aggregation(const std::string& value) {
+    if (value == "product") {
+        return albert::CostFactorAggregation::Product;
+    }
+    if (value == "maximum") {
+        return albert::CostFactorAggregation::Maximum;
+    }
+    throw py::value_error("cost_factor_aggregation must be 'product' or 'maximum'");
 }
 
 std::vector<std::string> parse_space_argument(const py::object& space) {
@@ -119,8 +130,13 @@ PYBIND11_MODULE(_core, module) {
                 model.add = cost_model.attr("add").cast<double>();
                 model.read = cost_model.attr("read").cast<double>();
                 model.write = cost_model.attr("write").cast<double>();
+                model.apply_cost_factors =
+                    cost_model.attr("apply_cost_factors").cast<bool>();
+                model.cost_factor_aggregation = parse_cost_factor_aggregation(
+                    cost_model.attr("cost_factor_aggregation").cast<std::string>());
             }
-            return albert::estimate_cost(node, spaces, sizes, model);
+            const auto factors = metadata.attr("cost_factor").cast<albert::CostFactors>();
+            return albert::estimate_cost(node, spaces, sizes, model, factors);
         },
         py::arg("node"), py::arg("metadata"), py::arg("cost_model") = py::none(),
         "Estimate arithmetic operations and memory traffic for an AST.");
@@ -160,10 +176,15 @@ PYBIND11_MODULE(_core, module) {
                 model.add = cost_model.attr("add").cast<double>();
                 model.read = cost_model.attr("read").cast<double>();
                 model.write = cost_model.attr("write").cast<double>();
+                model.apply_cost_factors =
+                    cost_model.attr("apply_cost_factors").cast<bool>();
+                model.cost_factor_aggregation = parse_cost_factor_aggregation(
+                    cost_model.attr("cost_factor_aggregation").cast<std::string>());
             }
+            const auto factors = metadata.attr("cost_factor").cast<albert::CostFactors>();
             return albert::parenthesization_candidates(
                 node, spaces, sizes, parse_scaling_limits(scaling_limits),
-                max_candidates, exhaustive_limit, model);
+                max_candidates, exhaustive_limit, model, factors);
         },
         py::arg("node"), py::arg("metadata"),
         py::arg("scaling_limits") = py::none(), py::arg("max_candidates") = 8,
@@ -373,5 +394,46 @@ PYBIND11_MODULE(_core, module) {
     module.def("topological_sort", &albert::topological_sort,
                py::arg("expressions"),
                "Return expressions in stable dependency order.");
+    module.def(
+        "common_subexpression_elimination",
+        [](std::vector<albert::Expression> expressions, const py::object& metadata,
+           const py::object& scaling_limits, const py::object& cost_model,
+           const std::string& intermediate_format, std::size_t max_path_samples,
+           std::size_t max_bicliques, std::size_t exhaustive_limit) {
+            albert::CSEOptions options;
+            options.intermediate_format = intermediate_format;
+            options.max_path_samples = max_path_samples;
+            options.max_bicliques = max_bicliques;
+            options.exhaustive_limit = exhaustive_limit;
+            options.scaling_limits = parse_scaling_limits(scaling_limits);
+            if (!cost_model.is_none()) {
+                options.cost_model.multiply = cost_model.attr("multiply").cast<double>();
+                options.cost_model.add = cost_model.attr("add").cast<double>();
+                options.cost_model.read = cost_model.attr("read").cast<double>();
+                options.cost_model.write = cost_model.attr("write").cast<double>();
+                options.cost_model.apply_cost_factors =
+                    cost_model.attr("apply_cost_factors").cast<bool>();
+                options.cost_model.cost_factor_aggregation = parse_cost_factor_aggregation(
+                    cost_model.attr("cost_factor_aggregation").cast<std::string>());
+            }
+            albert::CanonicalizationMetadata canonicalization;
+            canonicalization.spaces = metadata.attr("spaces")
+                                          .cast<albert::IndexSpaces>();
+            canonicalization.symmetries = metadata.attr("symmetries")
+                                              .cast<std::unordered_map<
+                                                  std::string,
+                                                  std::vector<albert::Permutation>>>();
+            return albert::common_subexpression_elimination(
+                std::move(expressions), canonicalization.spaces,
+                metadata.attr("sizes").cast<albert::SpaceSizes>(),
+                metadata.attr("cost_factor").cast<albert::CostFactors>(),
+                canonicalization, options);
+        },
+        py::arg("expressions"), py::arg("metadata"),
+        py::arg("scaling_limits") = py::none(), py::arg("cost_model") = py::none(),
+        py::arg("intermediate_format") = "__im{}__",
+        py::arg("max_path_samples") = 64, py::arg("max_bicliques") = 8,
+        py::arg("exhaustive_limit") = 5,
+        "Factor profitable common subexpressions across one or more expressions.");
 
 }

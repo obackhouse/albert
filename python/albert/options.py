@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from enum import IntEnum, StrEnum
+from typing import Literal
 
 
 @dataclass(frozen=True)
@@ -15,6 +16,8 @@ class CostModel:
     add: float = 1.0
     read: float = 0.1
     write: float = 0.1
+    apply_cost_factors: bool = False
+    cost_factor_aggregation: Literal["product", "maximum"] = "product"
 
     def __post_init__(self) -> None:
         """Reject weights that cannot form a useful nonnegative cost."""
@@ -26,6 +29,10 @@ class CostModel:
         ):
             if not math.isfinite(weight) or weight < 0:
                 raise ValueError(f"{name} cost weight must be finite and nonnegative")
+        if not isinstance(self.apply_cost_factors, bool):
+            raise ValueError("apply_cost_factors must be a bool")
+        if self.cost_factor_aggregation not in ("product", "maximum"):
+            raise ValueError("cost_factor_aggregation must be 'product' or 'maximum'")
 
 
 @dataclass(frozen=True)

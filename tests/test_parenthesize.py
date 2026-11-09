@@ -61,6 +61,44 @@ def test_exhaustive_finds_the_lowest_cost_parenthesization() -> None:
     assert candidates[0].cost.total < candidates[1].cost.total
 
 
+def test_dp_checks_every_partition_against_exhaustive_search() -> None:
+    factors = [
+        Tensor("A", ["i", "j"]),
+        Tensor("B", ["j", "k"]),
+        Tensor("C", ["k", "l"]),
+        Tensor("D", ["l", "m"]),
+    ]
+    node = Mul(factors)
+    metadata = Metadata(
+        spaces={"I": ["i"], "J": ["j"], "K": ["k"], "L": ["l"], "M": ["m"]},
+        sizes={"I": 2, "J": 3, "K": 5, "L": 7, "M": 11},
+    )
+    model = CostModel(multiply=1, add=0, read=0, write=0)
+
+    exhaustive = parenthesization_candidates(node, metadata, max_candidates=100, exhaustive_limit=4, cost_model=model)
+    dynamic = parenthesization_candidates(node, metadata, exhaustive_limit=3, cost_model=model)
+
+    assert len(dynamic) == 1
+    assert dynamic[0].cost.total == min(candidate.cost.total for candidate in exhaustive)
+
+
+def test_dp_bitmask_handles_composite_operands_via_external_indices() -> None:
+    composite = Mul([Tensor("A", ["i", "k"]), Tensor("B", ["k", "j"])])
+    factors = [composite, Tensor("C", ["j", "l"]), Tensor("D", ["l", "m"])]
+    node = Mul(factors)
+    metadata = Metadata(
+        spaces={"I": ["i"], "J": ["j"], "K": ["k"], "L": ["l"], "M": ["m"]},
+        sizes={"I": 2, "J": 3, "K": 5, "L": 7, "M": 11},
+    )
+    model = CostModel(multiply=1, add=0, read=0, write=0)
+
+    exhaustive = parenthesization_candidates(node, metadata, max_candidates=100, exhaustive_limit=3, cost_model=model)
+    dynamic = parenthesization_candidates(node, metadata, exhaustive_limit=2, cost_model=model)
+
+    assert len(dynamic) == 1
+    assert dynamic[0].cost.total == min(candidate.cost.total for candidate in exhaustive)
+
+
 def test_apply_parenthesization_builds_binary_product_tree(chain) -> None:
     node, metadata, a, b, c = chain
     candidate = parenthesization_candidates(node, metadata, exhaustive_limit=3)[0]
@@ -72,7 +110,7 @@ def test_apply_parenthesization_builds_binary_product_tree(chain) -> None:
     products = result.search(lambda node: isinstance(node, Mul))
     assert len(products) == 2
     assert all(len(product.children) == 2 for product in products)
-    assert result.external_indices == ["i", "l"]
+    assert set(result.external_indices) == {"i", "l"}
     assert {a.symbol, b.symbol, c.symbol} == {
         tensor.symbol for tensor in result.search(lambda n: isinstance(n, Tensor))
     }
@@ -85,6 +123,58 @@ def test_dp_returns_one_path_even_when_max_candidates_is_zero(chain) -> None:
 
     assert len(candidates) == 1
     assert len(candidates[0].path) == 2
+
+
+def test_dp_allows_outer_product_to_join_disconnected_components() -> None:
+    a = Tensor("A", ["i", "j"])
+    b = Tensor("B", ["j", "k"])
+    c = Tensor("C", ["a", "b"])
+    node = Mul([a, b, c])
+    metadata = Metadata(
+        spaces={"n": ["i", "j", "k", "a", "b"]},
+        sizes={"n": 2},
+    )
+
+    candidates = parenthesization_candidates(node, metadata, exhaustive_limit=2)
+
+    assert len(candidates) == 1
+    assert candidates[0].path == [(0, 1), (0, 1)]
+    result = apply_parenthesization(node, candidates[0])
+    assert set(result.external_indices) == {"i", "k", "a", "b"}
+
+
+def test_dp_path_uses_opt_einsum_append_order() -> None:
+    factors = [
+        Tensor("f", ["i", "a"]),
+        Tensor("g1", ["r0", "i"]),
+        Tensor("g3", ["s0", "a"]),
+        Tensor("g2", ["r0", "y0", "s0"]),
+    ]
+    node = Mul(factors)
+    metadata = Metadata(
+        spaces={
+            "o": ["i"],
+            "v": ["a"],
+            "r": ["r0"],
+            "s": ["s0"],
+            "y": ["y0"],
+            "x": ["x0"],
+        },
+        sizes={"o": 100, "v": 900, "r": 25, "s": 25, "y": 25, "x": 2000},
+    )
+    limits = ScalingLimits(
+        time={("o", "v", "x"): 3, ("o", "v", "x", "y", "r", "s"): 6},
+        memory={("o", "v", "x"): 3, ("o", "v", "x", "y", "r", "s"): 8},
+    )
+
+    candidate = parenthesization_candidates(node, metadata, scaling_limits=limits, exhaustive_limit=3)[0]
+    result = apply_parenthesization(node, candidate)
+
+    groups = {
+        frozenset(tensor.symbol for tensor in child.search(lambda n: isinstance(n, Tensor)))
+        for child in result.children
+    }
+    assert groups == {frozenset({"g2"}), frozenset({"f", "g1", "g3"})}
 
 
 def test_scaling_caps_filter_exhaustive_paths(chain) -> None:

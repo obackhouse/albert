@@ -27,7 +27,8 @@ struct ScalingLimits {
 std::vector<ParenthesizationCandidate> parenthesization_candidates(
     const Mul& node, const IndexSpaces& spaces, const SpaceSizes& sizes,
     const ScalingLimits& limits = {}, std::size_t max_candidates = 8,
-    std::size_t exhaustive_limit = 5, const CostModel& model = {});
+    std::size_t exhaustive_limit = 5, const CostModel& model = {},
+    const CostFactors& cost_factors = {});
 
 NodePtr apply_parenthesization(const Mul& node,
                                const ParenthesizationCandidate& candidate);

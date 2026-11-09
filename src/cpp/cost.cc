@@ -2,11 +2,13 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <iterator>
 #include <set>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -190,6 +192,36 @@ private:
     const SpaceSizes& sizes_;
 };
 
+double tensor_cost_factor(const NodePtr& node, const CostFactors& factors,
+                          CostFactorAggregation aggregation) {
+    std::unordered_set<std::string> symbols;
+    std::function<void(const NodePtr&)> collect = [&](const NodePtr& current) {
+        if (const auto* tensor = dynamic_cast<const Tensor*>(current.get())) {
+            symbols.insert(tensor->symbol());
+            return;
+        }
+        for (const auto& child : current->children()) {
+            collect(child);
+        }
+    };
+    collect(node);
+    double result = 1.0;
+    for (const auto& symbol : symbols) {
+        const auto found = factors.find(symbol);
+        if (aggregation == CostFactorAggregation::Product) {
+            if (found != factors.end()) {
+                result *= static_cast<double>(found->second);
+                if (!std::isfinite(result)) {
+                    throw std::overflow_error("tensor cost factor exceeds numeric range");
+                }
+            }
+        } else if (found != factors.end()) {
+            result = std::max(result, static_cast<double>(found->second));
+        }
+    }
+    return result;
+}
+
 class ScalingEstimator {
 public:
     ScalingEstimator(const IndexSpaceMap& index_spaces,
@@ -272,7 +304,8 @@ void validate_model(const CostModel& model) {
 }  // namespace
 
 CostEstimate estimate_cost(const NodePtr& node, const IndexSpaces& spaces,
-                           const SpaceSizes& sizes, const CostModel& model) {
+                           const SpaceSizes& sizes, const CostModel& model,
+                           const CostFactors& cost_factors) {
     if (!node) {
         throw std::invalid_argument("AST node cannot be null");
     }
@@ -289,11 +322,20 @@ CostEstimate estimate_cost(const NodePtr& node, const IndexSpaces& spaces,
             throw std::invalid_argument("space sizes must be positive");
         }
     }
+    for (const auto& [symbol, factor] : cost_factors) {
+        if (symbol.empty() || factor == 0) {
+            throw std::invalid_argument("tensor cost factors must be positive integers");
+        }
+    }
     const auto index_spaces = make_index_space_map(spaces);
     const auto totals = Estimator(index_spaces, sizes).visit(node).totals;
-    const auto total = totals.multiplications * model.multiply +
-                       totals.additions * model.add + totals.reads * model.read +
-                       totals.writes * model.write;
+    auto total = totals.multiplications * model.multiply +
+                 totals.additions * model.add + totals.reads * model.read +
+                 totals.writes * model.write;
+    if (model.apply_cost_factors) {
+        total *= tensor_cost_factor(node, cost_factors,
+                                    model.cost_factor_aggregation);
+    }
     if (!std::isfinite(total)) {
         throw std::overflow_error("estimated cost exceeds numeric range");
     }

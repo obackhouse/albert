@@ -635,8 +635,8 @@ Form canonicalize_node(const NodePtr& node,
 
 }  // namespace
 
-NodePtr canonicalize(const NodePtr& node,
-                     const CanonicalizationMetadata& metadata) {
+CanonicalizedNode canonicalize_with_mapping(
+    const NodePtr& node, const CanonicalizationMetadata& metadata) {
     if (!node) {
         throw std::invalid_argument("AST node cannot be null");
     }
@@ -645,24 +645,49 @@ NodePtr canonicalize(const NodePtr& node,
     collect_indices(node, all_used_indices);
     const auto external = external_mappings(node, spaces, all_used_indices);
 
-    std::optional<NodePtr> best;
+    std::optional<CanonicalizedNode> best;
     for (const auto& mapping : external.mappings) {
         auto mapped = albert::map_indices(node, mapping);
         const auto root_external = mapped->external_indices();
-        const std::set<std::string> reserved_external(root_external.begin(),
-                                                      root_external.end());
+        std::set<std::string> reserved_external(root_external.begin(),
+                                                 root_external.end());
+        std::map<std::string, std::size_t> external_counts;
+        for (const auto& index : root_external) {
+            const auto space = external.spaces.find(index);
+            if (space != external.spaces.end()) {
+                ++external_counts[space->second];
+            }
+        }
+        for (const auto& [space, count] : external_counts) {
+            const auto labels = space_labels(space, metadata);
+            for (std::size_t i = 0; i < std::min(count, labels.size()); ++i) {
+                reserved_external.insert(labels[i]);
+            }
+        }
         auto form = canonicalize_node(mapped, metadata, spaces,
                                       reserved_external, all_used_indices);
         auto phased = apply_phase(form.node, form.phase);
         for (const auto& final_mapping : final_external_mappings(
                  phased, external.spaces, metadata)) {
             auto candidate = albert::map_indices(phased, final_mapping);
-            if (!best || node_less(candidate, *best)) {
-                best = std::move(candidate);
+            if (!best || node_less(candidate, best->node)) {
+                std::unordered_map<std::string, std::string> combined;
+                for (const auto& [source, placeholder] : mapping) {
+                    const auto target = final_mapping.find(placeholder);
+                    if (target != final_mapping.end()) {
+                        combined.emplace(source, target->second);
+                    }
+                }
+                best = CanonicalizedNode{std::move(candidate), std::move(combined)};
             }
         }
     }
     return *best;
+}
+
+NodePtr canonicalize(const NodePtr& node,
+                     const CanonicalizationMetadata& metadata) {
+    return canonicalize_with_mapping(node, metadata).node;
 }
 
 }  // namespace albert

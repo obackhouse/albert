@@ -21,6 +21,18 @@ def test_canonicalize_relabels_external_indices_within_a_space() -> None:
     assert canonicalize(left, metadata) == canonicalize(renamed, metadata)
 
 
+def test_canonicalize_reserves_canonical_external_labels_before_dummy_labels() -> None:
+    metadata = Metadata(spaces={"occupied": ["i", "j", "k", "l", "x", "y", "z"]})
+    expression = Mul([Tensor("A", ["j", "k"]), Tensor("B", ["k", "i"])])
+    renamed = Mul([Tensor("A", ["x", "z"]), Tensor("B", ["z", "y"])])
+
+    canonical = canonicalize(expression, metadata)
+
+    assert set(canonical.external_indices) == {"i", "j"}
+    assert set(canonical.internal_indices).isdisjoint(canonical.external_indices)
+    assert canonical == canonicalize(renamed, metadata)
+
+
 def test_canonicalize_is_independent_of_internal_label_and_factor_order() -> None:
     metadata = Metadata(spaces={"all": ["i", "j", "k", "l", "x", "y", "z"]})
     left = Mul([Tensor("A", ["i", "k"]), Tensor("B", ["k", "j"]), Tensor("C", ["j", "i"])])

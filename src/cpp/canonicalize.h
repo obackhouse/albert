@@ -14,7 +14,14 @@ struct CanonicalizationMetadata {
     std::unordered_map<std::string, std::vector<Permutation>> symmetries;
 };
 
+struct CanonicalizedNode {
+    NodePtr node;
+    std::unordered_map<std::string, std::string> external_index_mapping;
+};
+
 NodePtr canonicalize(const NodePtr& node,
                      const CanonicalizationMetadata& metadata = {});
+CanonicalizedNode canonicalize_with_mapping(
+    const NodePtr& node, const CanonicalizationMetadata& metadata = {});
 
 }  // namespace albert
