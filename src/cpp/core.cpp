@@ -2,6 +2,7 @@
 #include "canonicalize.h"
 #include "cost.h"
 #include "cse.h"
+#include "substitute.h"
 #include "expression.h"
 #include "permutation.h"
 #include "parenthesize.h"
@@ -421,6 +422,9 @@ PYBIND11_MODULE(_core, module) {
     module.def("topological_sort", &albert::topological_sort,
                py::arg("expressions"),
                "Return expressions in stable dependency order.");
+    module.def("substitute_expressions", &albert::substitute_expressions,
+               py::arg("expressions"),
+               "Inline expression definitions into their dependents.");
     module.def(
         "common_subexpression_elimination",
         [](std::vector<albert::Expression> expressions, const py::object& metadata,

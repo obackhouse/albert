@@ -27,6 +27,7 @@ from albert._core import (
     prune,
     simplify,
     squeeze,
+    substitute_expressions,
     topological_sort,
 )
 from albert.metadata import Metadata
@@ -71,5 +72,6 @@ __all__ = [
     "prune",
     "simplify",
     "squeeze",
+    "substitute_expressions",
     "topological_sort",
 ]

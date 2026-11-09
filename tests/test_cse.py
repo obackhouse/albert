@@ -13,6 +13,7 @@ from albert import (
     collect,
     common_subexpression_elimination,
     expand,
+    substitute_expressions,
 )
 
 
@@ -59,6 +60,23 @@ def test_cse_factors_a_shared_contraction_and_topologically_sorts() -> None:
     expected = collect(expand(shared_sum("Y").rhs))
     actual = collect(expand(inline(output.rhs)))
     assert canonical_key(canonicalize(actual, metadata())) == canonical_key(canonicalize(expected, metadata()))
+
+
+def test_cse_round_trip_through_expression_substitution() -> None:
+    inputs = [shared_sum("Y"), shared_sum("Z")]
+    factored = common_subexpression_elimination(
+        inputs, metadata(), cost_model=CostModel(multiply=1, add=0, read=0, write=0)
+    )
+
+    restored = substitute_expressions(factored)
+    expected = {expression.lhs.symbol: expression for expression in inputs}
+    actual = {expression.lhs.symbol: expression for expression in restored}
+
+    assert actual.keys() == expected.keys()
+    for symbol in expected:
+        assert canonical_key(canonicalize(collect(expand(actual[symbol].rhs)), metadata())) == canonical_key(
+            canonicalize(collect(expand(expected[symbol].rhs)), metadata())
+        )
 
 
 def test_cse_accepts_path_request_policy() -> None:
