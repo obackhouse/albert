@@ -464,8 +464,8 @@ PYBIND11_MODULE(_core, module) {
         py::arg("expressions"), py::arg("metadata"),
         py::arg("scaling_limits") = py::none(), py::arg("cost_model") = py::none(),
         py::arg("intermediate_format") = "__im{}__",
-        py::arg("max_path_samples") = 64, py::arg("max_bicliques") = 8,
-        py::arg("exhaustive_limit") = 5,
+        py::arg("max_path_samples") = 19, py::arg("max_bicliques") = 8,
+        py::arg("exhaustive_limit") = 4,
         py::arg("path_requests") = py::none(),
         "Factor profitable common subexpressions across one or more expressions.");
 

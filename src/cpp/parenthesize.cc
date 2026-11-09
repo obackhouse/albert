@@ -1,20 +1,64 @@
 #include "parenthesize.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
+#include <exception>
 #include <functional>
 #include <limits>
 #include <optional>
 #include <set>
 #include <stdexcept>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
+
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 namespace albert {
 namespace {
 
 using Axes = std::set<std::string>;
+
+int worker_count(std::size_t work_items) noexcept {
+#ifdef _OPENMP
+    constexpr std::size_t large_batch = 16'384;
+    const auto maximum = omp_get_max_threads();
+    return work_items >= large_batch ? maximum : std::min(2, maximum);
+#else
+    static_cast<void>(work_items);
+    return 1;
+#endif
+}
+
+template <typename Callback>
+void parallel_for(std::size_t count, std::size_t threshold, Callback&& callback) {
+    const auto workers = worker_count(count);
+    if (count < threshold || workers == 1) {
+        for (std::size_t index = 0; index < count; ++index) {
+            callback(index);
+        }
+        return;
+    }
+    std::vector<std::exception_ptr> errors(count);
+#pragma omp parallel for schedule(dynamic) num_threads(workers)
+    for (std::ptrdiff_t item = 0; item < static_cast<std::ptrdiff_t>(count); ++item) {
+        const auto index = static_cast<std::size_t>(item);
+        try {
+            callback(index);
+        } catch (...) {
+            errors[index] = std::current_exception();
+        }
+    }
+    for (const auto& error : errors) {
+        if (error) {
+            std::rethrow_exception(error);
+        }
+    }
+}
 
 Axes get_axes(const NodePtr& node) {
     const auto indices = node->external_indices();
@@ -181,50 +225,99 @@ ParenthesizationCandidate make_candidate(const std::vector<Contraction>& path,
     return candidate;
 }
 
+bool candidate_cost_less(const ParenthesizationCandidate& lhs,
+                         const ParenthesizationCandidate& rhs) {
+    return lhs.cost.total < rhs.cost.total;
+}
+
+void retain_best(std::vector<ParenthesizationCandidate>& candidates,
+                 ParenthesizationCandidate candidate, std::size_t maximum) {
+    candidates.push_back(std::move(candidate));
+    std::stable_sort(candidates.begin(), candidates.end(), candidate_cost_less);
+    if (candidates.size() > maximum) {
+        candidates.pop_back();
+    }
+}
+
 std::vector<ParenthesizationCandidate> exhaustive(
     const Mul& node, const LimitsChecker& checker, const IndexSpaces& spaces,
     const SpaceSizes& sizes, const CostModel& model,
     const CostFactors& cost_factors, std::size_t maximum) {
-    std::vector<ParenthesizationCandidate> best;
-    std::vector<Contraction> path;
-    std::function<void(const std::vector<Active>&)> visit;
-    visit = [&](const std::vector<Active>& active) {
-        if (active.size() == 1) {
-            auto candidate = make_candidate(path, node, spaces, sizes, model, cost_factors);
-            best.push_back(std::move(candidate));
-            std::stable_sort(best.begin(), best.end(), [](const auto& lhs, const auto& rhs) {
-                return lhs.cost.total < rhs.cost.total;
-            });
-            if (best.size() > maximum) {
-                best.pop_back();
-            }
-            return;
-        }
-        for (std::size_t i = 0; i < active.size(); ++i) {
-            for (std::size_t j = i + 1; j < active.size(); ++j) {
-                const auto operation = unite(active[i].axes, active[j].axes);
-                const auto output = xor_axes(active[i].axes, active[j].axes);
-                if (!checker.allows(operation, output)) {
-                    continue;
-                }
-                std::vector<Active> next = active;
-                next.erase(next.begin() + static_cast<std::ptrdiff_t>(j));
-                next.erase(next.begin() + static_cast<std::ptrdiff_t>(i));
-                next.push_back({std::make_shared<Mul>(Children{active[i].node, active[j].node}),
-                                output});
-                path.emplace_back(i, j);
-                visit(next);
-                path.pop_back();
-            }
-        }
-    };
-
     std::vector<Active> active;
     active.reserve(node.children().size());
     for (const auto& child : node.children()) {
         active.push_back({child, get_axes(child)});
     }
-    visit(active);
+
+    if (active.size() == 1) {
+        return {make_candidate({}, node, spaces, sizes, model, cost_factors)};
+    }
+
+    std::vector<std::pair<std::size_t, std::size_t>> first_choices;
+    for (std::size_t i = 0; i < active.size(); ++i) {
+        for (std::size_t j = i + 1; j < active.size(); ++j) {
+            const auto operation = unite(active[i].axes, active[j].axes);
+            const auto output = xor_axes(active[i].axes, active[j].axes);
+            if (checker.allows(operation, output)) {
+                first_choices.emplace_back(i, j);
+            }
+        }
+    }
+    std::vector<std::vector<ParenthesizationCandidate>> branch_results(first_choices.size());
+    parallel_for(first_choices.size(), 8, [&](std::size_t index) {
+        const auto [i, j] = first_choices[index];
+        const auto output = xor_axes(active[i].axes, active[j].axes);
+        auto next = active;
+        next.erase(next.begin() + static_cast<std::ptrdiff_t>(j));
+        next.erase(next.begin() + static_cast<std::ptrdiff_t>(i));
+        next.push_back({std::make_shared<Mul>(Children{active[i].node, active[j].node}),
+                        output});
+        std::vector<Contraction> path{{i, j}};
+        auto& best = branch_results[index];
+        std::function<void(const std::vector<Active>&)> visit;
+        visit = [&](const std::vector<Active>& current) {
+            if (current.size() == 1) {
+                retain_best(best, make_candidate(path, node, spaces, sizes, model,
+                                                 cost_factors), maximum);
+                return;
+            }
+            for (std::size_t lhs = 0; lhs < current.size(); ++lhs) {
+                for (std::size_t rhs = lhs + 1; rhs < current.size(); ++rhs) {
+                    const auto child_operation = unite(current[lhs].axes,
+                                                       current[rhs].axes);
+                    const auto child_output = xor_axes(current[lhs].axes,
+                                                       current[rhs].axes);
+                    if (!checker.allows(child_operation, child_output)) {
+                        continue;
+                    }
+                    auto child_state = current;
+                    child_state.erase(child_state.begin() +
+                                      static_cast<std::ptrdiff_t>(rhs));
+                    child_state.erase(child_state.begin() +
+                                      static_cast<std::ptrdiff_t>(lhs));
+                    child_state.push_back({
+                        std::make_shared<Mul>(Children{current[lhs].node,
+                                                       current[rhs].node}),
+                        child_output});
+                    path.emplace_back(lhs, rhs);
+                    visit(child_state);
+                    path.pop_back();
+                }
+            }
+        };
+        visit(next);
+    });
+
+    std::vector<ParenthesizationCandidate> best;
+    for (std::size_t index = 0; index < branch_results.size(); ++index) {
+        for (auto& candidate : branch_results[index]) {
+            best.push_back(std::move(candidate));
+        }
+    }
+    std::stable_sort(best.begin(), best.end(), candidate_cost_less);
+    if (best.size() > maximum) {
+        best.resize(maximum);
+    }
     return best;
 }
 
@@ -234,6 +327,12 @@ struct DpEntry {
     std::uint64_t right = 0;
 };
 
+struct DpSplit {
+    std::uint64_t left;
+    std::uint64_t right;
+    double operation_size = std::numeric_limits<double>::infinity();
+};
+
 struct BitmaskDpEntry {
     double score = std::numeric_limits<double>::infinity();
     std::uint64_t left = 0;
@@ -241,10 +340,178 @@ struct BitmaskDpEntry {
     bool computed = false;
 };
 
+template <typename Entry>
+void update_best_split(Entry& entry, const DpSplit& split,
+                       double left_score, double right_score) {
+    if (!std::isfinite(left_score) || !std::isfinite(right_score)) {
+        return;
+    }
+    const auto score = left_score + right_score + split.operation_size;
+    if (score < entry.score) {
+        entry.score = score;
+        entry.left = split.left;
+        entry.right = split.right;
+    }
+}
+
+template <typename EntryLookup>
+void append_dp_path(std::uint64_t root, std::vector<std::uint64_t>& active,
+                    std::vector<Contraction>& path, EntryLookup&& lookup) {
+    const auto emit = [&](const auto& self, std::uint64_t mask) -> void {
+        const auto* entry = lookup(mask);
+        if (entry == nullptr || entry->left == 0) {
+            return;
+        }
+        self(self, entry->left);
+        self(self, entry->right);
+        const auto left = std::find(active.begin(), active.end(), entry->left);
+        const auto right = std::find(active.begin(), active.end(), entry->right);
+        if (left == active.end() || right == active.end()) {
+            throw std::logic_error("invalid DP parenthesization state");
+        }
+        auto i = static_cast<std::size_t>(left - active.begin());
+        auto j = static_cast<std::size_t>(right - active.begin());
+        if (i > j) {
+            std::swap(i, j);
+        }
+        path.emplace_back(i, j);
+        active.erase(active.begin() + static_cast<std::ptrdiff_t>(j));
+        active.erase(active.begin() + static_cast<std::ptrdiff_t>(i));
+        active.push_back(entry->left | entry->right);
+    };
+    emit(emit, root);
+}
+
 struct MaskCap {
     std::uint64_t axes = 0;
     std::size_t maximum = 0;
 };
+
+double allowed_operation_size(const Axes& left, const Axes& right,
+                              const LimitsChecker& checker) {
+    if (!shares_axis(left, right)) {
+        return std::numeric_limits<double>::infinity();
+    }
+    const auto operation = unite(left, right);
+    if (!checker.allows(operation, xor_axes(left, right))) {
+        return std::numeric_limits<double>::infinity();
+    }
+    return checker.size(operation);
+}
+
+std::size_t popcount(std::uint64_t value) noexcept {
+    value -= (value >> 1) & 0x5555555555555555ULL;
+    value = (value & 0x3333333333333333ULL) + ((value >> 2) & 0x3333333333333333ULL);
+    value = (value + (value >> 4)) & 0x0F0F0F0F0F0F0F0FULL;
+    return static_cast<std::size_t>((value * 0x0101010101010101ULL) >> 56);
+}
+
+template <typename Positions, typename Callback>
+void for_each_bitmask_partition(std::uint64_t mask, const Positions& positions,
+                                std::size_t count, Callback&& callback) {
+    for (std::size_t left_count = 1; left_count <= count / 2; ++left_count) {
+        std::array<std::size_t, 20> combination{};
+        std::uint64_t left = 0;
+        for (std::size_t i = 0; i < left_count; ++i) {
+            combination[i] = i;
+            left |= std::uint64_t{1} << positions[i];
+        }
+        for (;;) {
+            const auto right = mask ^ left;
+            if (left_count * 2 != count || left < right) {
+                callback(left, right);
+            }
+            std::size_t position = left_count;
+            bool advanced = false;
+            while (position > 0) {
+                --position;
+                if (combination[position] < count - left_count + position) {
+                    for (std::size_t j = position; j < left_count; ++j) {
+                        left &= ~(std::uint64_t{1} << positions[combination[j]]);
+                    }
+                    ++combination[position];
+                    for (std::size_t j = position + 1; j < left_count; ++j) {
+                        combination[j] = combination[j - 1] + 1;
+                    }
+                    for (std::size_t j = position; j < left_count; ++j) {
+                        left |= std::uint64_t{1} << positions[combination[j]];
+                    }
+                    advanced = true;
+                    break;
+                }
+            }
+            if (!advanced) {
+                break;
+            }
+        }
+    }
+}
+
+template <typename Callback>
+void for_each_partition(std::uint64_t mask, const std::vector<std::size_t>& positions,
+                        Callback&& callback) {
+    const auto count = positions.size();
+    for (std::size_t left_count = 1; left_count <= count / 2; ++left_count) {
+        std::vector<std::size_t> combination(left_count);
+        for (std::size_t i = 0; i < left_count; ++i) {
+            combination[i] = i;
+        }
+        for (;;) {
+            std::uint64_t left = 0;
+            for (const auto position : combination) {
+                left |= std::uint64_t{1} << positions[position];
+            }
+            if (left_count * 2 != count || left < (mask ^ left)) {
+                callback(left, mask ^ left);
+            }
+            std::size_t position = left_count;
+            bool advanced = false;
+            while (position > 0) {
+                --position;
+                if (combination[position] < count - left_count + position) {
+                    ++combination[position];
+                    for (std::size_t j = position + 1; j < left_count; ++j) {
+                        combination[j] = combination[j - 1] + 1;
+                    }
+                    advanced = true;
+                    break;
+                }
+            }
+            if (!advanced) {
+                break;
+            }
+        }
+    }
+}
+
+template <typename SharesAxes>
+std::vector<std::uint64_t> connected_components(std::size_t count,
+                                                SharesAxes&& shares_axes) {
+    std::vector<std::uint64_t> components;
+    std::vector<std::uint64_t> unassigned;
+    for (std::size_t i = count; i > 0; --i) {
+        unassigned.push_back(std::uint64_t{1} << (i - 1));
+    }
+    while (!unassigned.empty()) {
+        auto component = unassigned.back();
+        unassigned.pop_back();
+        bool grew = true;
+        while (grew) {
+            grew = false;
+            for (auto it = unassigned.begin(); it != unassigned.end();) {
+                if (shares_axes(component, *it)) {
+                    component |= *it;
+                    it = unassigned.erase(it);
+                    grew = true;
+                } else {
+                    ++it;
+                }
+            }
+        }
+        components.push_back(component);
+    }
+    return components;
+}
 
 // Dense axis masks avoid set construction for operands with at most 64 distinct indices.
 bool dynamic_programming_bitmask(
@@ -312,8 +579,7 @@ bool dynamic_programming_bitmask(
     const auto memory_caps = make_caps(limits.memory);
     const auto under_caps = [](std::uint64_t axes, const std::vector<MaskCap>& caps) {
         for (const auto& cap : caps) {
-            if (static_cast<std::size_t>(__builtin_popcountll(axes & cap.axes)) >
-                cap.maximum) {
+            if (popcount(axes & cap.axes) > cap.maximum) {
                 return false;
             }
         }
@@ -328,6 +594,12 @@ bool dynamic_programming_bitmask(
         }
         return product;
     };
+    const auto contraction_size = [&](std::uint64_t left, std::uint64_t right) {
+        if ((left & right) == 0 || !under_caps(left | right, time_caps)) {
+            return std::numeric_limits<double>::infinity();
+        }
+        return axes_size(left | right);
+    };
 
     std::vector<std::uint64_t> leaf_axes;
     leaf_axes.reserve(count);
@@ -340,10 +612,10 @@ bool dynamic_programming_bitmask(
     }
     const auto state_count = std::size_t{1} << count;
     std::vector<BitmaskDpEntry> memo(state_count);
+    std::unordered_set<std::uint64_t> dp_roots;
     std::vector<std::uint64_t> subset_axes_memo(state_count);
     std::vector<bool> subset_axes_computed(state_count, false);
-    std::function<std::uint64_t(std::uint64_t)> subset_axes;
-    subset_axes = [&](std::uint64_t mask) {
+    const auto subset_axes = [&](const auto& self, std::uint64_t mask) -> std::uint64_t {
         if (subset_axes_computed[mask]) {
             return subset_axes_memo[mask];
         }
@@ -353,14 +625,13 @@ bool dynamic_programming_bitmask(
             axes = leaf_axes[static_cast<std::size_t>(__builtin_ctzll(mask))];
         } else {
             axes = leaf_axes[static_cast<std::size_t>(__builtin_ctzll(first_bit))] ^
-                   subset_axes(mask ^ first_bit);
+                   self(self, mask ^ first_bit);
         }
         subset_axes_computed[mask] = true;
         subset_axes_memo[mask] = axes;
         return axes;
     };
-    std::function<const BitmaskDpEntry&(std::uint64_t)> solve;
-    solve = [&](std::uint64_t mask) -> const BitmaskDpEntry& {
+    const auto solve = [&](const auto& self, std::uint64_t mask) -> const BitmaskDpEntry& {
         auto& entry = memo[mask];
         if (entry.computed) {
             return entry;
@@ -370,62 +641,56 @@ bool dynamic_programming_bitmask(
             entry.score = 0.0;
             return entry;
         }
-        std::vector<std::size_t> positions;
+        if (!under_caps(subset_axes(subset_axes, mask), memory_caps)) {
+            return entry;
+        }
+        std::array<std::size_t, 20> positions{};
+        std::size_t subset_count = 0;
         for (std::size_t i = 0; i < count; ++i) {
             if (mask & (std::uint64_t{1} << i)) {
-                positions.push_back(i);
+                positions[subset_count++] = i;
             }
         }
-        const auto subset_count = positions.size();
-        for (std::size_t left_count = 1; left_count <= subset_count / 2; ++left_count) {
-            std::vector<std::size_t> combination(left_count);
-            for (std::size_t i = 0; i < left_count; ++i) {
-                combination[i] = i;
+        if (dp_roots.find(mask) == dp_roots.end() || subset_count < 8) {
+            for_each_bitmask_partition(mask, positions, subset_count,
+                                       [&](std::uint64_t left, std::uint64_t right) {
+                const auto left_axes = subset_axes(subset_axes, left);
+                const auto right_axes = subset_axes(subset_axes, right);
+                const auto cost = contraction_size(left_axes, right_axes);
+                if (!std::isfinite(cost)) {
+                    return;
+                }
+                const auto& lhs = self(self, left);
+                const auto& rhs = self(self, right);
+                update_best_split(entry, DpSplit{left, right, cost}, lhs.score,
+                                  rhs.score);
+            });
+            return entry;
+        }
+        std::vector<DpSplit> splits;
+        for_each_bitmask_partition(mask, positions, subset_count,
+                                   [&](std::uint64_t left, std::uint64_t right) {
+            splits.push_back({left, right});
+        });
+        for (const auto& split : splits) {
+            static_cast<void>(subset_axes(subset_axes, split.left));
+            static_cast<void>(subset_axes(subset_axes, split.right));
+        }
+#pragma omp parallel for schedule(static) num_threads(worker_count(splits.size())) if (splits.size() >= 64)
+        for (std::ptrdiff_t split_index = 0;
+             split_index < static_cast<std::ptrdiff_t>(splits.size()); ++split_index) {
+            auto& split = splits[static_cast<std::size_t>(split_index)];
+            const auto left_axes = subset_axes_memo[split.left];
+            const auto right_axes = subset_axes_memo[split.right];
+            split.operation_size = contraction_size(left_axes, right_axes);
+        }
+        for (const auto& split : splits) {
+            if (!std::isfinite(split.operation_size)) {
+                continue;
             }
-            for (;;) {
-                std::uint64_t left = 0;
-                for (const auto position : combination) {
-                    left |= std::uint64_t{1} << positions[position];
-                }
-                const auto right = mask ^ left;
-                if ((left_count * 2 != subset_count || left < right) && right != 0) {
-                    const auto left_axes = subset_axes(left);
-                    const auto right_axes = subset_axes(right);
-                    if ((left_axes & right_axes) != 0) {
-                        const auto operation = left_axes | right_axes;
-                        const auto output = left_axes ^ right_axes;
-                        if (under_caps(operation, time_caps) &&
-                            under_caps(output, memory_caps)) {
-                            const auto& lhs = solve(left);
-                            const auto& rhs = solve(right);
-                            if (std::isfinite(lhs.score) && std::isfinite(rhs.score)) {
-                                const auto score = lhs.score + rhs.score + axes_size(operation);
-                                if (score < entry.score) {
-                                    entry.score = score;
-                                    entry.left = left;
-                                    entry.right = right;
-                                }
-                            }
-                        }
-                    }
-                }
-                std::size_t position = left_count;
-                bool advanced = false;
-                while (position > 0) {
-                    --position;
-                    if (combination[position] < subset_count - left_count + position) {
-                        ++combination[position];
-                        for (std::size_t j = position + 1; j < left_count; ++j) {
-                            combination[j] = combination[j - 1] + 1;
-                        }
-                        advanced = true;
-                        break;
-                    }
-                }
-                if (!advanced) {
-                    break;
-                }
-            }
+            const auto& lhs = self(self, split.left);
+            const auto& rhs = self(self, split.right);
+            update_best_split(entry, split, lhs.score, rhs.score);
         }
         return entry;
     };
@@ -436,66 +701,32 @@ bool dynamic_programming_bitmask(
         active.push_back(std::uint64_t{1} << i);
     }
     std::vector<Contraction> path;
-    std::function<void(std::uint64_t)> emit = [&](std::uint64_t mask) {
-        const auto& entry = solve(mask);
-        if (entry.left == 0) {
-            return;
-        }
-        emit(entry.left);
-        emit(entry.right);
-        const auto left_pos = std::find(active.begin(), active.end(), entry.left);
-        const auto right_pos = std::find(active.begin(), active.end(), entry.right);
-        if (left_pos == active.end() || right_pos == active.end()) {
-            throw std::logic_error("invalid DP parenthesization state");
-        }
-        auto i = static_cast<std::size_t>(left_pos - active.begin());
-        auto j = static_cast<std::size_t>(right_pos - active.begin());
-        if (i > j) {
-            std::swap(i, j);
-        }
-        path.emplace_back(i, j);
-        active.erase(active.begin() + static_cast<std::ptrdiff_t>(j));
-        active.erase(active.begin() + static_cast<std::ptrdiff_t>(i));
-        active.push_back(mask);
-    };
 
-    std::vector<std::uint64_t> components;
-    std::vector<std::uint64_t> unassigned;
-    for (std::size_t i = count; i > 0; --i) {
-        unassigned.push_back(std::uint64_t{1} << (i - 1));
-    }
-    while (!unassigned.empty()) {
-        auto component = unassigned.back();
-        unassigned.pop_back();
-        bool grew = true;
-        while (grew) {
-            grew = false;
-            for (auto it = unassigned.begin(); it != unassigned.end();) {
-                if ((subset_axes(component) & subset_axes(*it)) != 0) {
-                    component |= *it;
-                    it = unassigned.erase(it);
-                    grew = true;
-                } else {
-                    ++it;
-                }
-            }
-        }
-        components.push_back(component);
+    auto components = connected_components(count, [&](auto lhs, auto rhs) {
+        return (subset_axes(subset_axes, lhs) & subset_axes(subset_axes, rhs)) != 0;
+    });
+    for (const auto component : components) {
+        dp_roots.insert(component);
     }
     for (const auto component : components) {
-        if (!std::isfinite(solve(component).score)) {
+        if (!std::isfinite(solve(solve, component).score)) {
             return true;
         }
-        emit(component);
+        append_dp_path(component, active, path, [&](std::uint64_t mask) {
+            return &solve(solve, mask);
+        });
     }
     std::stable_sort(components.begin(), components.end(), [&](auto lhs, auto rhs) {
-        return axes_size(subset_axes(lhs)) < axes_size(subset_axes(rhs));
+        return axes_size(subset_axes(subset_axes, lhs)) <
+               axes_size(subset_axes(subset_axes, rhs));
     });
     auto accumulated = components.front();
     for (std::size_t k = 1; k < components.size(); ++k) {
         const auto next = components[k];
-        const auto operation = subset_axes(accumulated) | subset_axes(next);
-        const auto output = subset_axes(accumulated) ^ subset_axes(next);
+        const auto operation = subset_axes(subset_axes, accumulated) |
+                               subset_axes(subset_axes, next);
+        const auto output = subset_axes(subset_axes, accumulated) ^
+                            subset_axes(subset_axes, next);
         if (!under_caps(operation, time_caps) || !under_caps(output, memory_caps)) {
             return true;
         }
@@ -534,6 +765,7 @@ std::vector<ParenthesizationCandidate> dynamic_programming_generic(
     }
     std::unordered_map<std::uint64_t, DpEntry> memo;
     std::unordered_map<std::uint64_t, Axes> subset_axes_memo;
+    std::unordered_set<std::uint64_t> dp_roots;
     std::function<const Axes&(std::uint64_t)> subset_axes;
     subset_axes = [&](std::uint64_t mask) -> const Axes& {
         const auto found = subset_axes_memo.find(mask);
@@ -568,64 +800,45 @@ std::vector<ParenthesizationCandidate> dynamic_programming_generic(
                 positions.push_back(i);
             }
         }
-        const auto consider_partition = [&](std::uint64_t left) {
-            const auto right = mask ^ left;
-            if (right == 0 || (left == right)) {
-                return;
-            }
-            const auto& left_axes = subset_axes(left);
-            const auto& right_axes = subset_axes(right);
-            if (!shares_axis(left_axes, right_axes)) {
-                return;
-            }
-            const auto operation = unite(left_axes, right_axes);
-            const auto output = xor_axes(left_axes, right_axes);
-            if (!checker.allows(operation, output)) {
-                return;
-            }
-            const auto lhs_score = solve(left).score;
-            const auto rhs_score = solve(right).score;
-            if (!std::isfinite(lhs_score) || !std::isfinite(rhs_score)) {
-                return;
-            }
-            const auto score = lhs_score + rhs_score + checker.size(operation);
-            if (score < entry.score) {
-                entry.score = score;
-                entry.left = left;
-                entry.right = right;
-            }
-        };
-        const auto subset_count = positions.size();
-        for (std::size_t left_count = 1; left_count <= subset_count / 2; ++left_count) {
-            std::vector<std::size_t> combination(left_count);
-            for (std::size_t i = 0; i < left_count; ++i) {
-                combination[i] = i;
-            }
-            for (;;) {
-                std::uint64_t left = 0;
-                for (const auto position : combination) {
-                    left |= std::uint64_t{1} << positions[position];
+        if (dp_roots.find(mask) == dp_roots.end() || positions.size() < 8) {
+            for_each_partition(mask, positions,
+                               [&](std::uint64_t left, std::uint64_t right) {
+                const auto& left_axes = subset_axes(left);
+                const auto& right_axes = subset_axes(right);
+                const auto cost = allowed_operation_size(left_axes, right_axes, checker);
+                if (!std::isfinite(cost)) {
+                    return;
                 }
-                if (left_count * 2 != subset_count || left < (mask ^ left)) {
-                    consider_partition(left);
-                }
-                std::size_t position = left_count;
-                bool advanced = false;
-                while (position > 0) {
-                    --position;
-                    if (combination[position] < subset_count - left_count + position) {
-                        ++combination[position];
-                        for (std::size_t j = position + 1; j < left_count; ++j) {
-                            combination[j] = combination[j - 1] + 1;
-                        }
-                        advanced = true;
-                        break;
-                    }
-                }
-                if (!advanced) {
-                    break;
-                }
+                const auto lhs_score = solve(left).score;
+                const auto rhs_score = solve(right).score;
+                update_best_split(entry, DpSplit{left, right, cost}, lhs_score,
+                                  rhs_score);
+            });
+            return memo.emplace(mask, std::move(entry)).first->second;
+        }
+        std::vector<DpSplit> splits;
+        for_each_partition(mask, positions,
+                           [&](std::uint64_t left, std::uint64_t right) {
+            splits.push_back({left, right});
+        });
+        for (const auto& split : splits) {
+            static_cast<void>(subset_axes(split.left));
+            static_cast<void>(subset_axes(split.right));
+        }
+        const auto& axes_cache = subset_axes_memo;
+        parallel_for(splits.size(), 64, [&](std::size_t index) {
+            auto& split = splits[index];
+            const auto& left_axes = axes_cache.at(split.left);
+            const auto& right_axes = axes_cache.at(split.right);
+            split.operation_size = allowed_operation_size(left_axes, right_axes, checker);
+        });
+        for (const auto& split : splits) {
+            if (!std::isfinite(split.operation_size)) {
+                continue;
             }
+            const auto lhs_score = solve(split.left).score;
+            const auto rhs_score = solve(split.right).score;
+            update_best_split(entry, split, lhs_score, rhs_score);
         }
         return memo.emplace(mask, std::move(entry)).first->second;
     };
@@ -634,59 +847,21 @@ std::vector<ParenthesizationCandidate> dynamic_programming_generic(
     for (std::size_t i = 0; i < count; ++i) {
         active.push_back(std::uint64_t{1} << i);
     }
-    std::function<void(std::uint64_t)> emit = [&](std::uint64_t mask) {
-        const auto found = memo.find(mask);
-        if (found == memo.end() || found->second.left == 0) {
-            return;
-        }
-        const auto left = found->second.left;
-        const auto right = found->second.right;
-        emit(left);
-        emit(right);
-        const auto left_pos = std::find(active.begin(), active.end(), left);
-        const auto right_pos = std::find(active.begin(), active.end(), right);
-        if (left_pos == active.end() || right_pos == active.end()) {
-            throw std::logic_error("invalid DP parenthesization state");
-        }
-        auto i = static_cast<std::size_t>(left_pos - active.begin());
-        auto j = static_cast<std::size_t>(right_pos - active.begin());
-        if (i > j) {
-            std::swap(i, j);
-        }
-        path.emplace_back(i, j);
-        active.erase(active.begin() + static_cast<std::ptrdiff_t>(j));
-        active.erase(active.begin() + static_cast<std::ptrdiff_t>(i));
-        active.push_back(left | right);
-    };
-    std::vector<std::uint64_t> components;
-    std::vector<std::uint64_t> unassigned;
-    for (std::size_t i = count; i > 0; --i) {
-        unassigned.push_back(std::uint64_t{1} << (i - 1));
-    }
-    while (!unassigned.empty()) {
-        auto component = unassigned.back();
-        unassigned.pop_back();
-        bool grew = true;
-        while (grew) {
-            grew = false;
-            for (auto it = unassigned.begin(); it != unassigned.end();) {
-                if (shares_axis(subset_axes(component), subset_axes(*it))) {
-                    component |= *it;
-                    it = unassigned.erase(it);
-                    grew = true;
-                } else {
-                    ++it;
-                }
-            }
-        }
-        components.push_back(component);
+    auto components = connected_components(count, [&](auto lhs, auto rhs) {
+        return shares_axis(subset_axes(lhs), subset_axes(rhs));
+    });
+    for (const auto component : components) {
+        dp_roots.insert(component);
     }
     for (const auto component : components) {
         const auto& root = solve(component);
         if (!std::isfinite(root.score)) {
             return {};
         }
-        emit(component);
+        append_dp_path(component, active, path, [&](std::uint64_t mask) {
+            const auto found = memo.find(mask);
+            return found == memo.end() ? nullptr : &found->second;
+        });
     }
     std::stable_sort(components.begin(), components.end(), [&](auto lhs, auto rhs) {
         return checker.size(subset_axes(lhs)) < checker.size(subset_axes(rhs));
@@ -811,8 +986,8 @@ std::vector<ParenthesizationCandidate> greedy_search(
     const Mul& node, const LimitsChecker& checker, const IndexSpaces& spaces,
     const SpaceSizes& sizes, const CostModel& model,
     const CostFactors& cost_factors, std::size_t restarts) {
-    std::vector<ParenthesizationCandidate> candidates;
-    for (std::size_t restart = 0; restart < restarts; ++restart) {
+    std::vector<std::vector<ParenthesizationCandidate>> restart_results(restarts);
+    parallel_for(restarts, 4, [&](std::size_t restart) {
         std::vector<Active> active;
         for (const auto& child : node.children()) {
             active.push_back({child, get_axes(child)});
@@ -826,7 +1001,8 @@ std::vector<ParenthesizationCandidate> greedy_search(
                     const auto operation = unite(active[i].axes, active[j].axes);
                     auto output = xor_axes(active[i].axes, active[j].axes);
                     if (checker.allows(operation, output)) {
-                        choices.push_back({i, j, checker.size(operation), std::move(output)});
+                        choices.push_back({i, j, checker.size(operation),
+                                           std::move(output)});
                     }
                 }
             }
@@ -837,8 +1013,8 @@ std::vector<ParenthesizationCandidate> greedy_search(
             std::stable_sort(choices.begin(), choices.end(), [](const auto& lhs, const auto& rhs) {
                 return lhs.score < rhs.score;
             });
-            const auto choice_index = std::min(restart % std::min<std::size_t>(choices.size(), 3),
-                                               choices.size() - 1);
+            const auto choice_index = std::min(
+                restart % std::min<std::size_t>(choices.size(), 3), choices.size() - 1);
             const auto choice = choices[choice_index];
             path.emplace_back(choice.i, choice.j);
             auto merged = std::make_shared<Mul>(Children{active[choice.i].node,
@@ -848,7 +1024,13 @@ std::vector<ParenthesizationCandidate> greedy_search(
             active.push_back({std::move(merged), choice.output});
         }
         if (active.size() == 1 && path.size() + 1 == node.children().size()) {
-            auto candidate = make_candidate(path, node, spaces, sizes, model, cost_factors);
+            restart_results[restart].push_back(
+                make_candidate(path, node, spaces, sizes, model, cost_factors));
+        }
+    });
+    std::vector<ParenthesizationCandidate> candidates;
+    for (std::size_t restart = 0; restart < restarts; ++restart) {
+        for (auto& candidate : restart_results[restart]) {
             if (std::none_of(candidates.begin(), candidates.end(), [&](const auto& existing) {
                     return existing.path == candidate.path;
                 })) {
@@ -856,9 +1038,7 @@ std::vector<ParenthesizationCandidate> greedy_search(
             }
         }
     }
-    std::stable_sort(candidates.begin(), candidates.end(), [](const auto& lhs, const auto& rhs) {
-        return lhs.cost.total < rhs.cost.total;
-    });
+    std::stable_sort(candidates.begin(), candidates.end(), candidate_cost_less);
     return candidates;
 }
 
@@ -933,9 +1113,7 @@ std::vector<ParenthesizationCandidate> parenthesization_candidates(
         append_unique(greedy_search(node, checker, spaces, sizes, model,
                                    cost_factors, request.greedy));
     }
-    std::stable_sort(result.begin(), result.end(), [](const auto& lhs, const auto& rhs) {
-        return lhs.cost.total < rhs.cost.total;
-    });
+    std::stable_sort(result.begin(), result.end(), candidate_cost_less);
     if (result.size() > max_candidates && max_candidates > 0) {
         result.resize(max_candidates);
     }

@@ -16,6 +16,10 @@
 #include <unordered_set>
 #include <utility>
 
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
 namespace albert {
 namespace {
 
@@ -374,9 +378,33 @@ std::vector<ScoredBiclique> select_bicliques(const std::vector<GraphRecord>& gra
                                               const CostFactors& cost_factors,
                                               const CostModel& cost_model,
                                               std::size_t maximum) {
-    std::vector<ScoredBiclique> result;
-    for (std::size_t graph_index = 0; graph_index < graphs.size(); ++graph_index) {
-        const auto& record = graphs[graph_index];
+    std::vector<std::vector<ScoredBiclique>> graph_results(graphs.size());
+#ifdef _OPENMP
+    // Keep small scoring batches to two workers. For larger graph batches,
+    // scale with the estimated pair work rather than graph count alone: a few
+    // dense graphs can cost more than many tiny ones.
+    std::size_t pair_work = 0;
+    for (const auto& record : graphs) {
+        const auto left = record.graph.left_vertices().size();
+        const auto right = record.graph.right_vertices().size();
+        const auto graph_work = right != 0 && left >
+                std::numeric_limits<std::size_t>::max() / right
+            ? std::numeric_limits<std::size_t>::max()
+            : left * right;
+        pair_work = graph_work > std::numeric_limits<std::size_t>::max() - pair_work
+            ? std::numeric_limits<std::size_t>::max()
+            : pair_work + graph_work;
+    }
+    const int scoring_threads = pair_work >= 16'384
+        ? omp_get_max_threads()
+        : std::min(2, omp_get_max_threads());
+#pragma omp parallel for schedule(dynamic) num_threads(scoring_threads) if (graphs.size() >= 4)
+#endif
+    for (std::ptrdiff_t graph_index = 0;
+         graph_index < static_cast<std::ptrdiff_t>(graphs.size()); ++graph_index) {
+        const auto index = static_cast<std::size_t>(graph_index);
+        const auto& record = graphs[index];
+        auto& scored = graph_results[index];
         for (auto cb : find_constrictable_bicliques(record.graph, record.partition)) {
             if (cb.left.vertices.empty() || cb.right.vertices.empty()) {
                 continue;
@@ -388,13 +416,13 @@ std::vector<ScoredBiclique> select_bicliques(const std::vector<GraphRecord>& gra
                 for (const auto right : cb.right.vertices) {
                     if (const auto* edge = record.graph.edge(left, right)) {
                         excess += edge->excess;
-                        ++edge_count;
-                        std::unordered_set<std::string> symbols;
-                        for (const auto& tensor : tensors_in(edge->term)) {
-                            symbols.insert(tensor->symbol());
-                        }
-                        double factor = 1.0;
                         if (cost_model.apply_cost_factors) {
+                            ++edge_count;
+                            std::unordered_set<std::string> symbols;
+                            for (const auto& tensor : tensors_in(edge->term)) {
+                                symbols.insert(tensor->symbol());
+                            }
+                            double factor = 1.0;
                             for (const auto& symbol : symbols) {
                                 const auto found = cost_factors.find(symbol);
                                 if (found == cost_factors.end()) {
@@ -407,15 +435,22 @@ std::vector<ScoredBiclique> select_bicliques(const std::vector<GraphRecord>& gra
                                     factor *= static_cast<double>(found->second);
                                 }
                             }
+                            factor_sum += factor;
                         }
-                        factor_sum += factor;
                     }
                 }
             }
-            const double average_factor = edge_count == 0 ? 1.0
+            const double average_factor = !cost_model.apply_cost_factors || edge_count == 0
+                ? 1.0
                 : factor_sum / static_cast<double>(edge_count);
             const double score = gross_saving(cb, spaces, sizes) * average_factor - excess;
-            result.push_back({graph_index, std::move(cb), score});
+            scored.push_back({index, std::move(cb), score});
+        }
+    }
+    std::vector<ScoredBiclique> result;
+    for (auto& scored : graph_results) {
+        for (auto& candidate : scored) {
+            result.push_back(std::move(candidate));
         }
     }
     std::stable_sort(result.begin(), result.end(), [](const auto& lhs, const auto& rhs) {
@@ -734,6 +769,7 @@ std::vector<Expression> common_subexpression_elimination_impl(
         }
     }
 
+    ParenthesizationCache trial_path_cache;
     for (;;) {
         std::vector<Expression> all = intermediates;
         all.insert(all.end(), expressions.begin(), expressions.end());
@@ -877,7 +913,6 @@ std::vector<Expression> common_subexpression_elimination_impl(
             deduplicate_intermediates(trial_all, trial_intermediate_symbols,
                                       canonicalization);
             trial_all = topological_sort(std::move(trial_all));
-            ParenthesizationCache trial_path_cache;
             auto cost_trial = trial_all;
             for (auto& expression : cost_trial) {
                 auto rhs = parenthesize_products(expression.rhs(), spaces, sizes,

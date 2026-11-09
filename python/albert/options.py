@@ -101,7 +101,7 @@ class PathRequests:
         return self.requests[-1]
 
     @classmethod
-    def default(cls, exhaustive_limit: int = 5, max_candidates: int = 64) -> PathRequests:
+    def default(cls, exhaustive_limit: int = 4, max_candidates: int = 19) -> PathRequests:
         """Return the default unconstrained CSE sampling policy."""
         if exhaustive_limit < 1 or max_candidates < 0:
             raise ValueError("exhaustive_limit must be positive and max_candidates nonnegative")

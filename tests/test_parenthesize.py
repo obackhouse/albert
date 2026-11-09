@@ -54,8 +54,8 @@ def test_path_requests_select_algorithms_by_operand_count(chain) -> None:
     assert requests.for_size(2) == PathRequest(greedy=2)
     assert requests.for_size(3) == PathRequest(branch=2, greedy=3)
     assert PathRequests.default() == PathRequests(
-        bounds=(5,),
-        requests=(PathRequest(exhaustive=63, dynamic=True), PathRequest(dynamic=True)),
+        bounds=(4,),
+        requests=(PathRequest(exhaustive=18, dynamic=True), PathRequest(dynamic=True)),
     )
     with pytest.raises(ValueError, match="one more item"):
         PathRequests(bounds=(2,), requests=(PathRequest(),))
@@ -95,6 +95,59 @@ def test_exhaustive_finds_the_lowest_cost_parenthesization() -> None:
     assert candidates[0].path == [(1, 2), (0, 1)]
     assert candidates[0].cost.total == min(candidate.cost.total for candidate in candidates)
     assert candidates[0].cost.total < candidates[1].cost.total
+
+
+def test_parallel_exhaustive_returns_stable_top_candidates() -> None:
+    indices = [f"i{index}" for index in range(5)]
+    factors = [Tensor(f"T{index}", ["shared", index]) for index in indices]
+    node = Mul(factors)
+    metadata = Metadata(spaces={"n": ["shared", *indices]}, sizes={"n": 2})
+
+    first = parenthesization_candidates(node, metadata, max_candidates=5, exhaustive_limit=5)
+    second = parenthesization_candidates(node, metadata, max_candidates=5, exhaustive_limit=5)
+
+    assert len(first) == 5
+    assert [(candidate.path, candidate.cost.total) for candidate in first] == [
+        (candidate.path, candidate.cost.total) for candidate in second
+    ]
+
+
+def test_parallel_bitmask_dp_returns_stable_path() -> None:
+    indices = [f"i{index}" for index in range(10)]
+    factors = [Tensor(f"T{index}", indices[index : index + 2]) for index in range(9)]
+    node = Mul(factors)
+    metadata = Metadata(spaces={"n": indices}, sizes={"n": 2})
+    requests = PathRequests(bounds=(), requests=(PathRequest(dynamic=True),))
+
+    first = parenthesization_candidates(node, metadata, path_requests=requests)
+    second = parenthesization_candidates(node, metadata, path_requests=requests)
+
+    assert len(first) == 1
+    assert len(first[0].path) == len(factors) - 1
+    assert (first[0].path, first[0].cost.total) == (second[0].path, second[0].cost.total)
+
+
+def test_parallel_generic_dp_returns_stable_path() -> None:
+    factors = []
+    for index in range(9):
+        shared = []
+        if index > 0:
+            shared.append(f"c{index - 1}")
+        if index < 8:
+            shared.append(f"c{index}")
+        unique = [f"u{index}_{axis}" for axis in range(7)]
+        factors.append(Tensor(f"T{index}", [*shared, *unique]))
+    node = Mul(factors)
+    axes = sorted({axis for factor in factors for axis in factor.indices})
+    metadata = Metadata(spaces={"n": axes}, sizes={"n": 1})
+    requests = PathRequests(bounds=(), requests=(PathRequest(dynamic=True),))
+
+    first = parenthesization_candidates(node, metadata, path_requests=requests)
+    second = parenthesization_candidates(node, metadata, path_requests=requests)
+
+    assert len(first) == 1
+    assert len(first[0].path) == len(factors) - 1
+    assert (first[0].path, first[0].cost.total) == (second[0].path, second[0].cost.total)
 
 
 def test_dp_checks_every_partition_against_exhaustive_search() -> None:

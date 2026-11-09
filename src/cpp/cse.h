@@ -14,11 +14,11 @@ namespace albert {
 
 struct CSEOptions {
     std::string intermediate_format = "__im{}__";
-    std::size_t max_path_samples = 64;
+    std::size_t max_path_samples = 19;
     std::size_t max_bicliques = 8;
-    std::size_t exhaustive_limit = 5;
+    std::size_t exhaustive_limit = 4;
     bool custom_path_requests = false;
-    PathRequests path_requests{{5}, {{63, 0, 0, true}, {0, 0, 0, true}}};
+    PathRequests path_requests{{4}, {{18, 0, 0, true}, {0, 0, 0, true}}};
     ScalingLimits scaling_limits;
     CostModel cost_model;
 };
