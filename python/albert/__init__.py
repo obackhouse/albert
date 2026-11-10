@@ -20,6 +20,7 @@ from albert._core import (
     collect,
     common_subexpression_elimination,
     estimate_cost,
+    evaluate_expression,
     expand,
     flatten,
     fold_scalars,
@@ -32,6 +33,7 @@ from albert._core import (
     topological_sort,
 )
 from albert.metadata import Metadata
+from albert.encode import Encoder, ReadableEncoder
 from albert.options import (
     CostModel,
     NodeKind,
@@ -48,6 +50,7 @@ __all__ = [
     "CostEstimate",
     "CostModel",
     "Expression",
+    "Encoder",
     "Metadata",
     "Mul",
     "Node",
@@ -57,6 +60,7 @@ __all__ = [
     "PhaseFactor",
     "Permutation",
     "ParenthesizationCandidate",
+    "ReadableEncoder",
     "Scalar",
     "SearchOrder",
     "ScalingLimits",
@@ -67,6 +71,7 @@ __all__ = [
     "collect",
     "common_subexpression_elimination",
     "estimate_cost",
+    "evaluate_expression",
     "expand",
     "flatten",
     "fold_scalars",

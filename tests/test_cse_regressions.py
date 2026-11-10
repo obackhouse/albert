@@ -4,6 +4,9 @@ import json
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+import pytest
+
 from albert import (
     Add,
     CostModel,
@@ -19,7 +22,9 @@ from albert import (
     collect,
     common_subexpression_elimination,
     estimate_cost,
+    evaluate_expression,
     expand,
+    simplify,
     substitute_expressions,
 )
 
@@ -53,6 +58,36 @@ def metadata(case: dict[str, Any]) -> Metadata:
 
 def total_cost(expressions: list[Expression], meta: Metadata) -> float:
     return sum(estimate_cost(expression.rhs, meta, COST_MODEL).total for expression in expressions)
+
+
+def evaluation_arrays(expressions: list[Expression], meta: Metadata, seed: int) -> dict:
+    index_spaces = {index: space for space, indices in meta.spaces.items() for index in indices}
+    space_sizes = {space: 2 for space in meta.spaces}
+    offsets = {}
+    offset = 0
+    for space, size in space_sizes.items():
+        offsets[space] = slice(offset, offset + size)
+        offset += size
+
+    rng = np.random.default_rng(seed)
+    full_arrays = {}
+    arrays = {}
+    for expression in expressions:
+        for tensor in expression.rhs.search(lambda node: isinstance(node, Tensor)):
+            spaces = tuple(index_spaces[index] for index in tensor.indices)
+            rank_key = (tensor.symbol, len(spaces))
+            if rank_key not in full_arrays:
+                full = rng.standard_normal((offset,) * len(spaces))
+                symmetries = meta.symmetries.get(tensor.symbol, [])
+                if symmetries:
+                    full = sum(
+                        int(symmetry.phase) * np.transpose(full, symmetry.permutation) for symmetry in symmetries
+                    ) / len(symmetries)
+                full_arrays[rank_key] = full
+            key = (tensor.symbol, spaces)
+            if key not in arrays:
+                arrays[key] = full_arrays[rank_key][tuple(offsets[space] for space in spaces)]
+    return arrays
 
 
 def test_rhf_ccsd_cse_uses_canonical_external_labels_for_shared_contractions() -> None:
@@ -91,6 +126,32 @@ def test_ccd_terms_round_trip_through_cse_and_substitution() -> None:
     assert canonical_key(canonicalize(collect(restored_rhs), meta)) == canonical_key(
         canonicalize(collect(input_expression.rhs), meta)
     )
+
+
+@pytest.mark.parametrize(
+    ("case_name", "seed"),
+    [("CCD", 17), ("RCCSD", 29)],
+    ids=["ccd", "ccsd"],
+)
+def test_ccd_and_ccsd_evaluate_equally_after_canonicalization_simplification_and_cse(case_name: str, seed: int) -> None:
+    case = load_cases("rhf_cc.json")[case_name]
+    meta = metadata(case)
+    small_meta = Metadata(
+        spaces=meta.spaces,
+        sizes={space: 2 for space in meta.spaces},
+        symmetries=meta.symmetries,
+    )
+    source = case["expressions"][0]
+    expression = Expression(decode(source["lhs"]), decode(source["rhs"]))
+    canonical = Expression(expression.lhs, canonicalize(expand(expression.rhs), small_meta))
+    simplified = Expression(canonical.lhs, simplify(canonical.rhs))
+    arrays = evaluation_arrays([expression, canonical, simplified], small_meta, seed)
+    factored = common_subexpression_elimination([simplified], meta, cost_model=COST_MODEL)
+
+    expected = evaluate_expression([expression], arrays, small_meta)
+    for stage in (canonical, simplified):
+        np.testing.assert_allclose(evaluate_expression([stage], arrays, small_meta), expected, rtol=1e-10, atol=1e-10)
+    np.testing.assert_allclose(evaluate_expression(factored, arrays, small_meta), expected, rtol=1e-10, atol=1e-10)
 
 
 def test_df_tt_cse_respects_scaling_limits_without_losing_flop_performance() -> None:

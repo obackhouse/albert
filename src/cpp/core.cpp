@@ -2,6 +2,7 @@
 #include "canonicalize.h"
 #include "cost.h"
 #include "cse.h"
+#include "evaluate.h"
 #include "substitute.h"
 #include "expression.h"
 #include "permutation.h"
@@ -102,6 +103,22 @@ std::vector<std::string> parse_space_argument(const py::object& space) {
         }
     }
     throw py::value_error("space must be a space name or nonempty tuple of names");
+}
+
+py::object resolve_encoder(py::object encoder) {
+    const auto encode_module = py::module_::import("albert.encode");
+    const auto encoder_base = encode_module.attr("Encoder");
+    if (encoder.is_none()) {
+        return encode_module.attr("ReadableEncoder")();
+    }
+    if (py::isinstance(encoder, encoder_base)) {
+        return encoder;
+    }
+    if (PyType_Check(encoder.ptr()) &&
+        py::module_::import("builtins").attr("issubclass")(encoder, encoder_base).cast<bool>()) {
+        return encoder();
+    }
+    throw py::type_error("encoder must be an Encoder instance or Encoder subclass");
 }
 
 }  // namespace
@@ -222,6 +239,18 @@ PYBIND11_MODULE(_core, module) {
                py::arg("node"), py::arg("candidate"));
 
     py::class_<albert::Node, albert::NodePtr>(module, "Node")
+        .def("__repr__", [](const albert::NodePtr& self) {
+            const auto encoder = resolve_encoder(py::none());
+            return encoder.attr("format_node")(py::cast(self)).cast<std::string>();
+        })
+        .def("format", [](const albert::NodePtr& self, py::object encoder) {
+            const auto resolved = resolve_encoder(std::move(encoder));
+            return resolved.attr("format_node")(py::cast(self)).cast<std::string>();
+        }, py::arg("encoder") = py::none())
+        .def("encode", [](const albert::NodePtr& self, py::object encoder) {
+            const auto resolved = resolve_encoder(std::move(encoder));
+            resolved.attr("encode_node")(py::cast(self));
+        }, py::arg("encoder") = py::none())
         .def_property_readonly("kind", [node_kind_enum](const albert::Node& node) -> py::object {
             switch (node.kind()) {
                 case albert::NodeKind::Scalar:
@@ -388,6 +417,18 @@ PYBIND11_MODULE(_core, module) {
     py::class_<albert::Expression>(module, "Expression")
         .def(py::init<std::shared_ptr<albert::Tensor>, albert::NodePtr>(),
              py::arg("lhs"), py::arg("rhs"))
+        .def("__repr__", [](const albert::Expression& self) {
+            const auto encoder = resolve_encoder(py::none());
+            return encoder.attr("format_expression")(py::cast(self)).cast<std::string>();
+        })
+        .def("format", [](const albert::Expression& self, py::object encoder) {
+            const auto resolved = resolve_encoder(std::move(encoder));
+            return resolved.attr("format_expression")(py::cast(self)).cast<std::string>();
+        }, py::arg("encoder") = py::none())
+        .def("encode", [](const albert::Expression& self, py::object encoder) {
+            const auto resolved = resolve_encoder(std::move(encoder));
+            resolved.attr("encode_expression")(py::cast(self));
+        }, py::arg("encoder") = py::none())
         .def_property_readonly("lhs", &albert::Expression::lhs)
         .def_property_readonly("rhs", &albert::Expression::rhs);
 
@@ -479,5 +520,7 @@ PYBIND11_MODULE(_core, module) {
         py::arg("exhaustive_limit") = 4,
         py::arg("path_requests") = py::none(),
         "Factor profitable common subexpressions across one or more expressions.");
+
+    albert::bind_evaluate_expression(module);
 
 }
