@@ -1,5 +1,8 @@
 #include "expression.h"
 
+#include "algebra.h"
+
+#include <algorithm>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -15,6 +18,14 @@ Expression::Expression(std::shared_ptr<Tensor> lhs, NodePtr rhs)
     }
     if (!rhs_) {
         throw std::invalid_argument("Expression rhs cannot be null");
+    }
+    auto lhs_indices = external_indices(*lhs_);
+    auto rhs_indices = external_indices(*rhs_);
+    std::sort(lhs_indices.begin(), lhs_indices.end());
+    std::sort(rhs_indices.begin(), rhs_indices.end());
+    if (lhs_indices != rhs_indices) {
+        throw std::invalid_argument(
+            "Expression lhs and rhs must have the same external indices");
     }
 }
 

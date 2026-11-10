@@ -15,6 +15,7 @@
 #include <pybind11/stl.h>
 
 #include <algorithm>
+#include <memory>
 #include <utility>
 
 namespace py = pybind11;
@@ -82,6 +83,20 @@ albert::PathRequests parse_path_requests(const py::object& value) {
     return result;
 }
 
+albert::CanonicalizationMetadata parse_canonicalization_metadata(
+    const py::object& metadata) {
+    albert::CanonicalizationMetadata result;
+    if (!metadata.is_none()) {
+        result.spaces = metadata.attr("spaces")
+                            .cast<std::unordered_map<std::string,
+                                                     std::vector<std::string>>>();
+        result.symmetries = metadata.attr("symmetries")
+                                .cast<std::unordered_map<std::string,
+                                                         std::vector<albert::Permutation>>>();
+    }
+    return result;
+}
+
 albert::CostFactorAggregation parse_cost_factor_aggregation(const std::string& value) {
     if (value == "product") {
         return albert::CostFactorAggregation::Product;
@@ -119,6 +134,11 @@ py::object resolve_encoder(py::object encoder) {
         return encoder();
     }
     throw py::type_error("encoder must be an Encoder instance or Encoder subclass");
+}
+
+py::object readable_repr_encoder() {
+    return py::module_::import("albert.encode")
+        .attr("ReadableEncoder")(py::none(), py::make_tuple("(", ")"), ",");
 }
 
 }  // namespace
@@ -180,18 +200,25 @@ PYBIND11_MODULE(_core, module) {
     module.def(
         "canonicalize",
         [](const albert::NodePtr& node, const py::object& metadata) {
-            albert::CanonicalizationMetadata canonical_metadata;
-            if (!metadata.is_none()) {
-                canonical_metadata.spaces = metadata.attr("spaces")
-                                                .cast<std::unordered_map<
-                                                    std::string,
-                                                    std::vector<std::string>>>();
-                canonical_metadata.symmetries = metadata.attr("symmetries")
-                                                    .cast<std::unordered_map<
-                                                        std::string,
-                                                        std::vector<albert::Permutation>>>();
+            return albert::canonicalize(
+                node, parse_canonicalization_metadata(metadata));
+        },
+        py::arg("node"), py::arg("metadata") = py::none());
+    module.def(
+        "canonicalize",
+        [](const albert::Expression& expression, const py::object& metadata) {
+            auto canonicalized = albert::canonicalize_with_mapping(
+                expression.rhs(), parse_canonicalization_metadata(metadata));
+            auto lhs_indices = expression.lhs()->indices();
+            for (auto& index : lhs_indices) {
+                if (const auto found = canonicalized.external_index_mapping.find(index);
+                    found != canonicalized.external_index_mapping.end()) {
+                    index = found->second;
+                }
             }
-            return albert::canonicalize(node, canonical_metadata);
+            auto lhs = std::make_shared<albert::Tensor>(
+                expression.lhs()->symbol(), std::move(lhs_indices));
+            return albert::Expression(std::move(lhs), std::move(canonicalized.node));
         },
         py::arg("node"), py::arg("metadata") = py::none());
     module.def("expand", &albert::expand, py::arg("node"));
@@ -240,7 +267,7 @@ PYBIND11_MODULE(_core, module) {
 
     py::class_<albert::Node, albert::NodePtr>(module, "Node")
         .def("__repr__", [](const albert::NodePtr& self) {
-            const auto encoder = resolve_encoder(py::none());
+            const auto encoder = readable_repr_encoder();
             return encoder.attr("format_node")(py::cast(self)).cast<std::string>();
         })
         .def("format", [](const albert::NodePtr& self, py::object encoder) {
@@ -418,7 +445,7 @@ PYBIND11_MODULE(_core, module) {
         .def(py::init<std::shared_ptr<albert::Tensor>, albert::NodePtr>(),
              py::arg("lhs"), py::arg("rhs"))
         .def("__repr__", [](const albert::Expression& self) {
-            const auto encoder = resolve_encoder(py::none());
+            const auto encoder = readable_repr_encoder();
             return encoder.attr("format_expression")(py::cast(self)).cast<std::string>();
         })
         .def("format", [](const albert::Expression& self, py::object encoder) {

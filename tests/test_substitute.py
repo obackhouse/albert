@@ -12,7 +12,7 @@ def metadata() -> Metadata:
 def test_substitutes_dependencies_recursively_and_removes_definitions() -> None:
     first = Expression(Tensor("T", ["i"]), Mul([Tensor("A", ["i", "k"]), Tensor("B", ["k"])]))
     second = Expression(Tensor("U", ["j"]), Add([Tensor("T", ["j"]), Tensor("D", ["j"])]))
-    output = Expression(Tensor("Y", ["l"]), Mul([Tensor("U", ["l"]), Tensor("C", ["l"])]))
+    output = Expression(Tensor("Y", ["l", "q"]), Mul([Tensor("U", ["l"]), Tensor("C", ["q"])]))
 
     result = substitute_expressions([first, second, output], metadata())
 
@@ -30,8 +30,8 @@ def test_maps_each_reference_to_its_own_indices_and_avoids_capture() -> None:
         Tensor("T", ["i"]),
         Mul([Tensor("A", ["i", "k"]), Tensor("B", ["k"])]),
     )
-    first = Expression(Tensor("X", ["j", "k"]), Mul([Tensor("T", ["j"]), Tensor("C", ["j", "k"])]))
-    second = Expression(Tensor("Y", ["l"]), Mul([Tensor("T", ["l"]), Tensor("D", ["l"])]))
+    first = Expression(Tensor("X", ["k"]), Mul([Tensor("T", ["j"]), Tensor("C", ["j", "k"])]))
+    second = Expression(Tensor("Y", []), Mul([Tensor("T", ["l"]), Tensor("D", ["l"])]))
 
     meta = Metadata(spaces={"I": ["i", "j", "l"], "K": ["k", "q", "r"]})
     result = substitute_expressions([definition, first, second], meta)

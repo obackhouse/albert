@@ -16,7 +16,7 @@ class RecordingEncoder(Encoder):
 def test_encoder_dispatches_nodes_and_expressions_to_the_buffer() -> None:
     buffer = StringIO()
     encoder = RecordingEncoder(buffer)
-    expression = Expression(Tensor("Y", ["i"]), Scalar(2))
+    expression = Expression(Tensor("Y", []), Scalar(2))
 
     encoder(Scalar(2))
     encoder(expression)
@@ -28,9 +28,20 @@ def test_node_and_expression_repr_use_readable_format_without_writing(capsys) ->
     node = Add([Tensor("A", ["i"]), Mul([Scalar(-2), Tensor("B", ["i"])])])
     expression = Expression(Tensor("Y", ["i"]), node)
 
-    assert repr(node) == "A[i] - 2.0 B[i]"
-    assert repr(expression) == "Y[i] = A[i] - 2.0 B[i]"
+    assert repr(node) == "A(i) - 2 B(i)"
+    assert repr(expression) == "Y(i) = A(i) - 2 B(i)"
     assert capsys.readouterr().out == ""
+
+
+def test_repr_uses_compact_index_separators_and_parenthesizes_sums() -> None:
+    a = Tensor("A", ["i", "k"])
+    b = Tensor("B", ["i", "k"])
+    c = Tensor("C", ["k", "j"])
+    node = Mul([Add([a, b]), c])
+    expression = Expression(Tensor("Y", ["i", "j"]), node)
+
+    assert repr(node) == "(A(i,k) + B(i,k)) C(k,j)"
+    assert repr(expression) == "Y(i,j) = (A(i,k) + B(i,k)) C(k,j)"
 
 
 def test_format_returns_strings_with_default_class_or_encoder_instance() -> None:
@@ -96,14 +107,14 @@ def test_encodes_scalar_products_and_zero_rank_tensors() -> None:
     encoder(scalar_expression)
     encoder(tensor_expression)
 
-    assert buffer.getvalue() == "out = 2.0 * 3.0\nout = unit\n"
+    assert buffer.getvalue() == "out = 2 * 3\nout = unit\n"
 
 
 @pytest.mark.parametrize(
     ("node", "expected"),
     [
-        (Scalar(0.0), "0.0"),
-        (Scalar(-0.0), "-0.0"),
+        (Scalar(0.0), "0"),
+        (Scalar(-0.0), "-0"),
         (Scalar(3.125), "3.125"),
         (Tensor("unit", []), "unit"),
     ],
@@ -116,17 +127,18 @@ def test_encodes_scalar_and_zero_rank_tensor_leaves(node, expected: str) -> None
     assert buffer.getvalue() == f"{expected}\n"
 
 
-def test_parenthesizes_additions_and_supports_custom_delimiters() -> None:
-    x, y, z, w = (Tensor(symbol, ["i", "j"]) for symbol in ("x", "y", "z", "w"))
+def test_parenthesizes_additions_and_uses_custom_tensor_index_delimiters() -> None:
+    x, y = (Tensor(symbol, ["i", "j"]) for symbol in ("x", "y"))
+    z, w = (Tensor(symbol, ["k", "l"]) for symbol in ("z", "w"))
     expression = Expression(
-        Tensor("out", ["i", "j"]),
+        Tensor("out", ["i", "j", "k", "l"]),
         Mul([Add([x, y]), Add([z, w])]),
     )
     buffer = StringIO()
 
     ReadableEncoder(buffer, bracket_style=("{", "}"), index_separator=" | ")(expression)
 
-    assert buffer.getvalue() == "out[i | j] = {x[i | j] + y[i | j]} {z[i | j] + w[i | j]}\n"
+    assert buffer.getvalue() == "out{i | j | k | l} = (x{i | j} + y{i | j}) (z{k | l} + w{k | l})\n"
 
 
 @pytest.mark.parametrize(
@@ -135,18 +147,20 @@ def test_parenthesizes_additions_and_supports_custom_delimiters() -> None:
         (lambda x, y: Mul([Scalar(-1), x]), "-x[i]"),
         (lambda x, y: Add([x, Mul([Scalar(-1), y])]), "x[i] - y[i]"),
         (lambda x, y: Add([Mul([Scalar(-1), x]), Mul([Scalar(-1), y])]), "-x[i] - y[i]"),
-        (lambda x, y: Mul([Scalar(-2), x]), "-2.0 x[i]"),
+        (lambda x, y: Mul([Scalar(-2), x]), "-2 x[i]"),
         (lambda x, y: Mul([Mul([Scalar(-1), x]), Mul([Scalar(-1), y])]), "x[i] y[i]"),
     ],
 )
 def test_formats_signs(rhs, expected: str) -> None:
     x, y = Tensor("x", ["i"]), Tensor("y", ["i"])
-    expression = Expression(Tensor("out", ["i"]), rhs(x, y))
+    rhs_node = rhs(x, y)
+    expression = Expression(Tensor("out", rhs_node.external_indices), rhs_node)
     buffer = StringIO()
+    encoder = ReadableEncoder(buffer)
 
-    ReadableEncoder(buffer)(expression)
+    encoder(expression)
 
-    assert buffer.getvalue() == f"out[i] = {expected}\n"
+    assert buffer.getvalue() == f"{encoder.format_node(expression.lhs)} = {expected}\n"
 
 
 def test_flattens_nested_additions_without_deduplicating_terms() -> None:

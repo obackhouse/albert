@@ -86,23 +86,30 @@ class _RenderedNode:
 class ReadableEncoder(Encoder):
     """Encode AST nodes and expressions with readable mathematical notation."""
 
-    bracket_style: tuple[str, str] = ("(", ")")
-    """Opening and closing brackets around additive factors."""
+    bracket_style: tuple[str, str] = ("[", "]")
+    """Opening and closing delimiters around tensor indices."""
 
     index_separator: str = ", "
     """Separator between tensor indices."""
+
+    @staticmethod
+    def _format_float(value: float) -> str:
+        """Format whole-valued floats without a trailing decimal point."""
+        text = repr(value)
+        return text[:-2] if text.endswith(".0") else text
 
     def render_scalar(self, scalar: Scalar) -> _RenderedNode:
         """Render a scalar while retaining its sign for sums and products."""
         value = scalar.value
         negative = value < 0 or math.copysign(1.0, value) < 0
-        return _RenderedNode(repr(abs(value) if negative else value), 3, negative)
+        magnitude = abs(value) if negative else value
+        return _RenderedNode(self._format_float(magnitude), 3, negative)
 
     def render_tensor(self, tensor: Tensor) -> _RenderedNode:
         """Render a tensor symbol and its indices."""
         text = tensor.symbol
         if tensor.indices:
-            text += f"[{self.index_separator.join(tensor.indices)}]"
+            text += f"{self.bracket_style[0]}{self.index_separator.join(tensor.indices)}{self.bracket_style[1]}"
         return _RenderedNode(text, 3)
 
     @staticmethod
@@ -119,7 +126,7 @@ class ReadableEncoder(Encoder):
         """Render an addition."""
         terms = self._flatten(add, Add)
         if not terms:
-            return _RenderedNode("0.0", 3)
+            return _RenderedNode("0", 3)
 
         rendered = [self._render_node(term) for term in terms]
         text = rendered[0].signed_text
@@ -134,7 +141,7 @@ class ReadableEncoder(Encoder):
         """Render a product."""
         factors = self._flatten(mul, Mul)
         if not factors:
-            return _RenderedNode("1.0", 3)
+            return _RenderedNode("1", 3)
 
         coefficient = 1.0
         scalar_factors: list[_RenderedNode] = []
@@ -151,17 +158,17 @@ class ReadableEncoder(Encoder):
 
         if not other_factors:
             if not scalar_factors:
-                return _RenderedNode("1.0", 3, negative)
+                return _RenderedNode("1", 3, negative)
             magnitude = " * ".join(factor.magnitude for factor in scalar_factors)
             return _RenderedNode(magnitude, 2, negative)
 
         rendered_factors: list[str] = []
         if scalar_factors and abs(coefficient) != 1:
-            rendered_factors.append(repr(abs(coefficient)))
+            rendered_factors.append(self._format_float(abs(coefficient)))
         for rendered_factor in other_factors:
             text = rendered_factor.magnitude
             if rendered_factor.precedence < 2:
-                text = f"{self.bracket_style[0]}{text}{self.bracket_style[1]}"
+                text = f"({text})"
             rendered_factors.append(text)
         return _RenderedNode(" ".join(rendered_factors), 2, negative)
 

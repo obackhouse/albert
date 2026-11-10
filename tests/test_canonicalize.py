@@ -1,6 +1,6 @@
 import pytest
 
-from albert import Add, Metadata, Mul, Permutation, PhaseFactor, Scalar, Tensor, canonical_key, canonicalize
+from albert import Add, Expression, Metadata, Mul, Permutation, PhaseFactor, Scalar, Tensor, canonical_key, canonicalize
 
 
 def test_canonicalize_sorts_and_flattens_additions_and_products() -> None:
@@ -19,6 +19,29 @@ def test_canonicalize_relabels_external_indices_within_a_space() -> None:
     left = Mul([Tensor("A", ["i", "j"]), Tensor("B", ["j", "k"])])
     renamed = Mul([Tensor("A", ["x", "z"]), Tensor("B", ["z", "y"])])
     assert canonicalize(left, metadata) == canonicalize(renamed, metadata)
+
+
+def test_canonicalize_expression_remaps_lhs_external_indices() -> None:
+    metadata = Metadata(spaces={"occupied": ["i", "j", "k"]})
+    expression = Expression(Tensor("Y", ["k"]), Tensor("A", ["k"]))
+
+    canonical = canonicalize(expression, metadata)
+
+    assert isinstance(canonical, Expression)
+    assert canonical.lhs.symbol == "Y"
+    assert canonical.lhs.indices == ["i"]
+    assert canonical.rhs.external_indices == canonical.lhs.external_indices
+
+
+def test_canonicalize_expression_preserves_lhs_axis_order_while_remapping() -> None:
+    metadata = Metadata(spaces={"occupied": ["i", "j", "k", "l"]})
+    expression = Expression(Tensor("Y", ["l", "k"]), Tensor("A", ["l", "k"]))
+
+    canonical = canonicalize(expression, metadata)
+
+    assert isinstance(canonical, Expression)
+    assert canonical.lhs.indices == canonical.rhs.indices
+    assert canonical.lhs.indices == ["i", "j"]
 
 
 def test_canonicalize_reserves_canonical_external_labels_before_dummy_labels() -> None:
