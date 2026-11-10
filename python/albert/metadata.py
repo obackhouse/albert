@@ -6,10 +6,12 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from albert._core import Permutation
 
 
-@dataclass(frozen=True)
+@dataclass
 class Metadata:
     """Tensor metadata."""
 
@@ -22,3 +24,26 @@ class Metadata:
         for symbol, factor in self.cost_factor.items():
             if not symbol or isinstance(factor, bool) or not isinstance(factor, int) or factor < 1:
                 raise ValueError("cost_factor values must be positive integers keyed by tensor symbol")
+
+    def add_space(
+        self,
+        space: str,
+        indices: Sequence[str],
+        *,
+        size: int = 8,
+    ) -> None:
+        """Add a space to the metadata."""
+        self.spaces[space] = list(indices)
+        self.sizes[space] = size
+
+    def add_tensor(
+        self,
+        symbol: str,
+        *,
+        symmetry: Sequence[Permutation] | None = None,
+        cost_factor: int = 1,
+    ) -> None:
+        """Add a tensor to the metadata."""
+        self.cost_factor[symbol] = cost_factor
+        if symmetry is not None:
+            self.symmetries[symbol] = list(symmetry)

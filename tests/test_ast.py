@@ -1,17 +1,18 @@
-from dataclasses import FrozenInstanceError
-
 import pytest
 
 from albert import Add, Metadata, Mul, NodeKind, Scalar, Tensor
 
 
-def test_metadata_stores_space_to_index_names() -> None:
+def test_metadata_stores_and_updates_spaces() -> None:
     metadata = Metadata(spaces={"occupied": ["i", "j"], "virtual": ["a", "b"]})
 
     assert metadata.spaces["occupied"] == ["i", "j"]
     assert metadata.spaces["virtual"] == ["a", "b"]
-    with pytest.raises(FrozenInstanceError):
-        metadata.spaces = {}  # type: ignore[misc]
+
+    metadata.add_space("auxiliary", ["x"])
+
+    assert metadata.spaces["auxiliary"] == ["x"]
+    assert metadata.sizes["auxiliary"] == 8
 
 
 def test_tensor_keeps_order_and_duplicate_indices() -> None:
