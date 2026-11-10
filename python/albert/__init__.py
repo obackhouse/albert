@@ -33,7 +33,8 @@ from albert._core import (
     topological_sort,
 )
 from albert.metadata import Metadata
-from albert.encode import Encoder, ReadableEncoder
+from albert.encode import Encoder, JsonEncoder, ReadableEncoder
+from albert.decode import Decoder, JsonDecoder
 from albert.options import (
     CostModel,
     NodeKind,
@@ -49,8 +50,11 @@ __all__ = [
     "CanonicalKey",
     "CostEstimate",
     "CostModel",
+    "Decoder",
     "Expression",
     "Encoder",
+    "JsonDecoder",
+    "JsonEncoder",
     "Metadata",
     "Mul",
     "Node",

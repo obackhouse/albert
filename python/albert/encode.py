@@ -2,20 +2,26 @@
 
 from __future__ import annotations
 
+import json
 import math
 import sys
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import TextIO
+from typing import TYPE_CHECKING
 
-from albert._core import Add, Expression, Mul, Node, Scalar, Tensor
+from albert._core import Add, Expression, Mul, Scalar, Tensor
+
+if TYPE_CHECKING:
+    from typing import Any, TextIO
+
+    from albert._core import Node
 
 
 @dataclass(frozen=True)
 class Encoder(ABC):
     """Base class for encoders that write to a text buffer."""
 
-    buffer: TextIO = field(default=sys.stdout)
+    buffer: TextIO = field(default_factory=lambda: sys.stdout)
     """The buffer to write to."""
 
     @abstractmethod
@@ -84,7 +90,7 @@ class _RenderedNode:
 
 @dataclass(frozen=True)
 class ReadableEncoder(Encoder):
-    """Encode AST nodes and expressions with readable mathematical notation."""
+    """Encode readable representations."""
 
     bracket_style: tuple[str, str] = ("[", "]")
     """Opening and closing delimiters around tensor indices."""
@@ -205,3 +211,66 @@ class ReadableEncoder(Encoder):
             The readable representation of the expression.
         """
         return f"{self.format_node(expression.lhs)} = {self.format_node(expression.rhs)}"
+
+
+@dataclass(frozen=True)
+class JsonEncoder(Encoder):
+    """Encode JSON representations."""
+
+    indent: int | None = 2
+    """Indentation level."""
+
+    sort_keys: bool = True
+    """Sort keys in the output JSON."""
+
+    ensure_ascii: bool = False
+    """Ensure that the output JSON is ASCII-only."""
+
+    @staticmethod
+    def _encode_node(node: Node) -> dict[str, Any]:
+        if isinstance(node, Scalar):
+            return {"type": "scalar", "value": node.value}
+        if isinstance(node, Tensor):
+            return {"type": "tensor", "symbol": node.symbol, "indices": list(node.indices)}
+        if isinstance(node, Add):
+            return {"type": "add", "children": [JsonEncoder._encode_node(child) for child in node.children]}
+        if isinstance(node, Mul):
+            return {"type": "mul", "children": [JsonEncoder._encode_node(child) for child in node.children]}
+        raise TypeError(f"unsupported node type: {type(node).__name__}")
+
+    def _dumps(self, payload: dict[str, Any]) -> str:
+        return json.dumps(
+            payload,
+            indent=self.indent,
+            sort_keys=self.sort_keys,
+            ensure_ascii=self.ensure_ascii,
+            allow_nan=False,
+        )
+
+    def format_node(self, node: Node) -> str:
+        """Return the string representation of a node.
+
+        Args:
+            node: The node to format.
+
+        Returns:
+            The string representation of the node.
+        """
+        return self._dumps(self._encode_node(node))
+
+    def format_expression(self, expression: Expression) -> str:
+        """Return the string representation of an expression.
+
+        Args:
+            expression: The expression to format.
+
+        Returns:
+            The string representation of the expression.
+        """
+        return self._dumps(
+            {
+                "type": "expression",
+                "lhs": self._encode_node(expression.lhs),
+                "rhs": self._encode_node(expression.rhs),
+            }
+        )

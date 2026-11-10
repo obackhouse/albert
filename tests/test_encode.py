@@ -1,3 +1,4 @@
+import json
 from io import StringIO
 
 import pytest
@@ -66,6 +67,17 @@ def test_encode_writes_through_the_supplied_encoder_instance() -> None:
 
     assert node_buffer.getvalue() == "A[i]\n"
     assert expression_buffer.getvalue() == "Y[i] = A[i]\n"
+
+
+def test_node_encode_defaults_to_json_while_format_defaults_to_readable(capsys) -> None:
+    node = Tensor("A", ["i"])
+
+    assert node.format() == "A[i]"
+    node.encode()
+
+    encoded = capsys.readouterr().out
+    assert encoded.endswith("\n")
+    assert json.loads(encoded) == {"type": "tensor", "symbol": "A", "indices": ["i"]}
 
 
 def test_format_and_encode_reject_non_encoder_arguments() -> None:

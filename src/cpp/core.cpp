@@ -120,11 +120,12 @@ std::vector<std::string> parse_space_argument(const py::object& space) {
     throw py::value_error("space must be a space name or nonempty tuple of names");
 }
 
-py::object resolve_encoder(py::object encoder) {
+py::object resolve_encoder(py::object encoder,
+                           const std::string& default_encoder = "ReadableEncoder") {
     const auto encode_module = py::module_::import("albert.encode");
     const auto encoder_base = encode_module.attr("Encoder");
     if (encoder.is_none()) {
-        return encode_module.attr("ReadableEncoder")();
+        return encode_module.attr(default_encoder.c_str())();
     }
     if (py::isinstance(encoder, encoder_base)) {
         return encoder;
@@ -134,6 +135,22 @@ py::object resolve_encoder(py::object encoder) {
         return encoder();
     }
     throw py::type_error("encoder must be an Encoder instance or Encoder subclass");
+}
+
+py::object resolve_decoder(py::object decoder) {
+    const auto decode_module = py::module_::import("albert.decode");
+    const auto decoder_base = decode_module.attr("Decoder");
+    if (decoder.is_none()) {
+        return decode_module.attr("JsonDecoder")();
+    }
+    if (py::isinstance(decoder, decoder_base)) {
+        return decoder;
+    }
+    if (PyType_Check(decoder.ptr()) &&
+        py::module_::import("builtins").attr("issubclass")(decoder, decoder_base).cast<bool>()) {
+        return decoder();
+    }
+    throw py::type_error("decoder must be a Decoder instance or Decoder subclass");
 }
 
 py::object readable_repr_encoder() {
@@ -275,7 +292,7 @@ PYBIND11_MODULE(_core, module) {
             return resolved.attr("format_node")(py::cast(self)).cast<std::string>();
         }, py::arg("encoder") = py::none())
         .def("encode", [](const albert::NodePtr& self, py::object encoder) {
-            const auto resolved = resolve_encoder(std::move(encoder));
+            const auto resolved = resolve_encoder(std::move(encoder), "JsonEncoder");
             resolved.attr("encode_node")(py::cast(self));
         }, py::arg("encoder") = py::none())
         .def("__iter__", [](const albert::NodePtr& self) {
@@ -442,6 +459,19 @@ PYBIND11_MODULE(_core, module) {
              [](albert::NodePtr value) { return -std::move(value); },
              py::is_operator());
 
+    const auto decode_method = py::cpp_function(
+        [](const py::object& cls, const std::string& value, py::object decoder) {
+            const auto resolved = resolve_decoder(std::move(decoder));
+            const auto result = resolved.attr("decode_node")(value);
+            if (!py::isinstance(result, cls)) {
+                throw py::type_error("decoder returned a node incompatible with the requested class");
+            }
+            return result;
+        },
+        py::arg("cls"), py::arg("value"), py::arg("decoder") = py::none());
+    module.attr("Node").attr("decode") =
+        py::module_::import("builtins").attr("classmethod")(decode_method);
+
     py::class_<albert::Scalar, albert::Node, std::shared_ptr<albert::Scalar>>(
         module, "Scalar")
         .def(py::init<double>())
@@ -471,6 +501,20 @@ PYBIND11_MODULE(_core, module) {
         }, py::arg("encoder") = py::none())
         .def_property_readonly("lhs", &albert::Expression::lhs)
         .def_property_readonly("rhs", &albert::Expression::rhs);
+
+    const auto expression_decode_method = py::cpp_function(
+        [](const py::object& cls, const std::string& value, py::object decoder) {
+            const auto resolved = resolve_decoder(std::move(decoder));
+            const auto result = resolved.attr("decode_expression")(value);
+            if (!py::isinstance(result, cls)) {
+                throw py::type_error(
+                    "decoder returned an expression incompatible with the requested class");
+            }
+            return result;
+        },
+        py::arg("cls"), py::arg("value"), py::arg("decoder") = py::none());
+    module.attr("Expression").attr("decode") =
+        py::module_::import("builtins").attr("classmethod")(expression_decode_method);
 
     py::class_<albert::Permutation>(module, "Permutation")
         .def(py::init([](std::vector<int> permutation, int phase) {
