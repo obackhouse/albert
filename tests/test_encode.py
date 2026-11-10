@@ -3,7 +3,7 @@ from io import StringIO
 
 import pytest
 
-from albert import Add, Encoder, Expression, Mul, Node, ReadableEncoder, Scalar, Tensor
+from albert import Add, Encoder, Expression, LatexEncoder, Mul, Node, ReadableEncoder, Scalar, Tensor, TreeEncoder
 
 
 class RecordingEncoder(Encoder):
@@ -184,3 +184,118 @@ def test_flattens_nested_additions_without_deduplicating_terms() -> None:
     ReadableEncoder(buffer)(expression)
 
     assert buffer.getvalue() == "out[i] = x[i] + y[i] + x[i] + y[i] + z[i]\n"
+
+
+@pytest.mark.parametrize(
+    ("rhs", "lhs", "expected"),
+    [
+        (
+            Mul([Tensor("y", ["i", "j", "k"]), Tensor("z", ["j", "k", "l"])]),
+            Tensor("x", ["i", "l"]),
+            r"x_{il} = \sum_{jk} y_{ijk} z_{jkl}",
+        ),
+        (
+            Tensor("a", ["i", "i"]),
+            Tensor("out", []),
+            r"out = \sum_{i} a_{ii}",
+        ),
+        (
+            Mul([Add([Tensor("x", ["i"]), Tensor("y", ["i"])]), Tensor("z", ["i"])]),
+            Tensor("out", []),
+            r"out = \sum_{i} \left(x_{i} + y_{i}\right) z_{i}",
+        ),
+        (
+            Mul(
+                [
+                    Mul([Tensor("a", ["i", "j"]), Tensor("b", ["j", "k"])]),
+                    Tensor("d", ["k"]),
+                ]
+            ),
+            Tensor("out", ["i"]),
+            r"out_{i} = \sum_{k} \left(\sum_{j} a_{ij} b_{jk}\right) d_{k}",
+        ),
+        (
+            Add([Tensor("x", ["i"]), Mul([Scalar(-1), Tensor("y", ["i"])])]),
+            Tensor("out", ["i"]),
+            r"out_{i} = x_{i} - y_{i}",
+        ),
+    ],
+)
+def test_latex_encoder_formats_nodes_and_expressions(rhs, lhs, expected: str) -> None:
+    expression = Expression(lhs, rhs)
+    buffer = StringIO()
+
+    LatexEncoder(buffer)(expression)
+
+    assert buffer.getvalue() == expected + "\n"
+    assert expression.format(LatexEncoder) == expected
+
+
+def test_latex_encoder_supports_custom_formatting_options() -> None:
+    expression = Expression(
+        Tensor("x", ["i", "l"]),
+        Mul([Tensor("y", ["i", "j", "k"]), Tensor("z", ["j", "k", "l"])]),
+    )
+
+    assert (
+        expression.format(
+            LatexEncoder(
+                index_separator=", ",
+                multiplication_sign=r"\cdot",
+                tensor_style=r"\mathbf{{{}}}",
+            )
+        )
+        == r"\mathbf{x}_{i, l} = \sum_{j, k} \mathbf{y}_{i, j, k} \cdot \mathbf{z}_{j, k, l}"
+    )
+
+
+def test_latex_encoder_formats_scalar_products_and_standalone_nodes() -> None:
+    product = Mul([Scalar(2), Scalar(3)])
+    negative_tensor = Mul([Scalar(-1), Tensor("x", ["i"])])
+
+    assert product.format(LatexEncoder) == "2 3"
+    assert negative_tensor.format(LatexEncoder) == r"-x_{i}"
+
+
+@pytest.mark.parametrize(
+    ("rhs", "expected"),
+    [
+        (Mul([Scalar(2), Tensor("x", ["i"])]), r"out_{i} = 2 x_{i}"),
+        (Mul([Tensor("x", ["i"]), Scalar(2)]), r"out_{i} = 2 x_{i}"),
+        (Mul([Scalar(-2), Tensor("x", ["i"])]), r"out_{i} = -2 x_{i}"),
+        (Mul([Scalar(2.5), Tensor("x", ["i"])]), r"out_{i} = 2.5 x_{i}"),
+        (
+            Add([Tensor("x", ["i"]), Mul([Scalar(-2), Tensor("y", ["i"])])]),
+            r"out_{i} = x_{i} - 2 y_{i}",
+        ),
+    ],
+)
+def test_latex_encoder_formats_scalar_coefficients_before_tensor_factors(rhs, expected: str) -> None:
+    expression = Expression(Tensor("out", ["i"]), rhs)
+
+    assert expression.format(LatexEncoder) == expected
+
+
+def test_tree_encoder_formats_an_expression_as_a_connector_tree() -> None:
+    expression = Expression(Tensor("out", []), Mul([Tensor("x", ["i"]), Tensor("y", ["i"])]))
+
+    assert expression.format(TreeEncoder) == "Expression\n├── out\n└── Mul\n    ├── x[i]\n    └── y[i]"
+
+
+def test_tree_encoder_formats_internal_nodes_and_scalar_leaves() -> None:
+    x = Tensor("x", ["i"])
+    expression = Expression(Tensor("out", ["i"]), Add([Mul([Scalar(2), x]), x]))
+
+    assert expression.format(TreeEncoder) == (
+        "Expression\n├── out[i]\n└── Add\n    ├── Mul\n    │   ├── 2.0\n    │   └── x[i]\n    └── x[i]"
+    )
+
+
+def test_tree_encoder_supports_custom_connectors_and_minimum_indent() -> None:
+    expression = Expression(
+        Tensor("out", []),
+        Add([Tensor("x", []), Tensor("y", [])]),
+    )
+    encoder = TreeEncoder(connectors=("-", "|", "+", "\\"), indent=1)
+
+    assert expression.format(encoder) == "Expression\n+ out\n\\ Add\n  + x\n  \\ y"
