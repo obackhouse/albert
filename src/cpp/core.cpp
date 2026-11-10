@@ -87,12 +87,36 @@ albert::CanonicalizationMetadata parse_canonicalization_metadata(
     const py::object& metadata) {
     albert::CanonicalizationMetadata result;
     if (!metadata.is_none()) {
-        result.spaces = metadata.attr("spaces")
+        result.spaces = metadata.attr("indices")
                             .cast<std::unordered_map<std::string,
                                                      std::vector<std::string>>>();
-        result.symmetries = metadata.attr("symmetries")
-                                .cast<std::unordered_map<std::string,
-                                                         std::vector<albert::Permutation>>>();
+        const auto symmetries = metadata.attr("symmetries").cast<py::dict>();
+        for (const auto& item : symmetries) {
+            const auto key = py::cast<py::tuple>(item.first);
+            if (key.size() != 2) {
+                throw py::value_error("tensor metadata keys must be (tensor, spaces) pairs");
+            }
+            albert::TensorKey tensor_key;
+            tensor_key.symbol = py::cast<std::string>(key[0]);
+            tensor_key.spaces = py::cast<std::vector<std::string>>(key[1]);
+            result.symmetries.emplace(
+                std::move(tensor_key), py::cast<std::vector<albert::Permutation>>(item.second));
+        }
+    }
+    return result;
+}
+
+albert::CostFactors parse_cost_factors(const py::object& object) {
+    albert::CostFactors result;
+    for (const auto& item : object.cast<py::dict>()) {
+        const auto key = py::cast<py::tuple>(item.first);
+        if (key.size() != 2) {
+            throw py::value_error("tensor metadata keys must be (tensor, spaces) pairs");
+        }
+        albert::TensorKey tensor_key;
+        tensor_key.symbol = py::cast<std::string>(key[0]);
+        tensor_key.spaces = py::cast<std::vector<std::string>>(key[1]);
+        result.emplace(std::move(tensor_key), py::cast<std::uint64_t>(item.second));
     }
     return result;
 }
@@ -204,7 +228,7 @@ PYBIND11_MODULE(_core, module) {
         "estimate_cost",
         [](const albert::NodePtr& node, const py::object& metadata,
            const py::object& cost_model) {
-            const auto spaces = metadata.attr("spaces")
+            const auto spaces = metadata.attr("indices")
                                     .cast<albert::IndexSpaces>();
             const auto sizes = metadata.attr("sizes")
                                    .cast<albert::SpaceSizes>();
@@ -219,7 +243,7 @@ PYBIND11_MODULE(_core, module) {
                 model.cost_factor_aggregation = parse_cost_factor_aggregation(
                     cost_model.attr("cost_factor_aggregation").cast<std::string>());
             }
-            const auto factors = metadata.attr("cost_factor").cast<albert::CostFactors>();
+            const auto factors = parse_cost_factors(metadata.attr("cost_factors"));
             return albert::estimate_cost(node, spaces, sizes, model, factors);
         },
         py::arg("node"), py::arg("metadata"), py::arg("cost_model") = py::none(),
@@ -261,7 +285,7 @@ PYBIND11_MODULE(_core, module) {
            const py::object& scaling_limits, std::size_t max_candidates,
            std::size_t exhaustive_limit, const py::object& cost_model,
            const py::object& path_requests) {
-            const auto spaces = metadata.attr("spaces").cast<albert::IndexSpaces>();
+            const auto spaces = metadata.attr("indices").cast<albert::IndexSpaces>();
             const auto sizes = metadata.attr("sizes").cast<albert::SpaceSizes>();
             albert::CostModel model;
             if (!cost_model.is_none()) {
@@ -274,7 +298,7 @@ PYBIND11_MODULE(_core, module) {
                 model.cost_factor_aggregation = parse_cost_factor_aggregation(
                     cost_model.attr("cost_factor_aggregation").cast<std::string>());
             }
-            const auto factors = metadata.attr("cost_factor").cast<albert::CostFactors>();
+            const auto factors = parse_cost_factors(metadata.attr("cost_factors"));
             const auto limits = parse_scaling_limits(scaling_limits);
             if (!path_requests.is_none()) {
                 const auto requests = parse_path_requests(path_requests);
@@ -513,7 +537,7 @@ PYBIND11_MODULE(_core, module) {
             } else {
                 throw py::type_error("node must be a Node or Expression");
             }
-            const auto spaces = metadata.attr("spaces")
+            const auto spaces = metadata.attr("indices")
                                     .cast<albert::IndexSpaces>();
             return albert::scaling_exponent(
                 node, spaces, parse_space_argument(space), which);
@@ -571,7 +595,7 @@ PYBIND11_MODULE(_core, module) {
     module.def("substitute_expressions",
                [](std::vector<albert::Expression> expressions,
                   const py::object& metadata) {
-                   const auto spaces = metadata.attr("spaces")
+                   const auto spaces = metadata.attr("indices")
                                            .cast<albert::IndexSpaces>();
                    return albert::substitute_expressions(std::move(expressions), spaces);
                },
@@ -605,16 +629,13 @@ PYBIND11_MODULE(_core, module) {
                     cost_model.attr("cost_factor_aggregation").cast<std::string>());
             }
             albert::CanonicalizationMetadata canonicalization;
-            canonicalization.spaces = metadata.attr("spaces")
+            canonicalization.spaces = metadata.attr("indices")
                                           .cast<albert::IndexSpaces>();
-            canonicalization.symmetries = metadata.attr("symmetries")
-                                              .cast<std::unordered_map<
-                                                  std::string,
-                                                  std::vector<albert::Permutation>>>();
+            canonicalization.symmetries = parse_canonicalization_metadata(metadata).symmetries;
             return albert::common_subexpression_elimination(
                 std::move(expressions), canonicalization.spaces,
                 metadata.attr("sizes").cast<albert::SpaceSizes>(),
-                metadata.attr("cost_factor").cast<albert::CostFactors>(),
+                parse_cost_factors(metadata.attr("cost_factors")),
                 canonicalization, options);
         },
         py::arg("expressions"), py::arg("metadata"),

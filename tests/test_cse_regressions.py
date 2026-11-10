@@ -50,13 +50,35 @@ def load_cases(filename: str) -> dict[str, Any]:
 
 
 def metadata(case: dict[str, Any]) -> Metadata:
+    indices = case["spaces"]
+    index_spaces = {index: space for space, labels in indices.items() for index in labels}
+    signatures: dict[str, set[tuple[str, ...]]] = {}
+
+    def visit(node: dict[str, Any]) -> None:
+        if node["kind"] == "tensor":
+            signature = tuple(index_spaces[index] for index in node["indices"])
+            signatures.setdefault(node["symbol"], set()).add(signature)
+        for child in node.get("children", []):
+            visit(child)
+
+    expressions = case.get("expressions", [case])
+    for expression in expressions:
+        visit(expression["lhs"])
+        visit(expression["rhs"])
+    symmetries = {}
+    for symbol, permutations in case["symmetries"].items():
+        for spaces in signatures[symbol]:
+            valid_permutations = [
+                item for item in permutations if tuple(spaces[axis] for axis in item["permutation"]) == spaces
+            ]
+            if valid_permutations:
+                symmetries[(symbol, spaces)] = [
+                    Permutation(item["permutation"], item["phase"]) for item in valid_permutations
+                ]
     return Metadata(
-        spaces=case["spaces"],
+        indices=indices,
         sizes=case["sizes"],
-        symmetries={
-            symbol: [Permutation(item["permutation"], item["phase"]) for item in permutations]
-            for symbol, permutations in case["symmetries"].items()
-        },
+        symmetries=symmetries,
     )
 
 
@@ -76,32 +98,22 @@ GREEDY_PATH_REQUESTS = PathRequests(bounds=(), requests=(PathRequest(greedy=1),)
 
 
 def evaluation_arrays(expressions: list[Expression], meta: Metadata, seed: int) -> dict:
-    index_spaces = {index: space for space, indices in meta.spaces.items() for index in indices}
-    space_sizes = {space: 2 for space in meta.spaces}
-    offsets = {}
-    offset = 0
-    for space, size in space_sizes.items():
-        offsets[space] = slice(offset, offset + size)
-        offset += size
-
+    index_spaces = {index: space for space, indices in meta.indices.items() for index in indices}
+    space_sizes = {space: 2 for space in meta.indices}
     rng = np.random.default_rng(seed)
-    full_arrays = {}
     arrays = {}
     for expression in expressions:
         for tensor in expression.rhs.search(lambda node: isinstance(node, Tensor)):
             spaces = tuple(index_spaces[index] for index in tensor.indices)
-            rank_key = (tensor.symbol, len(spaces))
-            if rank_key not in full_arrays:
-                full = rng.standard_normal((offset,) * len(spaces))
-                symmetries = meta.symmetries.get(tensor.symbol, [])
-                if symmetries:
-                    full = sum(
-                        int(symmetry.phase) * np.transpose(full, symmetry.permutation) for symmetry in symmetries
-                    ) / len(symmetries)
-                full_arrays[rank_key] = full
             key = (tensor.symbol, spaces)
             if key not in arrays:
-                arrays[key] = full_arrays[rank_key][tuple(offsets[space] for space in spaces)]
+                array = rng.standard_normal(tuple(space_sizes[space] for space in spaces))
+                symmetries = meta.symmetries.get(key, [])
+                if symmetries:
+                    array = sum(
+                        int(symmetry.phase) * np.transpose(array, symmetry.permutation) for symmetry in symmetries
+                    ) / len(symmetries)
+                arrays[key] = array
     return arrays
 
 
@@ -152,8 +164,8 @@ def test_ccd_and_ccsd_evaluate_equally_after_canonicalization_simplification_and
     case = load_cases("rhf_cc.json")[case_name]
     meta = metadata(case)
     small_meta = Metadata(
-        spaces=meta.spaces,
-        sizes={space: 2 for space in meta.spaces},
+        indices=meta.indices,
+        sizes={space: 2 for space in meta.indices},
         symmetries=meta.symmetries,
     )
     source = case["expressions"][0]

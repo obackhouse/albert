@@ -365,7 +365,7 @@ py::array_t<T> evaluate_from_python(const std::vector<Expression>& expressions,
                                     const py::dict& input,
                                     const py::object& metadata) {
     auto arrays = parse_arrays<T>(input);
-    const auto spaces = metadata.attr("spaces").cast<IndexSpaces>();
+    const auto spaces = metadata.attr("indices").cast<IndexSpaces>();
     const auto sizes = metadata.attr("sizes").cast<SpaceSizes>();
     return to_numpy(evaluate_expression<T>(expressions, std::move(arrays), spaces, sizes));
 }

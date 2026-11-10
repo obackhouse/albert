@@ -32,7 +32,7 @@ def test_evaluates_contraction_for_supported_dtypes(dtype) -> None:
     result = evaluate_expression(
         [expression],
         {("A", ("I", "K")): a, ("B", ("K",)): b},
-        Metadata(spaces={"I": ["i"], "K": ["k"]}, sizes={"I": 2, "K": 3}),
+        Metadata(indices={"I": ["i"], "K": ["k"]}, sizes={"I": 2, "K": 3}),
     )
 
     np.testing.assert_array_equal(result, np.asarray([20, 47], dtype=dtype))
@@ -58,7 +58,7 @@ def test_evaluates_expression_dependencies_in_any_input_order() -> None:
         [output, contraction],
         arrays,
         Metadata(
-            spaces={"I": ["i"], "J": ["j"], "K": ["k"]},
+            indices={"I": ["i"], "J": ["j"], "K": ["k"]},
             sizes={"I": 2, "J": 3, "K": 2},
         ),
     )
@@ -77,7 +77,7 @@ def test_same_symbol_can_use_distinct_arrays_for_distinct_spaces() -> None:
     result = evaluate_expression(
         [expression],
         {("T", ("O",)): occupied, ("T", ("V",)): virtual},
-        Metadata(spaces={"O": ["i"], "V": ["a"]}, sizes={"O": 2, "V": 3}),
+        Metadata(indices={"O": ["i"], "V": ["a"]}, sizes={"O": 2, "V": 3}),
     )
 
     np.testing.assert_array_equal(result, np.outer(occupied, virtual))
@@ -98,14 +98,14 @@ def test_evaluates_additions_and_scalar_coefficients() -> None:
         ("B", ("I",)): np.asarray([3, 4], dtype=np.float32),
     }
 
-    result = evaluate_expression([expression], arrays, Metadata(spaces={"I": ["i"]}, sizes={"I": 2}))
+    result = evaluate_expression([expression], arrays, Metadata(indices={"I": ["i"]}, sizes={"I": 2}))
 
     np.testing.assert_array_equal(result, np.asarray([7, 10], dtype=np.float32))
 
 
 def test_rejects_missing_array_for_tensor_and_wrong_space_shape() -> None:
     expression = Expression(Tensor("Y", ["i"]), Tensor("A", ["i"]))
-    metadata = Metadata(spaces={"I": ["i"]}, sizes={"I": 2})
+    metadata = Metadata(indices={"I": ["i"]}, sizes={"I": 2})
 
     with pytest.raises(ValueError, match="no array supplied"):
         evaluate_expression([expression], {}, metadata)
@@ -116,7 +116,7 @@ def test_rejects_missing_array_for_tensor_and_wrong_space_shape() -> None:
 def test_rejects_multiple_terminal_outputs_and_mixed_dtypes() -> None:
     first = Expression(Tensor("Y", ["i"]), Tensor("A", ["i"]))
     second = Expression(Tensor("Z", ["i"]), Tensor("B", ["i"]))
-    metadata = Metadata(spaces={"I": ["i"]}, sizes={"I": 2})
+    metadata = Metadata(indices={"I": ["i"]}, sizes={"I": 2})
 
     with pytest.raises(ValueError, match="exactly one terminal output"):
         evaluate_expression(
@@ -146,7 +146,7 @@ def test_requires_metadata() -> None:
 
 def test_canonicalize_simplify_and_cse_preserve_evaluation() -> None:
     metadata = Metadata(
-        spaces={"I": ["i"], "J": ["j"], "K": ["k"], "L": ["l"]},
+        indices={"I": ["i"], "J": ["j"], "K": ["k"], "L": ["l"]},
         sizes={"I": 2, "J": 2, "K": 2, "L": 2},
     )
     a = Tensor("A", ["i", "k"])

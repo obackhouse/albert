@@ -15,14 +15,14 @@ def test_canonicalize_sorts_and_flattens_additions_and_products() -> None:
 
 
 def test_canonicalize_relabels_external_indices_within_a_space() -> None:
-    metadata = Metadata(spaces={"occupied": ["i", "j", "k", "x", "y", "z"]})
+    metadata = Metadata(indices={"occupied": ["i", "j", "k", "x", "y", "z"]}, sizes={"occupied": 8})
     left = Mul([Tensor("A", ["i", "j"]), Tensor("B", ["j", "k"])])
     renamed = Mul([Tensor("A", ["x", "z"]), Tensor("B", ["z", "y"])])
     assert canonicalize(left, metadata) == canonicalize(renamed, metadata)
 
 
 def test_canonicalize_expression_remaps_lhs_external_indices() -> None:
-    metadata = Metadata(spaces={"occupied": ["i", "j", "k"]})
+    metadata = Metadata(indices={"occupied": ["i", "j", "k"]}, sizes={"occupied": 8})
     expression = Expression(Tensor("Y", ["k"]), Tensor("A", ["k"]))
 
     canonical = canonicalize(expression, metadata)
@@ -34,7 +34,7 @@ def test_canonicalize_expression_remaps_lhs_external_indices() -> None:
 
 
 def test_canonicalize_expression_preserves_lhs_axis_order_while_remapping() -> None:
-    metadata = Metadata(spaces={"occupied": ["i", "j", "k", "l"]})
+    metadata = Metadata(indices={"occupied": ["i", "j", "k", "l"]}, sizes={"occupied": 8})
     expression = Expression(Tensor("Y", ["l", "k"]), Tensor("A", ["l", "k"]))
 
     canonical = canonicalize(expression, metadata)
@@ -45,7 +45,7 @@ def test_canonicalize_expression_preserves_lhs_axis_order_while_remapping() -> N
 
 
 def test_canonicalize_reserves_canonical_external_labels_before_dummy_labels() -> None:
-    metadata = Metadata(spaces={"occupied": ["i", "j", "k", "l", "x", "y", "z"]})
+    metadata = Metadata(indices={"occupied": ["i", "j", "k", "l", "x", "y", "z"]}, sizes={"occupied": 8})
     expression = Mul([Tensor("A", ["j", "k"]), Tensor("B", ["k", "i"])])
     renamed = Mul([Tensor("A", ["x", "z"]), Tensor("B", ["z", "y"])])
 
@@ -57,7 +57,7 @@ def test_canonicalize_reserves_canonical_external_labels_before_dummy_labels() -
 
 
 def test_canonicalize_is_independent_of_internal_label_and_factor_order() -> None:
-    metadata = Metadata(spaces={"all": ["i", "j", "k", "l", "x", "y", "z"]})
+    metadata = Metadata(indices={"all": ["i", "j", "k", "l", "x", "y", "z"]}, sizes={"all": 8})
     left = Mul([Tensor("A", ["i", "k"]), Tensor("B", ["k", "j"]), Tensor("C", ["j", "i"])])
     reordered = Mul([Tensor("C", ["y", "x"]), Tensor("A", ["x", "z"]), Tensor("B", ["z", "y"])])
 
@@ -65,7 +65,7 @@ def test_canonicalize_is_independent_of_internal_label_and_factor_order() -> Non
 
 
 def test_canonicalize_relabels_internal_indices_independently_of_their_names() -> None:
-    metadata = Metadata(spaces={"occupied": ["i", "j", "k", "l", "m"]})
+    metadata = Metadata(indices={"occupied": ["i", "j", "k", "l", "m"]}, sizes={"occupied": 8})
     left = Mul([Tensor("A", ["i", "j"]), Tensor("B", ["j", "k"])])
     renamed = Mul([Tensor("A", ["i", "m"]), Tensor("B", ["m", "k"])])
 
@@ -73,7 +73,10 @@ def test_canonicalize_relabels_internal_indices_independently_of_their_names() -
 
 
 def test_canonicalize_keeps_index_spaces_distinct() -> None:
-    metadata = Metadata(spaces={"occupied": ["i", "j"], "virtual": ["a", "b"]})
+    metadata = Metadata(
+        indices={"occupied": ["i", "j"], "virtual": ["a", "b"]},
+        sizes={"occupied": 8, "virtual": 8},
+    )
     occupied = Mul([Tensor("A", ["i", "j"]), Tensor("B", ["j", "i"])])
     virtual = Mul([Tensor("A", ["i", "a"]), Tensor("B", ["a", "i"])])
 
@@ -82,8 +85,9 @@ def test_canonicalize_keeps_index_spaces_distinct() -> None:
 
 def test_canonicalize_uses_transitive_tensor_symmetries() -> None:
     metadata = Metadata(
-        spaces={"all": ["i", "j", "k"]},
-        symmetries={"T": [Permutation([1, 2, 0])]},
+        indices={"all": ["i", "j", "k"]},
+        sizes={"all": 8},
+        symmetries={("T", ("all", "all", "all")): [Permutation([1, 2, 0])]},
     )
     first = Tensor("T", ["i", "j", "k"])
     rotated = Tensor("T", ["j", "k", "i"])
@@ -91,10 +95,27 @@ def test_canonicalize_uses_transitive_tensor_symmetries() -> None:
     assert canonicalize(first, metadata) == canonicalize(rotated, metadata)
 
 
+def test_canonicalize_selects_symmetry_by_ordered_spaces() -> None:
+    metadata = Metadata(
+        indices={"occupied": ["i", "j"], "virtual": ["a", "b"]},
+        sizes={"occupied": 8, "virtual": 8},
+        symmetries={
+            ("A", ("occupied", "occupied")): [Permutation([1, 0])],
+            ("A", ("virtual", "virtual")): [Permutation([1, 0], PhaseFactor.NEGATIVE)],
+        },
+    )
+
+    assert canonicalize(Tensor("A", ["i", "j"]), metadata) == canonicalize(Tensor("A", ["j", "i"]), metadata)
+    expression = Mul([Tensor("A", ["a", "b"]), Tensor("B", ["b"])])
+    swapped = Mul([Tensor("A", ["b", "a"]), Tensor("B", ["b"])])
+    assert canonicalize(swapped, metadata) == canonicalize(-canonicalize(expression, metadata), metadata)
+
+
 def test_canonicalize_preserves_negative_symmetry_phase() -> None:
     metadata = Metadata(
-        spaces={"all": ["i", "j"]},
-        symmetries={"A": [Permutation([1, 0], PhaseFactor.NEGATIVE)]},
+        indices={"all": ["i", "j"]},
+        sizes={"all": 8},
+        symmetries={("A", ("all", "all")): [Permutation([1, 0], PhaseFactor.NEGATIVE)]},
     )
     canonical = canonicalize(Mul([Tensor("A", ["i", "j"]), Tensor("B", ["j"])]), metadata)
     swapped = canonicalize(Mul([Tensor("A", ["j", "i"]), Tensor("B", ["j"])]), metadata)
@@ -104,8 +125,9 @@ def test_canonicalize_preserves_negative_symmetry_phase() -> None:
 
 def test_canonicalize_zeroes_repeated_axes_of_antisymmetric_tensor() -> None:
     metadata = Metadata(
-        spaces={"all": ["i"]},
-        symmetries={"A": [Permutation([1, 0], PhaseFactor.NEGATIVE)]},
+        indices={"all": ["i"]},
+        sizes={"all": 8},
+        symmetries={("A", ("all", "all")): [Permutation([1, 0], PhaseFactor.NEGATIVE)]},
     )
 
     assert canonicalize(Tensor("A", ["i", "i"]), metadata) == Scalar(0)
@@ -113,8 +135,9 @@ def test_canonicalize_zeroes_repeated_axes_of_antisymmetric_tensor() -> None:
 
 def test_canonicalize_handles_symmetry_and_dummy_relabelling_together() -> None:
     metadata = Metadata(
-        spaces={"all": ["i", "j", "k", "l", "m"]},
-        symmetries={"A": [Permutation([1, 0])]},
+        indices={"all": ["i", "j", "k", "l", "m"]},
+        sizes={"all": 8},
+        symmetries={("A", ("all", "all")): [Permutation([1, 0])]},
     )
     left = Mul([Tensor("A", ["i", "j"]), Tensor("B", ["j", "k"])])
     renamed = Mul([Tensor("B", ["m", "l"]), Tensor("A", ["m", "i"])])
@@ -123,7 +146,7 @@ def test_canonicalize_handles_symmetry_and_dummy_relabelling_together() -> None:
 
 
 def test_canonicalize_is_idempotent_for_a_sum_of_contracted_networks() -> None:
-    metadata = Metadata(spaces={"all": ["i", "j", "k", "l", "m", "n"]})
+    metadata = Metadata(indices={"all": ["i", "j", "k", "l", "m", "n"]}, sizes={"all": 8})
     first = Mul([Tensor("A", ["i", "j"]), Tensor("B", ["j", "k"]), Tensor("C", ["k", "i"])])
     second = Mul([Tensor("C", ["m", "l"]), Tensor("A", ["l", "n"]), Tensor("B", ["n", "m"])])
     expression = Add([first, second])
@@ -135,7 +158,7 @@ def test_canonicalize_is_idempotent_for_a_sum_of_contracted_networks() -> None:
 
 
 def test_canonicalize_handles_large_additions_deterministically() -> None:
-    metadata = Metadata(spaces={"all": ["i", "j", "k"]})
+    metadata = Metadata(indices={"all": ["i", "j", "k"]}, sizes={"all": 8})
     terms = [Tensor(f"T{number:02}", ["i", "j"]) for number in range(40)]
     forward = Add(terms)
     backward = Add(list(reversed(terms)))
@@ -143,22 +166,28 @@ def test_canonicalize_handles_large_additions_deterministically() -> None:
     assert canonicalize(forward, metadata) == canonicalize(backward, metadata)
 
 
-def test_canonicalize_rejects_ambiguous_index_space_metadata() -> None:
-    metadata = Metadata(spaces={"occupied": ["i"], "virtual": ["i"]})
-
-    with pytest.raises(ValueError, match="multiple spaces"):
-        canonicalize(Tensor("A", ["i"]), metadata)
+def test_metadata_rejects_indices_assigned_to_multiple_spaces() -> None:
+    with pytest.raises(ValueError, match="must not overlap"):
+        Metadata(indices={"occupied": ["i"], "virtual": ["i"]}, sizes={"occupied": 8, "virtual": 8})
 
 
 def test_canonicalize_rejects_symmetry_generators_with_the_wrong_rank() -> None:
-    metadata = Metadata(symmetries={"A": [Permutation([1, 0])]})
+    metadata = Metadata(
+        indices={"all": ["i", "j", "k"]},
+        sizes={"all": 8},
+        symmetries={("A", ("all", "all", "all")): [Permutation([1, 0])]},
+    )
 
     with pytest.raises(ValueError, match="rank mismatch"):
         canonicalize(Tensor("A", ["i", "j", "k"]), metadata)
 
 
 def test_canonicalize_rejects_inconsistent_symmetry_phases() -> None:
-    metadata = Metadata(symmetries={"A": [Permutation([0], PhaseFactor.NEGATIVE)]})
+    metadata = Metadata(
+        indices={"all": ["i"]},
+        sizes={"all": 8},
+        symmetries={("A", ("all",)): [Permutation([0], PhaseFactor.NEGATIVE)]},
+    )
 
     with pytest.raises(ValueError, match="inconsistent"):
         canonicalize(Tensor("A", ["i"]), metadata)

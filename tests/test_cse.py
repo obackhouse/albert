@@ -62,7 +62,7 @@ CSE_OPTION_SETS = [
 
 def metadata() -> Metadata:
     return Metadata(
-        spaces={"I": ["i"], "J": ["j"], "K": ["k"], "L": ["l"]},
+        indices={"I": ["i"], "J": ["j"], "K": ["k"], "L": ["l"]},
         sizes={"I": 20, "J": 20, "K": 20, "L": 20},
     )
 
@@ -144,7 +144,7 @@ def test_cse_round_trip_through_expression_substitution(cse_options: dict) -> No
 @pytest.mark.parametrize("cse_options", CSE_OPTION_SETS)
 def test_cse_round_trip_maps_indices_across_space_aliases(cse_options: dict) -> None:
     meta = Metadata(
-        spaces={"I": ["i", "m"], "J": ["j"], "K": ["k", "q"], "L": ["l", "n"]},
+        indices={"I": ["i", "m"], "J": ["j"], "K": ["k", "q"], "L": ["l", "n"]},
         sizes={"I": 20, "J": 20, "K": 20, "L": 20},
     )
     first = shared_sum("Y")
@@ -222,7 +222,7 @@ def test_cse_shares_generated_intermediates_across_outputs(cse_options: dict) ->
 @pytest.mark.parametrize("cse_options", CSE_OPTION_SETS)
 def test_cse_reuses_intermediates_with_renamed_internal_indices(cse_options: dict) -> None:
     meta = Metadata(
-        spaces={"I": ["i"], "J": ["j"], "K": ["k", "q"], "L": ["l"]},
+        indices={"I": ["i"], "J": ["j"], "K": ["k", "q"], "L": ["l"]},
         sizes={"I": 20, "J": 20, "K": 20, "L": 20},
     )
     first = shared_sum("Y")
@@ -294,9 +294,14 @@ def test_cse_leaves_unprofitable_expressions_unchanged(cse_options: dict) -> Non
 def test_cse_cost_factors_are_opt_in_and_configurable(cse_options: dict) -> None:
     expression = shared_sum("Y")
     meta = Metadata(
-        spaces={"I": ["i"], "J": ["j"], "K": ["k"], "L": ["l"]},
+        indices={"I": ["i"], "J": ["j"], "K": ["k"], "L": ["l"]},
         sizes={"I": 20, "J": 20, "K": 20, "L": 20},
-        cost_factor={"A": 2, "B": 3, "C": 5, "D": 7},
+        cost_factors={
+            ("A", ("I", "K")): 2,
+            ("B", ("K", "J")): 3,
+            ("C", ("J", "L")): 5,
+            ("D", ("J", "L")): 7,
+        },
     )
 
     product = common_subexpression_elimination(

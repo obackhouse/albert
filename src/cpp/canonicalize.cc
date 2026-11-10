@@ -373,14 +373,28 @@ std::vector<IndexMap> index_mappings(
 }
 
 std::vector<Symmetry> symmetry_group(const Tensor& tensor,
-                                     const CanonicalizationMetadata& metadata) {
+                                     const CanonicalizationMetadata& metadata,
+                                     const SpaceMap& spaces) {
     const auto rank = static_cast<std::size_t>(tensor.rank());
     std::vector<std::size_t> identity(rank);
     for (std::size_t i = 0; i < rank; ++i) {
         identity[i] = i;
     }
 
-    const auto generators = metadata.symmetries.find(tensor.symbol());
+    std::vector<std::string> tensor_spaces;
+    tensor_spaces.reserve(tensor.indices().size());
+    for (const auto& index : tensor.indices()) {
+        const auto space = index_space(index, spaces);
+        if (space.empty()) {
+            tensor_spaces.clear();
+            break;
+        }
+        tensor_spaces.push_back(space);
+    }
+    auto generators = metadata.symmetries.end();
+    if (tensor_spaces.size() == tensor.indices().size()) {
+        generators = metadata.symmetries.find({tensor.symbol(), tensor_spaces});
+    }
     if (generators == metadata.symmetries.end()) {
         return {{std::move(identity), 1}};
     }
@@ -463,7 +477,7 @@ Form canonicalize_tensor(const Tensor& tensor,
     for (const auto& mapping : mappings) {
         auto renamed = replace_tensor_indices(tensor, mapping);
         const auto* renamed_tensor = dynamic_cast<const Tensor*>(renamed.get());
-        for (const auto& [permutation, phase] : symmetry_group(*renamed_tensor, metadata)) {
+        for (const auto& [permutation, phase] : symmetry_group(*renamed_tensor, metadata, spaces)) {
             std::vector<std::string> axes;
             axes.reserve(permutation.size());
             for (const auto position : permutation) {
@@ -670,6 +684,10 @@ CanonicalizedNode canonicalize_with_mapping(
     std::optional<CanonicalizedNode> best;
     for (const auto& mapping : external.mappings) {
         auto mapped = albert::map_indices(node, mapping);
+        auto mapped_spaces = spaces;
+        for (const auto& [placeholder, space] : external.spaces) {
+            mapped_spaces.emplace(placeholder, space);
+        }
         const auto root_external = mapped->external_indices();
         std::set<std::string> reserved_external(root_external.begin(),
                                                  root_external.end());
@@ -686,7 +704,7 @@ CanonicalizedNode canonicalize_with_mapping(
                 reserved_external.insert(labels[i]);
             }
         }
-        auto form = canonicalize_node(mapped, metadata, spaces,
+        auto form = canonicalize_node(mapped, metadata, mapped_spaces,
                                       reserved_external, all_used_indices);
         auto phased = apply_phase(form.node, form.phase);
         for (const auto& final_mapping : final_external_mappings(

@@ -2,6 +2,7 @@
 
 #include "ast.h"
 #include "permutation.h"
+#include "tensor_key.h"
 
 #include <string>
 #include <unordered_map>
@@ -11,7 +12,7 @@ namespace albert {
 
 struct CanonicalizationMetadata {
     std::unordered_map<std::string, std::vector<std::string>> spaces;
-    std::unordered_map<std::string, std::vector<Permutation>> symmetries;
+    std::unordered_map<TensorKey, std::vector<Permutation>, TensorKeyHash> symmetries;
 };
 
 struct CanonicalizedNode {

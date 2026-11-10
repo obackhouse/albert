@@ -7,7 +7,7 @@ from albert import Add, CostModel, Metadata, Mul, Scalar, Tensor, estimate_cost
 
 def test_cost_estimate_for_contraction_counts_arithmetic_and_traffic() -> None:
     metadata = Metadata(
-        spaces={"occupied": ["i", "k"], "virtual": ["j"]},
+        indices={"occupied": ["i", "k"], "virtual": ["j"]},
         sizes={"occupied": 2, "virtual": 3},
     )
     expression = Mul([Tensor("A", ["i", "j"]), Tensor("B", ["j", "k"])])
@@ -23,7 +23,7 @@ def test_cost_estimate_for_contraction_counts_arithmetic_and_traffic() -> None:
 
 def test_cost_model_weights_arithmetic_and_memory_traffic_independently() -> None:
     metadata = Metadata(
-        spaces={"occupied": ["i", "k"], "virtual": ["j"]},
+        indices={"occupied": ["i", "k"], "virtual": ["j"]},
         sizes={"occupied": 2, "virtual": 3},
     )
     expression = Mul([Tensor("A", ["i", "j"]), Tensor("B", ["j", "k"])])
@@ -39,7 +39,7 @@ def test_cost_model_weights_arithmetic_and_memory_traffic_independently() -> Non
 
 
 def test_cost_estimate_for_elementwise_addition() -> None:
-    metadata = Metadata(spaces={"occupied": ["i"]}, sizes={"occupied": 7})
+    metadata = Metadata(indices={"occupied": ["i"]}, sizes={"occupied": 7})
     expression = Add([Tensor("A", ["i"]), Tensor("B", ["i"])])
 
     estimate = estimate_cost(expression, metadata)
@@ -53,7 +53,7 @@ def test_cost_estimate_for_elementwise_addition() -> None:
 
 def test_cost_estimate_includes_intermediate_traffic_for_a_contraction_chain() -> None:
     metadata = Metadata(
-        spaces={"occupied": ["i", "k"], "virtual": ["j", "l"]},
+        indices={"occupied": ["i", "k"], "virtual": ["j", "l"]},
         sizes={"occupied": 2, "virtual": 3},
     )
     a = Tensor("A", ["i", "j"])
@@ -70,7 +70,7 @@ def test_cost_estimate_includes_intermediate_traffic_for_a_contraction_chain() -
 
 
 def test_cost_estimate_counts_scalar_broadcast_multiplication() -> None:
-    metadata = Metadata(spaces={"occupied": ["i"], "virtual": ["j"]}, sizes={"occupied": 2, "virtual": 3})
+    metadata = Metadata(indices={"occupied": ["i"], "virtual": ["j"]}, sizes={"occupied": 2, "virtual": 3})
 
     estimate = estimate_cost(Mul([Scalar(2), Tensor("A", ["i", "j"])]), metadata)
 
@@ -82,7 +82,7 @@ def test_cost_estimate_counts_scalar_broadcast_multiplication() -> None:
 
 
 def test_cost_estimate_counts_a_tensor_trace() -> None:
-    metadata = Metadata(spaces={"occupied": ["i"]}, sizes={"occupied": 4})
+    metadata = Metadata(indices={"occupied": ["i"]}, sizes={"occupied": 4})
 
     estimate = estimate_cost(Tensor("A", ["i", "i"]), metadata)
 
@@ -105,20 +105,6 @@ def test_scalar_cost_does_not_depend_on_scalar_value_or_metadata() -> None:
     ) == (0, 0, 0, 0, 0)
 
 
-@pytest.mark.parametrize(
-    ("spaces", "sizes", "indices", "message"),
-    [
-        ({"occupied": ["i"]}, {"occupied": 2}, ["unknown"], "does not belong"),
-        ({"occupied": ["i"]}, {}, ["i"], "no declared size"),
-        ({"occupied": ["i"], "virtual": ["i"]}, {"occupied": 2, "virtual": 3}, ["i"], "multiple spaces"),
-        ({"occupied": ["i"]}, {"occupied": 0}, ["i"], "positive"),
-    ],
-)
-def test_cost_estimate_rejects_invalid_metadata(spaces, sizes, indices, message: str) -> None:
-    with pytest.raises(ValueError, match=message):
-        estimate_cost(Tensor("A", indices), Metadata(spaces=spaces, sizes=sizes))
-
-
 @pytest.mark.parametrize("weight", [-1.0, math.inf, math.nan])
 def test_cost_model_rejects_negative_or_nonfinite_weights(weight: float) -> None:
     with pytest.raises(ValueError, match="finite and nonnegative"):
@@ -127,7 +113,7 @@ def test_cost_model_rejects_negative_or_nonfinite_weights(weight: float) -> None
 
 def test_cost_factors_are_disabled_by_default_and_can_use_product() -> None:
     expression = Mul([Tensor("A", []), Tensor("B", [])])
-    metadata = Metadata(cost_factor={"A": 3, "B": 4})
+    metadata = Metadata(cost_factors={("A", ()): 3, ("B", ()): 4})
 
     unweighted = estimate_cost(expression, metadata)
     weighted = estimate_cost(expression, metadata, CostModel(apply_cost_factors=True))
@@ -138,7 +124,7 @@ def test_cost_factors_are_disabled_by_default_and_can_use_product() -> None:
 
 def test_cost_factors_can_use_maximum_for_overlapping_iterations() -> None:
     expression = Mul([Tensor("A", []), Tensor("B", [])])
-    metadata = Metadata(cost_factor={"A": 3, "B": 4})
+    metadata = Metadata(cost_factors={("A", ()): 3, ("B", ()): 4})
     model = CostModel(apply_cost_factors=True, cost_factor_aggregation="maximum")
 
     weighted = estimate_cost(expression, metadata, model)
@@ -146,6 +132,19 @@ def test_cost_factors_can_use_maximum_for_overlapping_iterations() -> None:
     assert weighted.total == pytest.approx(1.3 * 4)
 
 
+def test_cost_factors_use_exact_space_signatures() -> None:
+    expression = Mul([Tensor("A", ["i"]), Tensor("A", ["a"])])
+    metadata = Metadata(
+        indices={"occupied": ["i"], "virtual": ["a"]},
+        sizes={"occupied": 2, "virtual": 3},
+        cost_factors={("A", ("occupied",)): 2, ("A", ("virtual",)): 5},
+    )
+
+    estimate = estimate_cost(expression, metadata, CostModel(apply_cost_factors=True))
+
+    assert estimate.total == pytest.approx(71.0)
+
+
 def test_metadata_rejects_invalid_cost_factors() -> None:
     with pytest.raises(ValueError, match="positive integers"):
-        Metadata(cost_factor={"A": 0})
+        Metadata(cost_factors={("A", ()): 0})

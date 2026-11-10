@@ -4,14 +4,17 @@ from albert import Add, Metadata, Mul, NodeKind, Scalar, Tensor
 
 
 def test_metadata_stores_and_updates_spaces() -> None:
-    metadata = Metadata(spaces={"occupied": ["i", "j"], "virtual": ["a", "b"]})
+    metadata = Metadata(
+        indices={"occupied": ["i", "j"], "virtual": ["a", "b"]},
+        sizes={"occupied": 8, "virtual": 8},
+    )
 
-    assert metadata.spaces["occupied"] == ["i", "j"]
-    assert metadata.spaces["virtual"] == ["a", "b"]
+    assert metadata.indices["occupied"] == ["i", "j"]
+    assert metadata.indices["virtual"] == ["a", "b"]
 
     metadata.add_space("auxiliary", ["x"])
 
-    assert metadata.spaces["auxiliary"] == ["x"]
+    assert metadata.indices["auxiliary"] == ["x"]
     assert metadata.sizes["auxiliary"] == 8
 
 
@@ -204,9 +207,9 @@ def test_add_requires_the_same_external_indices() -> None:
 
 
 def test_metadata_is_separate_from_nodes() -> None:
-    metadata = Metadata(spaces={"occupied": ["i", "j"]})
+    metadata = Metadata(indices={"occupied": ["i", "j"]}, sizes={"occupied": 8})
     value = Tensor("A", [])
 
     assert isinstance(value, Tensor)
     assert not hasattr(value, "metadata")
-    assert metadata.spaces["occupied"] == ["i", "j"]
+    assert metadata.indices["occupied"] == ["i", "j"]

@@ -5,7 +5,8 @@ from albert import Add, Expression, Metadata, Mul, Tensor, substitute_expression
 
 def metadata() -> Metadata:
     return Metadata(
-        spaces={"I": ["i", "j", "l"], "J": ["k", "q", "r"]},
+        indices={"I": ["i", "j", "l"], "J": ["k", "q", "r"]},
+        sizes={"I": 8, "J": 8},
     )
 
 
@@ -33,7 +34,10 @@ def test_maps_each_reference_to_its_own_indices_and_avoids_capture() -> None:
     first = Expression(Tensor("X", ["k"]), Mul([Tensor("T", ["j"]), Tensor("C", ["j", "k"])]))
     second = Expression(Tensor("Y", []), Mul([Tensor("T", ["l"]), Tensor("D", ["l"])]))
 
-    meta = Metadata(spaces={"I": ["i", "j", "l"], "K": ["k", "q", "r"]})
+    meta = Metadata(
+        indices={"I": ["i", "j", "l"], "K": ["k", "q", "r"]},
+        sizes={"I": 8, "K": 8},
+    )
     result = substitute_expressions([definition, first, second], meta)
     by_symbol = {expression.lhs.symbol: expression for expression in result}
     x_tensors = by_symbol["X"].rhs.search(lambda node: isinstance(node, Tensor))

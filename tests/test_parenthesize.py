@@ -20,7 +20,7 @@ def chain():
     a = Tensor("A", ["i", "j"])
     b = Tensor("B", ["j", "k"])
     c = Tensor("C", ["k", "l"])
-    metadata = Metadata(spaces={"n": ["i", "j", "k", "l"]}, sizes={"n": 10})
+    metadata = Metadata(indices={"n": ["i", "j", "k", "l"]}, sizes={"n": 10})
     return Mul([a, b, c]), metadata, a, b, c
 
 
@@ -86,7 +86,7 @@ def test_exhaustive_finds_the_lowest_cost_parenthesization() -> None:
     c = Tensor("C", ["k", "l"])
     node = Mul([a, b, c])
     metadata = Metadata(
-        spaces={"I": ["i"], "J": ["j"], "K": ["k"], "L": ["l"]},
+        indices={"I": ["i"], "J": ["j"], "K": ["k"], "L": ["l"]},
         sizes={"I": 2, "J": 2, "K": 10_000, "L": 1_000},
     )
     model = CostModel(multiply=1, add=0, read=0, write=0)
@@ -103,7 +103,7 @@ def test_parallel_exhaustive_returns_stable_top_candidates() -> None:
     indices = [f"i{index}" for index in range(5)]
     factors = [Tensor(f"T{index}", ["shared", index]) for index in indices]
     node = Mul(factors)
-    metadata = Metadata(spaces={"n": ["shared", *indices]}, sizes={"n": 2})
+    metadata = Metadata(indices={"n": ["shared", *indices]}, sizes={"n": 2})
 
     first = parenthesization_candidates(node, metadata, max_candidates=5, exhaustive_limit=5)
     second = parenthesization_candidates(node, metadata, max_candidates=5, exhaustive_limit=5)
@@ -118,7 +118,7 @@ def test_parallel_bitmask_dp_returns_stable_path() -> None:
     indices = [f"i{index}" for index in range(10)]
     factors = [Tensor(f"T{index}", indices[index : index + 2]) for index in range(9)]
     node = Mul(factors)
-    metadata = Metadata(spaces={"n": indices}, sizes={"n": 2})
+    metadata = Metadata(indices={"n": indices}, sizes={"n": 2})
     requests = PathRequests(bounds=(), requests=(PathRequest(dynamic=True),))
 
     first = parenthesization_candidates(node, metadata, path_requests=requests)
@@ -141,7 +141,7 @@ def test_parallel_generic_dp_returns_stable_path() -> None:
         factors.append(Tensor(f"T{index}", [*shared, *unique]))
     node = Mul(factors)
     axes = sorted({axis for factor in factors for axis in factor.indices})
-    metadata = Metadata(spaces={"n": axes}, sizes={"n": 1})
+    metadata = Metadata(indices={"n": axes}, sizes={"n": 1})
     requests = PathRequests(bounds=(), requests=(PathRequest(dynamic=True),))
 
     first = parenthesization_candidates(node, metadata, path_requests=requests)
@@ -161,7 +161,7 @@ def test_dp_checks_every_partition_against_exhaustive_search() -> None:
     ]
     node = Mul(factors)
     metadata = Metadata(
-        spaces={"I": ["i"], "J": ["j"], "K": ["k"], "L": ["l"], "M": ["m"]},
+        indices={"I": ["i"], "J": ["j"], "K": ["k"], "L": ["l"], "M": ["m"]},
         sizes={"I": 2, "J": 3, "K": 5, "L": 7, "M": 11},
     )
     model = CostModel(multiply=1, add=0, read=0, write=0)
@@ -178,7 +178,7 @@ def test_dp_bitmask_handles_composite_operands_via_external_indices() -> None:
     factors = [composite, Tensor("C", ["j", "l"]), Tensor("D", ["l", "m"])]
     node = Mul(factors)
     metadata = Metadata(
-        spaces={"I": ["i"], "J": ["j"], "K": ["k"], "L": ["l"], "M": ["m"]},
+        indices={"I": ["i"], "J": ["j"], "K": ["k"], "L": ["l"], "M": ["m"]},
         sizes={"I": 2, "J": 3, "K": 5, "L": 7, "M": 11},
     )
     model = CostModel(multiply=1, add=0, read=0, write=0)
@@ -222,7 +222,7 @@ def test_dp_allows_outer_product_to_join_disconnected_components() -> None:
     c = Tensor("C", ["a", "b"])
     node = Mul([a, b, c])
     metadata = Metadata(
-        spaces={"n": ["i", "j", "k", "a", "b"]},
+        indices={"n": ["i", "j", "k", "a", "b"]},
         sizes={"n": 2},
     )
 
@@ -243,7 +243,7 @@ def test_dp_path_uses_opt_einsum_append_order() -> None:
     ]
     node = Mul(factors)
     metadata = Metadata(
-        spaces={
+        indices={
             "o": ["i"],
             "v": ["a"],
             "r": ["r0"],
@@ -303,7 +303,7 @@ def test_time_scaling_cap_filters_outer_product_first_path(chain) -> None:
 def test_tuple_space_scaling_caps_count_axes_across_spaces(chain) -> None:
     node, _, *_ = chain
     metadata = Metadata(
-        spaces={"I": ["i"], "J": ["j"], "K": ["k"], "L": ["l"]},
+        indices={"I": ["i"], "J": ["j"], "K": ["k"], "L": ["l"]},
         sizes={"I": 2, "J": 2, "K": 2, "L": 2},
     )
 
@@ -376,7 +376,7 @@ def test_scaling_exponent_uses_metadata_spaces(chain) -> None:
 
 def test_node_scaling_exponent_handles_tensor_trace() -> None:
     trace = Tensor("T", ["i", "i", "j"])
-    metadata = Metadata(spaces={"n": ["i", "j"]})
+    metadata = Metadata(indices={"n": ["i", "j"]}, sizes={"n": 2})
 
     assert scaling_exponent(trace, "n", ScalingMetric.TIME, metadata) == 2
     assert scaling_exponent(trace, "n", ScalingMetric.MEMORY, metadata) == 2
@@ -397,7 +397,7 @@ def test_scaling_memory_limit_includes_input_tensor_storage() -> None:
     a = Tensor("A", ["i", "j", "k"])
     b = Tensor("B", ["k", "l"])
     node = Mul([a, b])
-    metadata = Metadata(spaces={"n": ["i", "j", "k", "l"]}, sizes={"n": 4})
+    metadata = Metadata(indices={"n": ["i", "j", "k", "l"]}, sizes={"n": 4})
 
     assert scaling_exponent(node, "n", ScalingMetric.MEMORY, metadata) == 3
     assert (
