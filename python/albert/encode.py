@@ -7,6 +7,7 @@ import math
 import sys
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from string import ascii_letters
 from typing import TYPE_CHECKING
 
 from albert._core import Add, Expression, Mul, Scalar, Tensor
@@ -366,6 +367,166 @@ class TreeEncoder(Encoder):
     def format_expression(self, expression: Expression) -> str:
         """Return a tree representation of an expression assignment."""
         return self._format_tree("Expression", (expression.lhs, expression.rhs))
+
+
+@dataclass(frozen=True)
+class EinsumEncoder(Encoder):
+    """Encode expressions as NumPy-style einsum calls."""
+
+    einsum_function: str = "np.einsum"
+    """Name of the einsum function to call."""
+
+    einsum_kwargs: dict[str, object] = field(default_factory=lambda: {"optimize": True})
+    """Keyword arguments passed to each einsum call."""
+
+    copy_function: str = "np.copy"
+    """Name of the copy function used to protect aliased intermediate results."""
+
+    def _terms(self, node: Node) -> list[list[Node]]:
+        """Expand a node into additive terms of multiplicative factors."""
+        if isinstance(node, Add):
+            return [term for child in node.children for term in self._terms(child)]
+        if isinstance(node, Mul):
+            terms: list[list[Node]] = [[]]
+            for child in node.children:
+                terms = [left + right for left in terms for right in self._terms(child)]
+            return terms
+        return [[node]]
+
+    @staticmethod
+    def _index_labels(terms: list[list[Node]], output_indices: tuple[str, ...]) -> dict[str, str]:
+        """Map index names to einsum's single-character labels."""
+        indices: list[str] = []
+        for term in terms:
+            for factor in term:
+                if isinstance(factor, Tensor):
+                    for index in factor.indices:
+                        if index not in indices:
+                            indices.append(index)
+        for index in output_indices:
+            if index not in indices:
+                indices.append(index)
+
+        labels = {index: index for index in indices if len(index) == 1 and index in ascii_letters}
+        used = set(labels.values())
+        for index in indices:
+            if index in labels:
+                continue
+            label = next((candidate for candidate in ascii_letters if candidate not in used), "")
+            if not label:
+                raise ValueError("einsum supports at most 52 distinct indices")
+            labels[index] = label
+            used.add(label)
+        return labels
+
+    def _term_call(
+        self,
+        factors: list[Node],
+        output_indices: tuple[str, ...],
+        labels: dict[str, str],
+        *,
+        is_assignment: bool,
+    ) -> str:
+        """Render one product term as an einsum call and scalar coefficient."""
+        coefficient = 1.0
+        tensors: list[Tensor] = []
+        for factor in factors:
+            if isinstance(factor, Scalar):
+                coefficient *= factor.value
+            elif isinstance(factor, Tensor):
+                tensors.append(factor)
+            else:
+                raise TypeError(f"unsupported factor type: {type(factor).__name__}")
+
+        if not tensors:
+            return repr(coefficient)
+
+        if len(tensors) == 1 and tuple(tensors[0].indices) == output_indices:
+            call = tensors[0].symbol
+            if coefficient == 1.0 and is_assignment:
+                call = f"{self.copy_function}({call})"
+            return self._apply_coefficient(call, coefficient)
+
+        input_subscripts = ["".join(labels[index] for index in tensor.indices) for tensor in tensors]
+        output_subscript = "".join(labels[index] for index in output_indices)
+        subscripts = f"{','.join(input_subscripts)}->{output_subscript}"
+        arguments = [f'"{subscripts}"', *(tensor.symbol for tensor in tensors)]
+        arguments.extend(f"{key}={value!r}" for key, value in self.einsum_kwargs.items())
+        call = f"{self.einsum_function}({', '.join(arguments)})"
+
+        if coefficient == 1.0 and is_assignment and self._may_alias_output(tensors, output_indices):
+            call = f"{self.copy_function}({call})"
+        return self._apply_coefficient(call, coefficient)
+
+    @staticmethod
+    def _apply_coefficient(call: str, coefficient: float) -> str:
+        if coefficient == 1.0:
+            return call
+        if coefficient == -1.0:
+            return f"-{call}"
+        return f"{coefficient!r} * {call}"
+
+    @staticmethod
+    def _may_alias_output(tensors: list[Tensor], output_indices: tuple[str, ...]) -> bool:
+        """Whether a one-input einsum can return a view of its input."""
+        if len(tensors) != 1:
+            return False
+        input_indices = tensors[0].indices
+        unique_input_indices = set(input_indices)
+        return len(output_indices) == len(unique_input_indices) and set(output_indices) == unique_input_indices
+
+    def _format_terms(
+        self,
+        terms: list[list[Node]],
+        output_indices: tuple[str, ...],
+        *,
+        assignment: bool = False,
+    ) -> list[str]:
+        labels = self._index_labels(terms, output_indices)
+        return [
+            self._term_call(
+                factors,
+                output_indices,
+                labels,
+                is_assignment=assignment and index == 0,
+            )
+            for index, factors in enumerate(terms)
+        ]
+
+    def format_node(self, node: Node) -> str:
+        """Return the string representation of a node.
+
+        Args:
+            node: The node to format.
+
+        Returns:
+            The string representation of the node.
+        """
+        terms = self._format_terms(self._terms(node), tuple(node.external_indices))
+        if not terms:
+            return "0"
+        result = terms[0]
+        for term in terms[1:]:
+            if term.startswith("-"):
+                result += f" - {term[1:]}"
+            else:
+                result += f" + {term}"
+        return result
+
+    def format_expression(self, expression: Expression) -> str:
+        """Return the string representation of an expression.
+
+        Args:
+            expression: The expression to format.
+
+        Returns:
+            The string representation of the expression.
+        """
+        terms = self._terms(expression.rhs)
+        calls = self._format_terms(terms, tuple(expression.lhs.indices), assignment=True)
+        return "\n".join(
+            f"{expression.lhs.symbol} {'=' if index == 0 else '+='} {call}" for index, call in enumerate(calls)
+        )
 
 
 @dataclass(frozen=True)

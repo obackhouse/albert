@@ -34,7 +34,7 @@ from albert._core import (
     topological_sort,
 )
 from albert.metadata import Metadata
-from albert.encode import Encoder, JsonEncoder, LatexEncoder, ReadableEncoder, TreeEncoder
+from albert.encode import EinsumEncoder, Encoder, JsonEncoder, LatexEncoder, ReadableEncoder, TreeEncoder
 from albert.decode import Decoder, JsonDecoder
 from albert.options import (
     CostModel,
@@ -59,6 +59,7 @@ __all__ = [
     "Expression",
     "Encoder",
     "EncodingMethod",
+    "EinsumEncoder",
     "JsonDecoder",
     "JsonEncoder",
     "LatexEncoder",

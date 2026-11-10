@@ -19,17 +19,19 @@ class EncodingMethod(StrEnum):
     READABLE = "readable"
     LATEX = "latex"
     TREE = "tree"
+    EINSUM = "einsum"
 
     @property
     def encoder_type(self) -> type[Encoder]:
         """Return the encoder class selected by this method."""
-        from albert.encode import JsonEncoder, LatexEncoder, ReadableEncoder, TreeEncoder  # noqa: PLC0415
+        from albert.encode import EinsumEncoder, JsonEncoder, LatexEncoder, ReadableEncoder, TreeEncoder  # noqa: PLC0415
 
         return {  # type: ignore[return-value]
             EncodingMethod.JSON: JsonEncoder,
             EncodingMethod.READABLE: ReadableEncoder,
             EncodingMethod.LATEX: LatexEncoder,
             EncodingMethod.TREE: TreeEncoder,
+            EncodingMethod.EINSUM: EinsumEncoder,
         }[self]
 
 

@@ -5,6 +5,7 @@ import pytest
 
 from albert import (
     Add,
+    EinsumEncoder,
     Encoder,
     EncodingMethod,
     Expression,
@@ -323,3 +324,70 @@ def test_tree_encoder_supports_custom_connectors_and_minimum_indent() -> None:
     encoder = TreeEncoder(connectors=("-", "|", "+", "\\"), indent=1)
 
     assert expression.format(encoder) == "Expression\n+ out\n\\ Add\n  + x\n  \\ y"
+
+
+def test_einsum_encoder_formats_sums_as_assignments() -> None:
+    y, z = Tensor("y", ["i", "k"]), Tensor("z", ["k", "l"])
+    a, b = Tensor("a", ["i", "k"]), Tensor("b", ["k", "l"])
+    expression = Expression(Tensor("x", ["i", "l"]), Add([Mul([y, z]), Mul([a, b])]))
+    buffer = StringIO()
+
+    EinsumEncoder(buffer)(expression)
+
+    assert buffer.getvalue() == (
+        'x = np.einsum("ik,kl->il", y, z, optimize=True)\nx += np.einsum("ik,kl->il", a, b, optimize=True)\n'
+    )
+
+
+def test_einsum_encoder_copies_a_view_before_accumulating() -> None:
+    z = Tensor("z", ["i", "j"])
+    a, b = Tensor("a", ["i", "k"]), Tensor("b", ["j", "k"])
+    expression = Expression(Tensor("x", ["j", "i"]), Add([z, Mul([a, b])]))
+
+    assert expression.format(EinsumEncoder) == (
+        'x = np.copy(np.einsum("ij->ji", z, optimize=True))\nx += np.einsum("ik,jk->ji", a, b, optimize=True)'
+    )
+
+
+def test_einsum_encoder_uses_tensor_directly_for_identity_indices() -> None:
+    tensor = Tensor("a", ["i", "j"])
+    expression = Expression(Tensor("out", ["i", "j"]), tensor)
+
+    assert tensor.format(EinsumEncoder) == "a"
+    assert expression.format(EinsumEncoder) == "out = np.copy(a)"
+
+
+def test_einsum_encoder_copies_assigned_tensor_but_not_accumulated_terms() -> None:
+    a, b = Tensor("a", ["i"]), Tensor("b", ["i"])
+    expression = Expression(Tensor("out", ["i"]), Add([a, b]))
+
+    assert expression.format(EinsumEncoder) == "out = np.copy(a)\nout += b"
+
+
+def test_einsum_encoder_supports_custom_options_and_method_name() -> None:
+    z = Tensor("z", ["i", "j"])
+    a, b = Tensor("a", ["i", "k"]), Tensor("b", ["j", "k"])
+    expression = Expression(Tensor("x", ["j", "i"]), Add([z, Mul([a, b])]))
+    encoder = EinsumEncoder(
+        einsum_function="einsum",
+        einsum_kwargs={"optimize": False},
+        copy_function="copy",
+    )
+
+    assert expression.format(encoder) == (
+        'x = copy(einsum("ij->ji", z, optimize=False))\nx += einsum("ik,jk->ji", a, b, optimize=False)'
+    )
+    assert expression.format("einsum") == expression.format(EinsumEncoder)
+
+
+def test_einsum_encoder_distributes_products_over_sums_and_formats_scalars() -> None:
+    a, b = Tensor("a", ["i"]), Tensor("b", ["i"])
+    z = Tensor("z", ["j"])
+    expression = Expression(
+        Tensor("out", ["i", "j"]),
+        Mul([Add([a, b]), Scalar(-2), z]),
+    )
+
+    assert expression.format(EinsumEncoder(einsum_kwargs={})) == (
+        'out = -2.0 * np.einsum("i,j->ij", a, z)\nout += -2.0 * np.einsum("i,j->ij", b, z)'
+    )
