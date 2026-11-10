@@ -7,6 +7,7 @@ from albert import (
     PathRequest,
     PathRequests,
     ScalingLimits,
+    ScalingMetric,
     Tensor,
     apply_parenthesization,
     parenthesization_candidates,
@@ -276,11 +277,11 @@ def test_scaling_caps_filter_exhaustive_paths(chain) -> None:
     assert len(candidates) == 2
     assert all(candidate.path[0] in {(0, 1), (1, 2)} for candidate in candidates)
     assert all(
-        scaling_exponent(apply_parenthesization(node, candidate), "n", "time", metadata) <= 3
+        scaling_exponent(apply_parenthesization(node, candidate), "n", ScalingMetric.TIME, metadata) <= 3
         for candidate in candidates
     )
     assert all(
-        scaling_exponent(apply_parenthesization(node, candidate), "n", "memory", metadata) <= 2
+        scaling_exponent(apply_parenthesization(node, candidate), "n", ScalingMetric.MEMORY, metadata) <= 2
         for candidate in candidates
     )
 
@@ -367,9 +368,9 @@ def test_scaling_limits_validate_keys_and_values() -> None:
 def test_scaling_exponent_uses_metadata_spaces(chain) -> None:
     node, metadata, *_ = chain
 
-    assert scaling_exponent(node, "n", "time", metadata) == 3
-    assert scaling_exponent(node, ("n",), "memory", metadata) == 2
-    assert scaling_exponent(node, "missing", "memory", metadata) == 0
+    assert scaling_exponent(node, "n", ScalingMetric.TIME, metadata) == 3
+    assert scaling_exponent(node, ("n",), ScalingMetric.MEMORY, metadata) == 2
+    assert scaling_exponent(node, "missing", ScalingMetric.MEMORY, metadata) == 0
     assert not hasattr(node, "scaling_exponent")
 
 
@@ -377,8 +378,8 @@ def test_node_scaling_exponent_handles_tensor_trace() -> None:
     trace = Tensor("T", ["i", "i", "j"])
     metadata = Metadata(spaces={"n": ["i", "j"]})
 
-    assert scaling_exponent(trace, "n", "time", metadata) == 2
-    assert scaling_exponent(trace, "n", "memory", metadata) == 2
+    assert scaling_exponent(trace, "n", ScalingMetric.TIME, metadata) == 2
+    assert scaling_exponent(trace, "n", ScalingMetric.MEMORY, metadata) == 2
 
 
 def test_scaling_exponent_accepts_expression(chain) -> None:
@@ -387,8 +388,8 @@ def test_scaling_exponent_accepts_expression(chain) -> None:
     node, metadata, a, *_ = chain
     expression = Expression(Tensor("R", ["i", "l"]), node)
 
-    assert scaling_exponent(expression, "n", "time", metadata) == scaling_exponent(
-        expression.rhs, "n", "time", metadata
+    assert scaling_exponent(expression, "n", ScalingMetric.TIME, metadata) == scaling_exponent(
+        expression.rhs, "n", ScalingMetric.TIME, metadata
     )
 
 
@@ -398,7 +399,7 @@ def test_scaling_memory_limit_includes_input_tensor_storage() -> None:
     node = Mul([a, b])
     metadata = Metadata(spaces={"n": ["i", "j", "k", "l"]}, sizes={"n": 4})
 
-    assert scaling_exponent(node, "n", "memory", metadata) == 3
+    assert scaling_exponent(node, "n", ScalingMetric.MEMORY, metadata) == 3
     assert (
         parenthesization_candidates(
             node,

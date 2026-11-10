@@ -18,6 +18,7 @@ from albert import (
     Permutation,
     Scalar,
     ScalingLimits,
+    ScalingMetric,
     Tensor,
     canonical_key,
     canonicalize,
@@ -65,7 +66,10 @@ def total_cost(expressions: list[Expression], meta: Metadata) -> float:
 
 def assert_cc_scaling(expressions: list[Expression], meta: Metadata) -> None:
     for spaces, expected in [(("o", "v"), 6), ("o", 4), ("v", 4)]:
-        assert max(scaling_exponent(expression, spaces, "time", meta) for expression in expressions) == expected
+        assert (
+            max(scaling_exponent(expression, spaces, ScalingMetric.TIME, meta) for expression in expressions)
+            == expected
+        )
 
 
 GREEDY_PATH_REQUESTS = PathRequests(bounds=(), requests=(PathRequest(greedy=1),))
@@ -195,6 +199,6 @@ def test_df_tt_cse_respects_scaling_limits_without_losing_flop_performance() -> 
     assert total_cost(result, meta) < 219_000_000_000
     for optimized in result:
         for spaces, maximum in limits.time.items():
-            assert scaling_exponent(optimized, spaces, "time", meta) <= maximum
+            assert scaling_exponent(optimized, spaces, ScalingMetric.TIME, meta) <= maximum
         for spaces, maximum in limits.memory.items():
-            assert scaling_exponent(optimized, spaces, "memory", meta) <= maximum
+            assert scaling_exponent(optimized, spaces, ScalingMetric.MEMORY, meta) <= maximum

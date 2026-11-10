@@ -3,7 +3,19 @@ from io import StringIO
 
 import pytest
 
-from albert import Add, Encoder, Expression, LatexEncoder, Mul, Node, ReadableEncoder, Scalar, Tensor, TreeEncoder
+from albert import (
+    Add,
+    Encoder,
+    EncodingMethod,
+    Expression,
+    LatexEncoder,
+    Mul,
+    Node,
+    ReadableEncoder,
+    Scalar,
+    Tensor,
+    TreeEncoder,
+)
 
 
 class RecordingEncoder(Encoder):
@@ -84,7 +96,19 @@ def test_format_and_encode_reject_non_encoder_arguments() -> None:
     node = Tensor("A", ["i"])
 
     with pytest.raises(TypeError, match="encoder must be"):
-        node.format("readable")
+        node.format(12)
+
+
+def test_format_and_encode_accept_encoding_method_strings_and_enums(capsys) -> None:
+    node = Tensor("A", ["i"])
+    expression = Expression(Tensor("out", ["i"]), node)
+
+    assert node.format("readable") == "A[i]"
+    assert node.format(EncodingMethod.LATEX) == r"A_{i}"
+    assert expression.format("tree") == "Expression\n├── out[i]\n└── A[i]"
+
+    node.encode("latex")
+    assert capsys.readouterr().out == "A_{i}\n"
 
 
 def test_encodes_tensor_contraction_in_readable_notation() -> None:

@@ -1,5 +1,5 @@
 from collections.abc import Callable, Iterator, Sequence
-from typing import Literal, Protocol, Self
+from typing import Protocol, Self
 
 from numpy import complex64, complex128, float32, float64
 from numpy.typing import NDArray
@@ -7,7 +7,17 @@ from numpy.typing import NDArray
 from albert.decode import Decoder, JsonDecoder
 from albert.encode import Encoder, JsonEncoder, ReadableEncoder
 from albert.metadata import Metadata
-from albert.options import CostModel, NodeKind, PathRequests, PhaseFactor, ScalingLimits, SearchOrder
+from albert.options import (
+    CostModel,
+    DecodingMethod,
+    EncodingMethod,
+    NodeKind,
+    PathRequests,
+    PhaseFactor,
+    ScalingLimits,
+    ScalingMetric,
+    SearchOrder,
+)
 
 class CanonicalKey:
     def __eq__(self, other: object) -> bool: ...
@@ -25,10 +35,10 @@ class ParenthesizationCandidate:
     cost: CostEstimate
 
 class Encodable(Protocol):
-    def format(self, encoder: Encoder | type[Encoder] = ReadableEncoder) -> str: ...
-    def encode(self, encoder: Encoder | type[Encoder] = JsonEncoder) -> None: ...
+    def format(self, encoder: Encoder | type[Encoder] | EncodingMethod = ReadableEncoder) -> str: ...
+    def encode(self, encoder: Encoder | type[Encoder] | EncodingMethod = JsonEncoder) -> None: ...
     @classmethod
-    def decode(cls, value: str, decoder: Decoder | type[Decoder] = JsonDecoder) -> Self: ...
+    def decode(cls, value: str, decoder: Decoder | type[Decoder] | DecodingMethod = JsonDecoder) -> Self: ...
     def __repr__(self) -> str: ...
 
 class Node(Encodable):
@@ -115,7 +125,7 @@ def canonical_key(node: Node) -> CanonicalKey: ...
 def scaling_exponent(
     node: Node | Expression,
     space: str | tuple[str, ...],
-    which: Literal["time", "memory"],
+    which: ScalingMetric,
     metadata: Metadata,
 ) -> int: ...
 def estimate_cost(node: Node, metadata: Metadata, cost_model: CostModel = ...) -> CostEstimate: ...

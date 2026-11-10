@@ -5,7 +5,52 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from enum import IntEnum, StrEnum
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    from albert.decode import Decoder
+    from albert.encode import Encoder
+
+
+class EncodingMethod(StrEnum):
+    """Encoders."""
+
+    JSON = "json"
+    READABLE = "readable"
+    LATEX = "latex"
+    TREE = "tree"
+
+    @property
+    def encoder_type(self) -> type[Encoder]:
+        """Return the encoder class selected by this method."""
+        from albert.encode import JsonEncoder, LatexEncoder, ReadableEncoder, TreeEncoder  # noqa: PLC0415
+
+        return {  # type: ignore[return-value]
+            EncodingMethod.JSON: JsonEncoder,
+            EncodingMethod.READABLE: ReadableEncoder,
+            EncodingMethod.LATEX: LatexEncoder,
+            EncodingMethod.TREE: TreeEncoder,
+        }[self]
+
+
+class DecodingMethod(StrEnum):
+    """Decoders."""
+
+    JSON = "json"
+
+    @property
+    def decoder_type(self) -> type[Decoder]:
+        """Return the decoder class selected by this method."""
+        from albert.decode import JsonDecoder  # noqa: PLC0415
+
+        return {DecodingMethod.JSON: JsonDecoder}[self]
+
+
+class ScalingMetric(StrEnum):
+    """Metric for scaling exponents."""
+
+    TIME = "time"
+    MEMORY = "memory"
 
 
 @dataclass(frozen=True)

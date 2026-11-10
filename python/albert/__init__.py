@@ -38,11 +38,14 @@ from albert.encode import Encoder, JsonEncoder, LatexEncoder, ReadableEncoder, T
 from albert.decode import Decoder, JsonDecoder
 from albert.options import (
     CostModel,
+    DecodingMethod,
+    EncodingMethod,
     NodeKind,
     PathRequest,
     PathRequests,
     PhaseFactor,
     ScalingLimits,
+    ScalingMetric,
     SearchOrder,
 )
 
@@ -51,9 +54,11 @@ __all__ = [
     "CanonicalKey",
     "CostEstimate",
     "CostModel",
+    "DecodingMethod",
     "Decoder",
     "Expression",
     "Encoder",
+    "EncodingMethod",
     "JsonDecoder",
     "JsonEncoder",
     "LatexEncoder",
@@ -70,6 +75,7 @@ __all__ = [
     "Scalar",
     "SearchOrder",
     "ScalingLimits",
+    "ScalingMetric",
     "Tensor",
     "TreeEncoder",
     "canonical_key",

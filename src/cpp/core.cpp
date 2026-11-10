@@ -127,6 +127,11 @@ py::object resolve_encoder(py::object encoder,
     if (encoder.is_none()) {
         return encode_module.attr(default_encoder.c_str())();
     }
+    if (py::isinstance<py::str>(encoder)) {
+        const auto method = py::module_::import("albert.options")
+                                .attr("EncodingMethod")(encoder);
+        return method.attr("encoder_type")();
+    }
     if (py::isinstance(encoder, encoder_base)) {
         return encoder;
     }
@@ -142,6 +147,11 @@ py::object resolve_decoder(py::object decoder) {
     const auto decoder_base = decode_module.attr("Decoder");
     if (decoder.is_none()) {
         return decode_module.attr("JsonDecoder")();
+    }
+    if (py::isinstance<py::str>(decoder)) {
+        const auto method = py::module_::import("albert.options")
+                                .attr("DecodingMethod")(decoder);
+        return method.attr("decoder_type")();
     }
     if (py::isinstance(decoder, decoder_base)) {
         return decoder;
