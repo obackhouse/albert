@@ -431,31 +431,13 @@ std::vector<ScoredBiclique> select_bicliques(const std::vector<GraphRecord>& gra
                         excess += edge->excess;
                         if (cost_model.apply_cost_factors) {
                             ++edge_count;
-                            std::unordered_set<TensorKey, TensorKeyHash> tensors;
+                            std::unordered_set<std::string> symbols;
                             for (const auto& tensor : tensors_in(edge->term)) {
-                                std::vector<std::string> tensor_spaces;
-                                tensor_spaces.reserve(tensor->indices().size());
-                                for (const auto& index : tensor->indices()) {
-                                    std::string tensor_space;
-                                    for (const auto& [space, indices] : spaces) {
-                                        if (std::find(indices.begin(), indices.end(), index) != indices.end()) {
-                                            tensor_space = space;
-                                            break;
-                                        }
-                                    }
-                                    if (tensor_space.empty()) {
-                                        tensor_spaces.clear();
-                                        break;
-                                    }
-                                    tensor_spaces.push_back(tensor_space);
-                                }
-                                if (tensor_spaces.size() == tensor->indices().size()) {
-                                    tensors.insert({tensor->symbol(), std::move(tensor_spaces)});
-                                }
+                                symbols.insert(tensor->symbol());
                             }
                             double factor = 1.0;
-                            for (const auto& tensor : tensors) {
-                                auto found = cost_factors.find(tensor);
+                            for (const auto& symbol : symbols) {
+                                auto found = cost_factors.find(symbol);
                                 if (found == cost_factors.end()) {
                                     continue;
                                 }

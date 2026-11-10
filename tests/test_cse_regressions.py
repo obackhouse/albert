@@ -50,35 +50,13 @@ def load_cases(filename: str) -> dict[str, Any]:
 
 
 def metadata(case: dict[str, Any]) -> Metadata:
-    indices = case["spaces"]
-    index_spaces = {index: space for space, labels in indices.items() for index in labels}
-    signatures: dict[str, set[tuple[str, ...]]] = {}
-
-    def visit(node: dict[str, Any]) -> None:
-        if node["kind"] == "tensor":
-            signature = tuple(index_spaces[index] for index in node["indices"])
-            signatures.setdefault(node["symbol"], set()).add(signature)
-        for child in node.get("children", []):
-            visit(child)
-
-    expressions = case.get("expressions", [case])
-    for expression in expressions:
-        visit(expression["lhs"])
-        visit(expression["rhs"])
-    symmetries = {}
-    for symbol, permutations in case["symmetries"].items():
-        for spaces in signatures[symbol]:
-            valid_permutations = [
-                item for item in permutations if tuple(spaces[axis] for axis in item["permutation"]) == spaces
-            ]
-            if valid_permutations:
-                symmetries[(symbol, spaces)] = [
-                    Permutation(item["permutation"], item["phase"]) for item in valid_permutations
-                ]
     return Metadata(
-        indices=indices,
+        indices=case["spaces"],
         sizes=case["sizes"],
-        symmetries=symmetries,
+        symmetries={
+            symbol: [Permutation(item["permutation"], item["phase"]) for item in permutations]
+            for symbol, permutations in case["symmetries"].items()
+        },
     )
 
 
@@ -100,20 +78,29 @@ GREEDY_PATH_REQUESTS = PathRequests(bounds=(), requests=(PathRequest(greedy=1),)
 def evaluation_arrays(expressions: list[Expression], meta: Metadata, seed: int) -> dict:
     index_spaces = {index: space for space, indices in meta.indices.items() for index in indices}
     space_sizes = {space: 2 for space in meta.indices}
+    offsets = {}
+    offset = 0
+    for space, size in space_sizes.items():
+        offsets[space] = slice(offset, offset + size)
+        offset += size
     rng = np.random.default_rng(seed)
+    full_arrays = {}
     arrays = {}
     for expression in expressions:
         for tensor in expression.rhs.search(lambda node: isinstance(node, Tensor)):
             spaces = tuple(index_spaces[index] for index in tensor.indices)
+            rank_key = (tensor.symbol, len(spaces))
+            if rank_key not in full_arrays:
+                full = rng.standard_normal((offset,) * len(spaces))
+                symmetries = meta.symmetries.get(tensor.symbol, [])
+                if symmetries:
+                    full = sum(
+                        int(symmetry.phase) * np.transpose(full, symmetry.permutation) for symmetry in symmetries
+                    ) / len(symmetries)
+                full_arrays[rank_key] = full
             key = (tensor.symbol, spaces)
             if key not in arrays:
-                array = rng.standard_normal(tuple(space_sizes[space] for space in spaces))
-                symmetries = meta.symmetries.get(key, [])
-                if symmetries:
-                    array = sum(
-                        int(symmetry.phase) * np.transpose(array, symmetry.permutation) for symmetry in symmetries
-                    ) / len(symmetries)
-                arrays[key] = array
+                arrays[key] = full_arrays[rank_key][tuple(offsets[space] for space in spaces)]
     return arrays
 
 

@@ -1,7 +1,6 @@
 #pragma once
 
 #include "ast.h"
-#include "tensor_key.h"
 
 #include <cstdint>
 #include <string>
@@ -12,7 +11,7 @@ namespace albert {
 
 using IndexSpaces = std::unordered_map<std::string, std::vector<std::string>>;
 using SpaceSizes = std::unordered_map<std::string, std::uint64_t>;
-using CostFactors = std::unordered_map<TensorKey, std::uint64_t, TensorKeyHash>;
+using CostFactors = std::unordered_map<std::string, std::uint64_t>;
 
 enum class CostFactorAggregation {
     Product,

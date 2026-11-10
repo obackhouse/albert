@@ -113,7 +113,7 @@ def test_cost_model_rejects_negative_or_nonfinite_weights(weight: float) -> None
 
 def test_cost_factors_are_disabled_by_default_and_can_use_product() -> None:
     expression = Mul([Tensor("A", []), Tensor("B", [])])
-    metadata = Metadata(cost_factors={("A", ()): 3, ("B", ()): 4})
+    metadata = Metadata(cost_factors={"A": 3, "B": 4})
 
     unweighted = estimate_cost(expression, metadata)
     weighted = estimate_cost(expression, metadata, CostModel(apply_cost_factors=True))
@@ -124,7 +124,7 @@ def test_cost_factors_are_disabled_by_default_and_can_use_product() -> None:
 
 def test_cost_factors_can_use_maximum_for_overlapping_iterations() -> None:
     expression = Mul([Tensor("A", []), Tensor("B", [])])
-    metadata = Metadata(cost_factors={("A", ()): 3, ("B", ()): 4})
+    metadata = Metadata(cost_factors={"A": 3, "B": 4})
     model = CostModel(apply_cost_factors=True, cost_factor_aggregation="maximum")
 
     weighted = estimate_cost(expression, metadata, model)
@@ -132,19 +132,19 @@ def test_cost_factors_can_use_maximum_for_overlapping_iterations() -> None:
     assert weighted.total == pytest.approx(1.3 * 4)
 
 
-def test_cost_factors_use_exact_space_signatures() -> None:
+def test_cost_factors_are_keyed_by_tensor_symbol_across_spaces() -> None:
     expression = Mul([Tensor("A", ["i"]), Tensor("A", ["a"])])
     metadata = Metadata(
         indices={"occupied": ["i"], "virtual": ["a"]},
         sizes={"occupied": 2, "virtual": 3},
-        cost_factors={("A", ("occupied",)): 2, ("A", ("virtual",)): 5},
+        cost_factors={"A": 5},
     )
 
     estimate = estimate_cost(expression, metadata, CostModel(apply_cost_factors=True))
 
-    assert estimate.total == pytest.approx(71.0)
+    assert estimate.total == pytest.approx(35.5)
 
 
 def test_metadata_rejects_invalid_cost_factors() -> None:
     with pytest.raises(ValueError, match="positive integers"):
-        Metadata(cost_factors={("A", ()): 0})
+        Metadata(cost_factors={"A": 0})

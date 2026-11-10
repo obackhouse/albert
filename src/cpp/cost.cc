@@ -14,14 +14,6 @@
 
 namespace albert {
 
-std::size_t TensorKeyHash::operator()(const TensorKey& key) const noexcept {
-    std::size_t result = std::hash<std::string>{}(key.symbol);
-    for (const auto& space : key.spaces) {
-        result ^= std::hash<std::string>{}(space) + 0x9e3779b9U + (result << 6U) + (result >> 2U);
-    }
-    return result;
-}
-
 namespace {
 
 using AxisSet = std::set<std::string>;
@@ -204,22 +196,10 @@ private:
 double tensor_cost_factor(const NodePtr& node, const CostFactors& factors,
                           const IndexSpaceMap& index_spaces,
                           CostFactorAggregation aggregation) {
-    std::unordered_set<TensorKey, TensorKeyHash> tensors;
+    std::unordered_set<std::string> symbols;
     std::function<void(const NodePtr&)> collect = [&](const NodePtr& current) {
         if (const auto* tensor = dynamic_cast<const Tensor*>(current.get())) {
-            std::vector<std::string> spaces;
-            spaces.reserve(tensor->indices().size());
-            for (const auto& index : tensor->indices()) {
-                const auto found = index_spaces.find(index);
-                if (found == index_spaces.end()) {
-                    spaces.clear();
-                    break;
-                }
-                spaces.push_back(found->second);
-            }
-            if (spaces.size() == tensor->indices().size()) {
-                tensors.insert({tensor->symbol(), std::move(spaces)});
-            }
+            symbols.insert(tensor->symbol());
             return;
         }
         for (const auto& child : current->children()) {
@@ -228,8 +208,8 @@ double tensor_cost_factor(const NodePtr& node, const CostFactors& factors,
     };
     collect(node);
     double result = 1.0;
-    for (const auto& tensor : tensors) {
-        auto found = factors.find(tensor);
+    for (const auto& symbol : symbols) {
+        const auto found = factors.find(symbol);
         if (aggregation == CostFactorAggregation::Product) {
             if (found != factors.end()) {
                 result *= static_cast<double>(found->second);
@@ -344,8 +324,8 @@ CostEstimate estimate_cost(const NodePtr& node, const IndexSpaces& spaces,
             throw std::invalid_argument("space sizes must be positive");
         }
     }
-    for (const auto& [key, factor] : cost_factors) {
-        if (key.symbol.empty() || factor == 0) {
+    for (const auto& [symbol, factor] : cost_factors) {
+        if (symbol.empty() || factor == 0) {
             throw std::invalid_argument("tensor cost factors must be positive integers");
         }
     }

@@ -87,7 +87,7 @@ def test_canonicalize_uses_transitive_tensor_symmetries() -> None:
     metadata = Metadata(
         indices={"all": ["i", "j", "k"]},
         sizes={"all": 8},
-        symmetries={("T", ("all", "all", "all")): [Permutation([1, 2, 0])]},
+        symmetries={"T": [Permutation([1, 2, 0])]},
     )
     first = Tensor("T", ["i", "j", "k"])
     rotated = Tensor("T", ["j", "k", "i"])
@@ -95,27 +95,22 @@ def test_canonicalize_uses_transitive_tensor_symmetries() -> None:
     assert canonicalize(first, metadata) == canonicalize(rotated, metadata)
 
 
-def test_canonicalize_selects_symmetry_by_ordered_spaces() -> None:
+def test_canonicalize_applies_symbol_symmetry_across_space_blocks() -> None:
     metadata = Metadata(
         indices={"occupied": ["i", "j"], "virtual": ["a", "b"]},
         sizes={"occupied": 8, "virtual": 8},
-        symmetries={
-            ("A", ("occupied", "occupied")): [Permutation([1, 0])],
-            ("A", ("virtual", "virtual")): [Permutation([1, 0], PhaseFactor.NEGATIVE)],
-        },
+        symmetries={"A": [Permutation([1, 0])]},
     )
 
     assert canonicalize(Tensor("A", ["i", "j"]), metadata) == canonicalize(Tensor("A", ["j", "i"]), metadata)
-    expression = Mul([Tensor("A", ["a", "b"]), Tensor("B", ["b"])])
-    swapped = Mul([Tensor("A", ["b", "a"]), Tensor("B", ["b"])])
-    assert canonicalize(swapped, metadata) == canonicalize(-canonicalize(expression, metadata), metadata)
+    assert canonicalize(Tensor("A", ["a", "b"]), metadata) == canonicalize(Tensor("A", ["b", "a"]), metadata)
 
 
 def test_canonicalize_preserves_negative_symmetry_phase() -> None:
     metadata = Metadata(
         indices={"all": ["i", "j"]},
         sizes={"all": 8},
-        symmetries={("A", ("all", "all")): [Permutation([1, 0], PhaseFactor.NEGATIVE)]},
+        symmetries={"A": [Permutation([1, 0], PhaseFactor.NEGATIVE)]},
     )
     canonical = canonicalize(Mul([Tensor("A", ["i", "j"]), Tensor("B", ["j"])]), metadata)
     swapped = canonicalize(Mul([Tensor("A", ["j", "i"]), Tensor("B", ["j"])]), metadata)
@@ -127,7 +122,7 @@ def test_canonicalize_zeroes_repeated_axes_of_antisymmetric_tensor() -> None:
     metadata = Metadata(
         indices={"all": ["i"]},
         sizes={"all": 8},
-        symmetries={("A", ("all", "all")): [Permutation([1, 0], PhaseFactor.NEGATIVE)]},
+        symmetries={"A": [Permutation([1, 0], PhaseFactor.NEGATIVE)]},
     )
 
     assert canonicalize(Tensor("A", ["i", "i"]), metadata) == Scalar(0)
@@ -137,7 +132,7 @@ def test_canonicalize_handles_symmetry_and_dummy_relabelling_together() -> None:
     metadata = Metadata(
         indices={"all": ["i", "j", "k", "l", "m"]},
         sizes={"all": 8},
-        symmetries={("A", ("all", "all")): [Permutation([1, 0])]},
+        symmetries={"A": [Permutation([1, 0])]},
     )
     left = Mul([Tensor("A", ["i", "j"]), Tensor("B", ["j", "k"])])
     renamed = Mul([Tensor("B", ["m", "l"]), Tensor("A", ["m", "i"])])
@@ -175,7 +170,7 @@ def test_canonicalize_rejects_symmetry_generators_with_the_wrong_rank() -> None:
     metadata = Metadata(
         indices={"all": ["i", "j", "k"]},
         sizes={"all": 8},
-        symmetries={("A", ("all", "all", "all")): [Permutation([1, 0])]},
+        symmetries={"A": [Permutation([1, 0])]},
     )
 
     with pytest.raises(ValueError, match="rank mismatch"):
@@ -186,7 +181,7 @@ def test_canonicalize_rejects_inconsistent_symmetry_phases() -> None:
     metadata = Metadata(
         indices={"all": ["i"]},
         sizes={"all": 8},
-        symmetries={("A", ("all",)): [Permutation([0], PhaseFactor.NEGATIVE)]},
+        symmetries={"A": [Permutation([0], PhaseFactor.NEGATIVE)]},
     )
 
     with pytest.raises(ValueError, match="inconsistent"):

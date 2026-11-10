@@ -10,8 +10,6 @@ if TYPE_CHECKING:
 
     from albert._core import Permutation
 
-    type TensorKey = tuple[str, tuple[str, ...]]
-
 
 @dataclass
 class Metadata:
@@ -23,11 +21,11 @@ class Metadata:
     sizes: dict[str, int] = field(default_factory=dict)
     """Sizes of the spaces."""
 
-    symmetries: dict[TensorKey, list[Permutation]] = field(default_factory=dict)
-    """Tensor symmetries keyed by (tensor label, index spaces)."""
+    symmetries: dict[str, list[Permutation]] = field(default_factory=dict)
+    """Tensor symmetries keyed by tensor symbol."""
 
-    cost_factors: dict[TensorKey, int] = field(default_factory=dict)
-    """Tensor cost factors keyed by (tensor label, index spaces)."""
+    cost_factors: dict[str, int] = field(default_factory=dict)
+    """Tensor cost factors keyed by tensor symbol."""
 
     def __post_init__(self) -> None:
         self.verify()
@@ -44,18 +42,9 @@ class Metadata:
             if len(indices_set) != len(indices):
                 raise ValueError(f"indices for space {space} must be unique")
             all_indices.update(indices_set)
-        for key in self.symmetries.keys() | self.cost_factors.keys():
-            if (
-                not isinstance(key, tuple)
-                or len(key) != 2
-                or not isinstance(key[0], str)
-                or not key[0]
-                or not isinstance(key[1], tuple)
-                or any(not isinstance(space, str) or not space for space in key[1])
-            ):
-                raise ValueError("tensor metadata keys must be (tensor, spaces) pairs")
-            if not all(space in self.indices for space in key[1]):
-                raise ValueError(f"tensor metadata keys must reference existing spaces: {key}")
+        for symbol in self.symmetries.keys() | self.cost_factors.keys():
+            if not isinstance(symbol, str) or not symbol:
+                raise ValueError("tensor metadata keys must be non-empty tensor symbols")
         for factor in self.cost_factors.values():
             if isinstance(factor, bool) or not isinstance(factor, int) or factor < 1:
                 raise ValueError("cost_factors values must be positive integers")
@@ -75,15 +64,13 @@ class Metadata:
     def add_tensor(
         self,
         symbol: str,
-        spaces: Sequence[str],
         *,
         symmetry: Sequence[Permutation] | None = None,
         cost_factor: int | None = None,
     ) -> None:
         """Add a tensor to the metadata."""
-        key = (symbol, tuple(spaces))
         if symmetry is not None:
-            self.symmetries[key] = list(symmetry)
+            self.symmetries[symbol] = list(symmetry)
         if cost_factor is not None:
-            self.cost_factors[key] = cost_factor
+            self.cost_factors[symbol] = cost_factor
         self.verify()

@@ -90,33 +90,9 @@ albert::CanonicalizationMetadata parse_canonicalization_metadata(
         result.spaces = metadata.attr("indices")
                             .cast<std::unordered_map<std::string,
                                                      std::vector<std::string>>>();
-        const auto symmetries = metadata.attr("symmetries").cast<py::dict>();
-        for (const auto& item : symmetries) {
-            const auto key = py::cast<py::tuple>(item.first);
-            if (key.size() != 2) {
-                throw py::value_error("tensor metadata keys must be (tensor, spaces) pairs");
-            }
-            albert::TensorKey tensor_key;
-            tensor_key.symbol = py::cast<std::string>(key[0]);
-            tensor_key.spaces = py::cast<std::vector<std::string>>(key[1]);
-            result.symmetries.emplace(
-                std::move(tensor_key), py::cast<std::vector<albert::Permutation>>(item.second));
-        }
-    }
-    return result;
-}
-
-albert::CostFactors parse_cost_factors(const py::object& object) {
-    albert::CostFactors result;
-    for (const auto& item : object.cast<py::dict>()) {
-        const auto key = py::cast<py::tuple>(item.first);
-        if (key.size() != 2) {
-            throw py::value_error("tensor metadata keys must be (tensor, spaces) pairs");
-        }
-        albert::TensorKey tensor_key;
-        tensor_key.symbol = py::cast<std::string>(key[0]);
-        tensor_key.spaces = py::cast<std::vector<std::string>>(key[1]);
-        result.emplace(std::move(tensor_key), py::cast<std::uint64_t>(item.second));
+        result.symmetries = metadata.attr("symmetries")
+                                .cast<std::unordered_map<
+                                    std::string, std::vector<albert::Permutation>>>();
     }
     return result;
 }
@@ -243,7 +219,7 @@ PYBIND11_MODULE(_core, module) {
                 model.cost_factor_aggregation = parse_cost_factor_aggregation(
                     cost_model.attr("cost_factor_aggregation").cast<std::string>());
             }
-            const auto factors = parse_cost_factors(metadata.attr("cost_factors"));
+            const auto factors = metadata.attr("cost_factors").cast<albert::CostFactors>();
             return albert::estimate_cost(node, spaces, sizes, model, factors);
         },
         py::arg("node"), py::arg("metadata"), py::arg("cost_model") = py::none(),
@@ -298,7 +274,7 @@ PYBIND11_MODULE(_core, module) {
                 model.cost_factor_aggregation = parse_cost_factor_aggregation(
                     cost_model.attr("cost_factor_aggregation").cast<std::string>());
             }
-            const auto factors = parse_cost_factors(metadata.attr("cost_factors"));
+            const auto factors = metadata.attr("cost_factors").cast<albert::CostFactors>();
             const auto limits = parse_scaling_limits(scaling_limits);
             if (!path_requests.is_none()) {
                 const auto requests = parse_path_requests(path_requests);
@@ -631,11 +607,14 @@ PYBIND11_MODULE(_core, module) {
             albert::CanonicalizationMetadata canonicalization;
             canonicalization.spaces = metadata.attr("indices")
                                           .cast<albert::IndexSpaces>();
-            canonicalization.symmetries = parse_canonicalization_metadata(metadata).symmetries;
+            canonicalization.symmetries = metadata.attr("symmetries")
+                                              .cast<std::unordered_map<
+                                                  std::string,
+                                                  std::vector<albert::Permutation>>>();
             return albert::common_subexpression_elimination(
                 std::move(expressions), canonicalization.spaces,
                 metadata.attr("sizes").cast<albert::SpaceSizes>(),
-                parse_cost_factors(metadata.attr("cost_factors")),
+                metadata.attr("cost_factors").cast<albert::CostFactors>(),
                 canonicalization, options);
         },
         py::arg("expressions"), py::arg("metadata"),
