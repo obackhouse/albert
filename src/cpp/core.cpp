@@ -335,17 +335,6 @@ PYBIND11_MODULE(_core, module) {
         })
         .def_property_readonly("external_indices", &albert::Node::external_indices)
         .def_property_readonly("internal_indices", &albert::Node::internal_indices)
-        .def(
-            "scaling_exponent",
-            [](const albert::NodePtr& self, const py::object& space,
-               const std::string& which, const py::object& metadata) {
-                const auto spaces = metadata.attr("spaces")
-                                        .cast<albert::IndexSpaces>();
-                return albert::scaling_exponent(
-                    self, spaces, parse_space_argument(space), which);
-            },
-            py::arg("space"), py::arg("which"), py::arg("metadata"),
-            "Return the maximum index-space exponent for a contraction tree.")
         .def("map_indices",
              [](const albert::NodePtr& self,
                 const std::unordered_map<std::string, std::string>& mapping) {
@@ -501,6 +490,27 @@ PYBIND11_MODULE(_core, module) {
         }, py::arg("encoder") = py::none())
         .def_property_readonly("lhs", &albert::Expression::lhs)
         .def_property_readonly("rhs", &albert::Expression::rhs);
+
+    module.def(
+        "scaling_exponent",
+        [](const py::object& value, const py::object& space,
+           const std::string& which, const py::object& metadata) {
+            albert::NodePtr node;
+            if (py::isinstance<albert::Expression>(value)) {
+                node = value.cast<const albert::Expression&>().rhs();
+            } else if (py::isinstance<albert::Node>(value)) {
+                node = value.cast<albert::NodePtr>();
+            } else {
+                throw py::type_error("node must be a Node or Expression");
+            }
+            const auto spaces = metadata.attr("spaces")
+                                    .cast<albert::IndexSpaces>();
+            return albert::scaling_exponent(
+                node, spaces, parse_space_argument(space), which);
+        },
+        py::arg("node"), py::arg("space"), py::arg("which"),
+        py::arg("metadata"),
+        "Return the maximum index-space exponent for a node or expression RHS.");
 
     const auto expression_decode_method = py::cpp_function(
         [](const py::object& cls, const std::string& value, py::object decoder) {

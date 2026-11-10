@@ -13,6 +13,8 @@ from albert import (
     Expression,
     Metadata,
     Mul,
+    PathRequest,
+    PathRequests,
     Permutation,
     Scalar,
     ScalingLimits,
@@ -24,6 +26,7 @@ from albert import (
     estimate_cost,
     evaluate_expression,
     expand,
+    scaling_exponent,
     simplify,
     substitute_expressions,
 )
@@ -58,6 +61,14 @@ def metadata(case: dict[str, Any]) -> Metadata:
 
 def total_cost(expressions: list[Expression], meta: Metadata) -> float:
     return sum(estimate_cost(expression.rhs, meta, COST_MODEL).total for expression in expressions)
+
+
+def assert_cc_scaling(expressions: list[Expression], meta: Metadata) -> None:
+    for spaces, expected in [(("o", "v"), 6), ("o", 4), ("v", 4)]:
+        assert max(scaling_exponent(expression, spaces, "time", meta) for expression in expressions) == expected
+
+
+GREEDY_PATH_REQUESTS = PathRequests(bounds=(), requests=(PathRequest(greedy=1),))
 
 
 def evaluation_arrays(expressions: list[Expression], meta: Metadata, seed: int) -> dict:
@@ -154,6 +165,22 @@ def test_ccd_and_ccsd_evaluate_equally_after_canonicalization_simplification_and
     np.testing.assert_allclose(evaluate_expression(factored, arrays, small_meta), expected, rtol=1e-10, atol=1e-10)
 
 
+@pytest.mark.parametrize("case_name", ["CCD", "RCCSD"], ids=["ccd", "ccsd"])
+def test_ccd_and_ccsd_cse_output_has_expected_scaling(case_name: str) -> None:
+    case = load_cases("rhf_cc.json")[case_name]
+    meta = metadata(case)
+    expressions = [Expression(decode(item["lhs"]), decode(item["rhs"])) for item in case["expressions"]]
+
+    factored = common_subexpression_elimination(
+        expressions,
+        meta,
+        cost_model=COST_MODEL,
+        path_requests=GREEDY_PATH_REQUESTS,
+    )
+
+    assert_cc_scaling(factored, meta)
+
+
 def test_df_tt_cse_respects_scaling_limits_without_losing_flop_performance() -> None:
     case = load_cases("df_tt.json")
     meta = metadata(case)
@@ -168,6 +195,6 @@ def test_df_tt_cse_respects_scaling_limits_without_losing_flop_performance() -> 
     assert total_cost(result, meta) < 219_000_000_000
     for optimized in result:
         for spaces, maximum in limits.time.items():
-            assert optimized.rhs.scaling_exponent(spaces, "time", meta) <= maximum
+            assert scaling_exponent(optimized, spaces, "time", meta) <= maximum
         for spaces, maximum in limits.memory.items():
-            assert optimized.rhs.scaling_exponent(spaces, "memory", meta) <= maximum
+            assert scaling_exponent(optimized, spaces, "memory", meta) <= maximum
