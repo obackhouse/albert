@@ -169,6 +169,26 @@ def test_add_mul_store_their_children() -> None:
     assert product.children == [first, second]
 
 
+def test_nodes_iterate_over_their_immediate_children_in_order() -> None:
+    first = Tensor("A", ["i"])
+    second = Tensor("B", ["i"])
+    nested = Mul([Tensor("C", ["i", "j"]), Tensor("D", ["j"])])
+    node = Add([first, second, nested])
+
+    assert list(node) == [first, second, nested]
+    assert list(Scalar(1.0)) == []
+
+
+def test_node_membership_checks_immediate_children_by_structural_equality() -> None:
+    child = Tensor("A", ["i"])
+    descendant = Tensor("B", ["i", "j"])
+    node = Add([child, Mul([descendant, Tensor("C", ["j"])])])
+
+    assert Tensor("A", ["i"]) in node
+    assert descendant not in node
+    assert "A" not in node
+
+
 def test_add_requires_the_same_external_indices() -> None:
     ordered = Add([Tensor("A", ["i", "j"]), Tensor("B", ["j", "i"])])
     internal_product = Mul([Tensor("C", ["i", "j"]), Tensor("D", ["j", "k"])])

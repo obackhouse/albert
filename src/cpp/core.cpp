@@ -278,6 +278,19 @@ PYBIND11_MODULE(_core, module) {
             const auto resolved = resolve_encoder(std::move(encoder));
             resolved.attr("encode_node")(py::cast(self));
         }, py::arg("encoder") = py::none())
+        .def("__iter__", [](const albert::NodePtr& self) {
+            return py::iter(py::cast(self->children()));
+        })
+        .def("__contains__", [](const albert::NodePtr& self, const py::object& candidate) {
+            if (!py::isinstance<albert::Node>(candidate)) {
+                return false;
+            }
+            const auto child = candidate.cast<albert::NodePtr>();
+            return std::any_of(self->children().begin(), self->children().end(),
+                               [&child](const albert::NodePtr& item) {
+                                   return item->structurally_equal(*child);
+                               });
+        })
         .def_property_readonly("kind", [node_kind_enum](const albert::Node& node) -> py::object {
             switch (node.kind()) {
                 case albert::NodeKind::Scalar:
