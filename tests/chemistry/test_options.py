@@ -1,6 +1,6 @@
 import pytest
 
-from albert.chemistry.options import OrbitalType, ReferenceType
+from albert.chemistry.options import T2_ANTISYMMETRY, T2_SYMMETRY, OrbitalType, ReferenceType
 
 
 @pytest.mark.parametrize(
@@ -31,3 +31,16 @@ def test_orbital_types_define_index_suffix_and_size_factor(
 ) -> None:
     assert orbital.subscript == subscript
     assert orbital.size_factor == size_factor
+
+
+def test_t2_symmetries_preserve_the_occupied_and_virtual_slots() -> None:
+    assert [symmetry.permutation for symmetry in T2_SYMMETRY] == [
+        [0, 1, 2, 3],
+        [1, 0, 3, 2],
+    ]
+    assert [symmetry.permutation for symmetry in T2_ANTISYMMETRY] == [
+        [0, 1, 2, 3],
+        [1, 0, 2, 3],
+        [0, 1, 3, 2],
+        [1, 0, 3, 2],
+    ]

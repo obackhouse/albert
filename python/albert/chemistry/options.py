@@ -76,6 +76,7 @@ class TensorSymbol:
 def _s(*keys: str) -> list[Permutation]:
     """Return the list of permutations corresponding to the given keys."""
     permutations = []
+    base = keys[0].lstrip("+-")
     for key in keys:
         sign = 1
         chars = key
@@ -84,7 +85,7 @@ def _s(*keys: str) -> list[Permutation]:
             chars = chars[1:]
         elif key.startswith("+"):
             chars = chars[1:]
-        perm = tuple("".join(sorted(chars)).index(c) for c in chars)
+        perm = tuple(base.index(c) for c in chars)
         permutations.append(Permutation(perm, PhaseFactor(sign)))
     return permutations
 
