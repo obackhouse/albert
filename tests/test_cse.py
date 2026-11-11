@@ -296,8 +296,8 @@ def test_cse_cost_factors_are_opt_in_and_configurable(cse_options: dict) -> None
     meta = Metadata(
         indices={"I": ["i"], "J": ["j"], "K": ["k"], "L": ["l"]},
         sizes={"I": 20, "J": 20, "K": 20, "L": 20},
-        cost_factors={"A": 2, "B": 3, "C": 5, "D": 7},
     )
+    cost_factors = {"A": 2, "B": 3, "C": 5, "D": 7}
 
     product = common_subexpression_elimination(
         [expression],
@@ -307,6 +307,7 @@ def test_cse_cost_factors_are_opt_in_and_configurable(cse_options: dict) -> None
             add=0,
             read=0,
             write=0,
+            cost_factors=cost_factors,
             apply_cost_factors=True,
             cost_factor_aggregation="product",
         ),
@@ -320,6 +321,7 @@ def test_cse_cost_factors_are_opt_in_and_configurable(cse_options: dict) -> None
             add=0,
             read=0,
             write=0,
+            cost_factors=cost_factors,
             apply_cost_factors=True,
             cost_factor_aggregation="maximum",
         ),

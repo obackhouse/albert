@@ -63,6 +63,8 @@ class CostModel:
     add: float = 1.0
     read: float = 0.1
     write: float = 0.1
+    cost_factors: dict[str, int] = field(default_factory=dict)
+    """Tensor cost factors keyed by tensor symbol."""
     apply_cost_factors: bool = False
     cost_factor_aggregation: Literal["product", "maximum"] = "product"
 
@@ -77,6 +79,11 @@ class CostModel:
                 raise ValueError(f"{name} cost weight must be finite and nonnegative")
         if not isinstance(self.apply_cost_factors, bool):
             raise ValueError("apply_cost_factors must be a bool")
+        for symbol, factor in self.cost_factors.items():
+            if not isinstance(symbol, str) or not symbol:
+                raise ValueError("cost_factors keys must be non-empty tensor symbols")
+            if isinstance(factor, bool) or not isinstance(factor, int) or factor < 1:
+                raise ValueError("cost_factors values must be positive integers")
         if self.cost_factor_aggregation not in ("product", "maximum"):
             raise ValueError("cost_factor_aggregation must be 'product' or 'maximum'")
 

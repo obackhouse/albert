@@ -99,6 +99,30 @@ def test_exhaustive_finds_the_lowest_cost_parenthesization() -> None:
     assert candidates[0].cost.total < candidates[1].cost.total
 
 
+def test_parenthesization_reads_tensor_cost_factors_from_cost_model(chain) -> None:
+    node, metadata, *_ = chain
+    model = CostModel(
+        multiply=1,
+        add=0,
+        read=0,
+        write=0,
+        cost_factors={"A": 100},
+        apply_cost_factors=True,
+    )
+
+    candidates = parenthesization_candidates(node, metadata, max_candidates=3, exhaustive_limit=3, cost_model=model)
+    unweighted = parenthesization_candidates(
+        node,
+        metadata,
+        max_candidates=3,
+        exhaustive_limit=3,
+        cost_model=CostModel(multiply=1, add=0, read=0, write=0),
+    )
+
+    assert candidates[0].path == unweighted[0].path
+    assert candidates[0].cost.total == pytest.approx(unweighted[0].cost.total * 100)
+
+
 def test_parallel_exhaustive_returns_stable_top_candidates() -> None:
     indices = [f"i{index}" for index in range(5)]
     factors = [Tensor(f"T{index}", ["shared", index]) for index in indices]

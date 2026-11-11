@@ -209,6 +209,7 @@ PYBIND11_MODULE(_core, module) {
             const auto sizes = metadata.attr("sizes")
                                    .cast<albert::SpaceSizes>();
             albert::CostModel model;
+            albert::CostFactors model_cost_factors;
             if (!cost_model.is_none()) {
                 model.multiply = cost_model.attr("multiply").cast<double>();
                 model.add = cost_model.attr("add").cast<double>();
@@ -218,9 +219,9 @@ PYBIND11_MODULE(_core, module) {
                     cost_model.attr("apply_cost_factors").cast<bool>();
                 model.cost_factor_aggregation = parse_cost_factor_aggregation(
                     cost_model.attr("cost_factor_aggregation").cast<std::string>());
+                model_cost_factors = cost_model.attr("cost_factors").cast<albert::CostFactors>();
             }
-            const auto factors = metadata.attr("cost_factors").cast<albert::CostFactors>();
-            return albert::estimate_cost(node, spaces, sizes, model, factors);
+            return albert::estimate_cost(node, spaces, sizes, model, model_cost_factors);
         },
         py::arg("node"), py::arg("metadata"), py::arg("cost_model") = py::none(),
         "Estimate arithmetic operations and memory traffic for an AST.");
@@ -264,6 +265,7 @@ PYBIND11_MODULE(_core, module) {
             const auto spaces = metadata.attr("indices").cast<albert::IndexSpaces>();
             const auto sizes = metadata.attr("sizes").cast<albert::SpaceSizes>();
             albert::CostModel model;
+            albert::CostFactors model_cost_factors;
             if (!cost_model.is_none()) {
                 model.multiply = cost_model.attr("multiply").cast<double>();
                 model.add = cost_model.attr("add").cast<double>();
@@ -273,17 +275,19 @@ PYBIND11_MODULE(_core, module) {
                     cost_model.attr("apply_cost_factors").cast<bool>();
                 model.cost_factor_aggregation = parse_cost_factor_aggregation(
                     cost_model.attr("cost_factor_aggregation").cast<std::string>());
+                model_cost_factors = cost_model.attr("cost_factors").cast<albert::CostFactors>();
             }
-            const auto factors = metadata.attr("cost_factors").cast<albert::CostFactors>();
             const auto limits = parse_scaling_limits(scaling_limits);
             if (!path_requests.is_none()) {
                 const auto requests = parse_path_requests(path_requests);
                 return albert::parenthesization_candidates(
                     node, spaces, sizes, limits,
-                    requests.for_size(node.children().size()), max_candidates, model, factors);
+                    requests.for_size(node.children().size()), max_candidates, model,
+                    model_cost_factors);
             }
             return albert::parenthesization_candidates(
-                node, spaces, sizes, limits, max_candidates, exhaustive_limit, model, factors);
+                node, spaces, sizes, limits, max_candidates, exhaustive_limit, model,
+                model_cost_factors);
         },
         py::arg("node"), py::arg("metadata"),
         py::arg("scaling_limits") = py::none(), py::arg("max_candidates") = 8,
@@ -604,6 +608,7 @@ PYBIND11_MODULE(_core, module) {
                 options.path_requests = parse_path_requests(path_requests);
             }
             options.scaling_limits = parse_scaling_limits(scaling_limits);
+            albert::CostFactors model_cost_factors;
             if (!cost_model.is_none()) {
                 options.cost_model.multiply = cost_model.attr("multiply").cast<double>();
                 options.cost_model.add = cost_model.attr("add").cast<double>();
@@ -613,6 +618,7 @@ PYBIND11_MODULE(_core, module) {
                     cost_model.attr("apply_cost_factors").cast<bool>();
                 options.cost_model.cost_factor_aggregation = parse_cost_factor_aggregation(
                     cost_model.attr("cost_factor_aggregation").cast<std::string>());
+                model_cost_factors = cost_model.attr("cost_factors").cast<albert::CostFactors>();
             }
             albert::CanonicalizationMetadata canonicalization;
             canonicalization.spaces = metadata.attr("indices")
@@ -623,8 +629,7 @@ PYBIND11_MODULE(_core, module) {
                                                   std::vector<albert::Permutation>>>();
             return albert::common_subexpression_elimination(
                 std::move(expressions), canonicalization.spaces,
-                metadata.attr("sizes").cast<albert::SpaceSizes>(),
-                metadata.attr("cost_factors").cast<albert::CostFactors>(),
+                metadata.attr("sizes").cast<albert::SpaceSizes>(), model_cost_factors,
                 canonicalization, options);
         },
         py::arg("expressions"), py::arg("metadata"),

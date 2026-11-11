@@ -33,14 +33,13 @@ def test_metadata_add_space_stores_a_custom_size() -> None:
     assert metadata.sizes["virtual"] == 24
 
 
-def test_metadata_add_tensor_stores_cost_factor_and_symmetry() -> None:
+def test_metadata_add_tensor_stores_symmetry() -> None:
     metadata = Metadata()
     symmetry = Permutation([1, 0])
 
     metadata.add_space("occupied", ("i", "j"))
-    metadata.add_tensor("A", symmetry=(symmetry,), cost_factor=3)
+    metadata.add_tensor("A", symmetry=(symmetry,))
 
-    assert metadata.cost_factors == {"A": 3}
     assert metadata.symmetries == {"A": [symmetry]}
 
 
@@ -49,12 +48,11 @@ def test_metadata_add_tensor_uses_tensor_symbol_keys() -> None:
     symmetry = Permutation([1, 0])
 
     metadata.add_space("occupied", ("i", "j"))
-    metadata.add_tensor("A", symmetry=(symmetry,), cost_factor=4)
+    metadata.add_tensor("A", symmetry=(symmetry,))
 
-    assert metadata.cost_factors == {"A": 4}
     assert metadata.symmetries == {"A": [symmetry]}
 
 
 def test_metadata_rejects_invalid_tensor_metadata_keys() -> None:
     with pytest.raises(ValueError, match="tensor metadata keys"):
-        Metadata(cost_factors={"": 2})
+        Metadata(symmetries={"": []})

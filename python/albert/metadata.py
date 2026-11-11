@@ -24,9 +24,6 @@ class Metadata:
     symmetries: dict[str, list[Permutation]] = field(default_factory=dict)
     """Tensor symmetries keyed by tensor symbol."""
 
-    cost_factors: dict[str, int] = field(default_factory=dict)
-    """Tensor cost factors keyed by tensor symbol."""
-
     def __post_init__(self) -> None:
         self.verify()
 
@@ -42,12 +39,9 @@ class Metadata:
             if len(indices_set) != len(indices):
                 raise ValueError(f"indices for space {space} must be unique")
             all_indices.update(indices_set)
-        for symbol in self.symmetries.keys() | self.cost_factors.keys():
+        for symbol in self.symmetries:
             if not isinstance(symbol, str) or not symbol:
                 raise ValueError("tensor metadata keys must be non-empty tensor symbols")
-        for factor in self.cost_factors.values():
-            if isinstance(factor, bool) or not isinstance(factor, int) or factor < 1:
-                raise ValueError("cost_factors values must be positive integers")
 
     def add_space(
         self,
@@ -66,11 +60,8 @@ class Metadata:
         symbol: str,
         *,
         symmetry: Sequence[Permutation] | None = None,
-        cost_factor: int | None = None,
     ) -> None:
         """Add a tensor to the metadata."""
         if symmetry is not None:
             self.symmetries[symbol] = list(symmetry)
-        if cost_factor is not None:
-            self.cost_factors[symbol] = cost_factor
         self.verify()

@@ -64,7 +64,6 @@ class Metadata(BaseMetadata):
             indices=self.indices.copy(),
             sizes=self.sizes.copy(),
             symmetries=self.symmetries.copy(),
-            cost_factors=self.cost_factors.copy(),
         )
 
         # Update the spaces
