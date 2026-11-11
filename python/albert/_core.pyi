@@ -19,6 +19,9 @@ from albert.options import (
     SearchOrder,
 )
 
+type Predicate = Callable[[Node], bool]
+type Filter = Callable[[Node], Node]
+
 class CanonicalKey:
     def __eq__(self, other: object) -> bool: ...
     def __hash__(self) -> int: ...
@@ -49,25 +52,25 @@ class Node(Encodable):
 
     def search(
         self,
-        predicate: Callable[[Node], bool],
+        predicate: Predicate,
         max_depth: int | None = None,
         order: SearchOrder = SearchOrder.PREORDER,
     ) -> list[Node]: ...
     def find(
         self,
-        predicate: Callable[[Node], bool],
+        predicate: Predicate,
         max_depth: int | None = None,
         order: SearchOrder = SearchOrder.PREORDER,
     ) -> Node | None: ...
     def delete(
         self,
-        predicate: Callable[[Node], bool],
+        predicate: Predicate,
         max_depth: int | None = None,
     ) -> Node: ...
     def apply(
         self,
-        filter: Callable[[Node], Node],
-        predicate: Callable[[Node], bool] | None = None,
+        filter: Filter,
+        predicate: Predicate | None = None,
         max_depth: int | None = None,
     ) -> Node: ...
     def map_indices(self, mapping: dict[str, str]) -> Node: ...

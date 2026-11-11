@@ -12,6 +12,7 @@ class TensorFactory:
     """Factory for creating tensors."""
 
     symbol: str
+    """The symbol for the tensor."""
 
     def __getitem__(self, indices: str | tuple[str, ...]) -> Tensor:
         if isinstance(indices, str):
