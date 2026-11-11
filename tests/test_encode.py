@@ -6,6 +6,7 @@ import pytest
 from albert import (
     Add,
     EinsumEncoder,
+    EinsumFunctionEncoder,
     Encoder,
     EncodingMethod,
     Expression,
@@ -122,6 +123,69 @@ def test_encodes_tensor_contraction_in_readable_notation() -> None:
     ReadableEncoder(buffer)(expression)
 
     assert buffer.getvalue() == "z[i, l] = x[i, j, k] y[k, j, l]\n"
+
+
+def test_einsum_function_encoder_orders_assignments_and_deletes_dead_intermediates() -> None:
+    import numpy as np
+
+    metadata = Metadata(indices={"o": ["i", "j"], "v": ["k"]}, sizes={"o": 2, "v": 3})
+    intermediate = Expression(
+        Tensor("tmp", ["i", "k"]),
+        Mul([Tensor("A", ["i", "j"]), Tensor("B", ["j", "k"])]),
+    )
+    result = Expression(Tensor("result", ["i", "k"]), Tensor("tmp", ["i", "k"]))
+    encoder = EinsumFunctionEncoder(StringIO(), metadata=metadata)
+
+    assert encoder.input_keys([result, intermediate]) == (
+        ("A", ("o", "o")),
+        ("B", ("o", "v")),
+    )
+    generated = encoder.format_function([result, intermediate])
+
+    assert "def evaluate(A, B):" in generated
+    assert generated.index("_albert_value_0 = np.einsum") < generated.index("_albert_value_1 = np.copy")
+    assert "del _albert_value_0" in generated
+    assert "return {('result', ('o', 'v')): _albert_value_1}" in generated
+    compile(generated, "<einsum function>", "exec")
+    namespace: dict[str, object] = {}
+    exec(generated, namespace)
+    evaluate = namespace["evaluate"]
+    assert callable(evaluate)
+    arrays = {
+        "A": np.arange(4, dtype=np.float64).reshape(2, 2),
+        "B": np.arange(6, dtype=np.float64).reshape(2, 3),
+    }
+    results = evaluate(**arrays)
+    np.testing.assert_allclose(results[("result", ("o", "v"))], arrays["A"] @ arrays["B"])
+
+
+def test_einsum_function_encoder_supports_space_specific_input_formatting() -> None:
+    class SpaceAwareEncoder(EinsumEncoder):
+        def tensor_format(self, symbol: str, spaces: tuple[str, ...]) -> str:
+            return f"{symbol}[{''.join(spaces)!r}]"
+
+    metadata = Metadata(indices={"o": ["i"], "v": ["a"]}, sizes={"o": 2, "v": 3})
+    expression = Expression(
+        Tensor("result", ["i", "a"]),
+        Mul([Tensor("A", ["i"]), Tensor("A", ["a"])]),
+    )
+    generated = EinsumFunctionEncoder(
+        StringIO(), metadata=metadata, einsum_encoder=SpaceAwareEncoder()
+    ).format_function([expression])
+
+    assert "def evaluate(A):" in generated
+    assert "A['o']" in generated
+    assert "A['v']" in generated
+
+
+def test_einsum_function_encoder_can_return_multiple_named_outputs() -> None:
+    metadata = Metadata(indices={"o": ["i"]}, sizes={"o": 2})
+    first = Expression(Tensor("first", ["i"]), Tensor("A", ["i"]))
+    second = Expression(Tensor("second", ["i"]), Tensor("B", ["i"]))
+    generated = EinsumFunctionEncoder(StringIO(), metadata=metadata).format_function([first, second])
+
+    assert "def evaluate(A, B):" in generated
+    assert "return {('first', ('o',)): _albert_value_0, ('second', ('o',)): _albert_value_1}" in generated
 
 
 def test_formats_addition_subtraction_and_parentheses() -> None:
