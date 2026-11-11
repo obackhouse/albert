@@ -111,6 +111,17 @@ def test_ghf_to_rhf_combines_spin_blocks(spin_metadata: Metadata) -> None:
     assert result[0].rhs == 2 * _tensor("h", spatial_i, spatial_j)
 
 
+def test_ghf_to_rhf_preserves_lhs_index_order(spin_metadata: Metadata) -> None:
+    i, j = spin_metadata.indices["o_γ"][:2]
+    expression = Expression(_tensor("h", i, j), _tensor("h", j, i))
+
+    result = spin_integrate(expression, ReferenceType.GHF, ReferenceType.RHF)
+
+    spatial_i, spatial_j = spin_metadata.indices["o"][:2]
+    assert result[0].lhs.indices == [spatial_i, spatial_j]
+    assert result[0].rhs == 2 * _tensor("h", spatial_j, spatial_i)
+
+
 def test_spin_integrate_uses_transform_like_for_unknown_lhs(spin_metadata: Metadata) -> None:
     i = spin_metadata.indices["o_γ"][0]
     a = spin_metadata.indices["v_γ"][0]
@@ -131,6 +142,49 @@ def test_spin_integrate_uses_transform_like_for_unknown_lhs(spin_metadata: Metad
     assert len(result) == 1
     assert result[0].lhs == Tensor("t1new", [spatial_i, spatial_a])
     assert result[0].rhs == 2 * _tensor("f", spatial_i, spatial_a)
+
+
+def test_ghf_to_uhf_projects_ccsd_t1_onto_alpha_alpha(spin_metadata: Metadata) -> None:
+    i = spin_metadata.indices["o_γ"][0]
+    a = spin_metadata.indices["v_γ"][0]
+    expression = Expression(Tensor("t1new", [i, a]), _tensor("f", i, a))
+
+    result = spin_integrate(
+        expression,
+        ReferenceType.GHF,
+        ReferenceType.UHF,
+        transform_like={"t1new": "t1"},
+        index_spins={"i": "a", "a": "a"},
+    )
+
+    assert len(result) == 1
+    assert result[0].lhs.indices == [spin_metadata.indices["o_α"][0], spin_metadata.indices["v_α"][0]]
+    assert result[0].rhs == _tensor("f", spin_metadata.indices["o_α"][0], spin_metadata.indices["v_α"][0])
+
+
+def test_ghf_to_uhf_projects_ccsd_t2_onto_alpha_beta_alpha_beta(spin_metadata: Metadata) -> None:
+    i, j = spin_metadata.indices["o_γ"][:2]
+    a, b = spin_metadata.indices["v_γ"][:2]
+    indices = [i, j, a, b]
+    expression = Expression(Tensor("t2new", indices), Tensor("v", indices))
+
+    result = spin_integrate(
+        expression,
+        ReferenceType.GHF,
+        ReferenceType.UHF,
+        transform_like={"t2new": "t2"},
+        index_spins={"i": "a", "j": "b", "a": "a", "b": "b"},
+    )
+
+    expected = [
+        spin_metadata.indices["o_α"][0],
+        spin_metadata.indices["o_β"][1],
+        spin_metadata.indices["v_α"][0],
+        spin_metadata.indices["v_β"][1],
+    ]
+    assert len(result) == 1
+    assert result[0].lhs.indices == expected
+    assert result[0].rhs.indices == expected
 
 
 def test_spin_integrate_uses_transform_like_for_rhs_tensors(spin_metadata: Metadata) -> None:
@@ -213,6 +267,17 @@ def test_uhf_to_rhf_removes_spin_suffixes(spin_metadata: Metadata) -> None:
     assert len(result) == 1
     assert result[0].lhs.indices == [spin_metadata.indices["o"][0], spin_metadata.indices["v"][0]]
     assert result[0].rhs == result[0].lhs
+
+
+def test_uhf_to_rhf_preserves_lhs_index_order(spin_metadata: Metadata) -> None:
+    i, j = spin_metadata.indices["o_α"][:2]
+    expression = Expression(_tensor("h", i, j), _tensor("h", j, i))
+
+    result = spin_integrate(expression, ReferenceType.UHF, ReferenceType.RHF)
+
+    spatial_i, spatial_j = spin_metadata.indices["o"][:2]
+    assert result[0].lhs.indices == [spatial_i, spatial_j]
+    assert result[0].rhs == _tensor("h", spatial_j, spatial_i)
 
 
 def test_antisymmetrized_eri_filter_expands_to_direct_and_exchange_terms(spin_metadata: Metadata) -> None:

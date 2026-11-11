@@ -331,7 +331,8 @@ def _uhf_expression_to_rhf(
     transformed_rhs = _uhf_to_rhf(expression, metadata, transform_like)
     terms = _additive_terms(flatten(expand(transformed_rhs)))
     combined = simplify(flatten(expand(Add(terms))))
-    return [Expression(Tensor(expression.lhs.symbol, combined.external_indices), combined)]
+    lhs = Tensor(expression.lhs.symbol, [_strip_spin(index)[0] for index in expression.lhs.indices])
+    return [Expression(lhs, combined)]
 
 
 def _ghf_expression_to_rhf(
@@ -350,7 +351,8 @@ def _ghf_expression_to_rhf(
     combined = simplify(flatten(expand(Add(terms))))
     if expression.lhs.rank == 0 and metadata is not None:
         combined = _collect_scalar_dummy_permutations(combined, metadata)
-    return [Expression(Tensor(expression.lhs.symbol, combined.external_indices), combined)]
+    lhs = Tensor(expression.lhs.symbol, [_strip_spin(index)[0] for index in expression.lhs.indices])
+    return [Expression(lhs, combined)]
 
 
 def _validate_transform_like(
@@ -383,12 +385,57 @@ def _validate_transform_like(
     return transform_like
 
 
-def spin_integrate(
+def _project_spin_indices(
+    expression: Expression,
+    index_spins: dict[str, str] | None,
+) -> Expression:
+    """Fix named indices to alpha or beta before expanding spin blocks."""
+    if index_spins is None:
+        return expression
+    if not isinstance(index_spins, dict):
+        raise TypeError("index_spins must map index names to alpha or beta spin labels")
+    spin_labels = {
+        "a": OrbitalType.ALPHA.subscript,
+        "alpha": OrbitalType.ALPHA.subscript,
+        OrbitalType.ALPHA.subscript: OrbitalType.ALPHA.subscript,
+        "b": OrbitalType.BETA.subscript,
+        "beta": OrbitalType.BETA.subscript,
+        OrbitalType.BETA.subscript: OrbitalType.BETA.subscript,
+    }
+    projected: dict[str, str] = {}
+    for index, spin in index_spins.items():
+        if not isinstance(index, str) or not index:
+            raise ValueError("index_spins keys must be non-empty index names")
+        if spin not in spin_labels:
+            raise ValueError(f"index_spins values must be alpha or beta, got {spin!r}")
+        projected[index] = spin_labels[spin]
+
+    def project_index(index: str) -> str:
+        base, existing_spin = _strip_spin(index)
+        spin = projected.get(base)
+        if spin is None:
+            return index
+        if existing_spin in (OrbitalType.ALPHA.subscript, OrbitalType.BETA.subscript) and existing_spin != spin:
+            raise ValueError(f"index {base!r} is already fixed to spin {existing_spin!r}")
+        return base + spin
+
+    rhs = expression.rhs.apply(
+        lambda node: (
+            Tensor(node.symbol, [project_index(index) for index in node.indices]) if isinstance(node, Tensor) else node
+        )
+    )
+    lhs = Tensor(expression.lhs.symbol, [project_index(index) for index in expression.lhs.indices])
+    return Expression(lhs, rhs)
+
+
+def spin_integrate(  # noqa: PLR0913
     expression: Expression,
     src: ReferenceType,
     dst: ReferenceType,
     metadata: Metadata | None = None,
+    *,
     transform_like: dict[str, str] | None = None,
+    index_spins: dict[str, str] | None = None,
 ) -> list[Expression]:
     """Perform spin integration to project onto a more restricted reference type.
 
@@ -398,12 +445,14 @@ def spin_integrate(
         dst: The destination reference type.
         metadata: Tensor metadata used to collect scalar contractions by space-preserving dummy relabelling.
         transform_like: Map tensor symbols to known chemistry tensors with matching spin behavior.
+        index_spins: Fix named indices to alpha (``"a"``) or beta (``"b"``) before projecting blocks.
 
     Returns:
         A list of expressions resulting from the transformation.
     """
     src = ReferenceType(src)
     dst = ReferenceType(dst)
+    expression = _project_spin_indices(expression, index_spins)
     transform_like = _validate_transform_like(expression, transform_like)
     if src == dst:
         return [expression]
