@@ -111,6 +111,98 @@ def test_ghf_to_rhf_combines_spin_blocks(spin_metadata: Metadata) -> None:
     assert result[0].rhs == 2 * _tensor("h", spatial_i, spatial_j)
 
 
+def test_spin_integrate_uses_transform_like_for_unknown_lhs(spin_metadata: Metadata) -> None:
+    i = spin_metadata.indices["o_γ"][0]
+    a = spin_metadata.indices["v_γ"][0]
+    expression = Expression(Tensor("t1new", [i, a]), _tensor("f", i, a))
+
+    with pytest.raises(NotImplementedError, match="t1new"):
+        spin_integrate(expression, ReferenceType.GHF, ReferenceType.RHF)
+
+    result = spin_integrate(
+        expression,
+        ReferenceType.GHF,
+        ReferenceType.RHF,
+        transform_like={"t1new": "t1"},
+    )
+
+    spatial_i = spin_metadata.indices["o"][0]
+    spatial_a = spin_metadata.indices["v"][0]
+    assert len(result) == 1
+    assert result[0].lhs == Tensor("t1new", [spatial_i, spatial_a])
+    assert result[0].rhs == 2 * _tensor("f", spatial_i, spatial_a)
+
+
+def test_spin_integrate_uses_transform_like_for_rhs_tensors(spin_metadata: Metadata) -> None:
+    i = spin_metadata.indices["o_γ"][0]
+    a = spin_metadata.indices["v_γ"][0]
+    expression = Expression(_tensor("t1", i, a), Tensor("t1new", [i, a]))
+
+    result = spin_integrate(
+        expression,
+        ReferenceType.GHF,
+        ReferenceType.UHF,
+        transform_like={"t1new": "t1"},
+    )
+
+    assert len(result) == 2
+    assert all(equation.rhs.symbol == "t1new" for equation in result)
+
+
+def test_spin_integrate_uses_transform_like_for_doubles_spin_adaptation(spin_metadata: Metadata) -> None:
+    i, j = spin_metadata.indices["o_α"][:2]
+    a, b = spin_metadata.indices["v_α"][:2]
+    expression = Expression(Tensor("t2new", [i, j, a, b]), Tensor("t2new", [i, j, a, b]))
+
+    result = spin_integrate(
+        expression,
+        ReferenceType.UHF,
+        ReferenceType.RHF,
+        transform_like={"t2new": "t2"},
+    )
+
+    spatial_i, spatial_j = spin_metadata.indices["o"][:2]
+    spatial_a, spatial_b = spin_metadata.indices["v"][:2]
+    assert result[0].lhs == Tensor("t2new", [spatial_i, spatial_j, spatial_a, spatial_b])
+    assert result[0].rhs == Tensor("t2new", [spatial_i, spatial_j, spatial_a, spatial_b]) - Tensor(
+        "t2new", [spatial_i, spatial_j, spatial_b, spatial_a]
+    )
+
+
+def test_spin_integrate_expands_transform_like_antisymmetrized_eris(spin_metadata: Metadata) -> None:
+    i, j = spin_metadata.indices["o_γ"][:2]
+    a, b = spin_metadata.indices["v_γ"][:2]
+    indices = [i, j, a, b]
+    expression = Expression(_tensor("t2", *indices), Tensor("v_custom_a", indices))
+
+    result = spin_integrate(
+        expression,
+        ReferenceType.GHF,
+        ReferenceType.UHF,
+        transform_like={"v_custom_a": "v_a"},
+    )
+
+    assert result
+    assert all(
+        {tensor.symbol for tensor in equation.rhs.search(lambda node: isinstance(node, Tensor))} == {"v"}
+        for equation in result
+    )
+
+
+def test_spin_integrate_validates_transform_like_rank(spin_metadata: Metadata) -> None:
+    i = spin_metadata.indices["o_γ"][0]
+    a = spin_metadata.indices["v_γ"][0]
+    expression = Expression(Tensor("t1new", [i, a]), _tensor("f", i, a))
+
+    with pytest.raises(ValueError, match="has rank 2.*reference 't2' has rank 4"):
+        spin_integrate(
+            expression,
+            ReferenceType.GHF,
+            ReferenceType.UHF,
+            transform_like={"t1new": "t2"},
+        )
+
+
 def test_uhf_to_rhf_removes_spin_suffixes(spin_metadata: Metadata) -> None:
     i = spin_metadata.indices["o_α"][0]
     a = spin_metadata.indices["v_α"][0]

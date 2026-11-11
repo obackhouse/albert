@@ -7,11 +7,11 @@ import math
 from typing import TYPE_CHECKING
 
 from albert._core import Add, Expression, Mul, Scalar, Tensor, expand, flatten, simplify
-from albert.chemistry.options import OrbitalType, ReferenceType
+from albert.chemistry.options import SUPPORTED_TENSOR_SYMBOLS, OrbitalType, ReferenceType
 from albert.chemistry.transform import expand_antisymmetrized_eris
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Sequence
+    from collections.abc import Iterable, Mapping, Sequence
 
     from albert._core import Node
     from albert.chemistry.metadata import Metadata
@@ -34,9 +34,14 @@ def _tensor_with_spins(tensor: Tensor, spins: Sequence[str]) -> Tensor:
     return Tensor(tensor.symbol, indices)
 
 
-def _spin_patterns(tensor: Tensor, *, target_rhf: bool = False) -> Iterable[tuple[str, ...]]:
+def _spin_patterns(
+    tensor: Tensor,
+    *,
+    target_rhf: bool = False,
+    transform_like: Mapping[str, str] | None = None,
+) -> Iterable[tuple[str, ...]]:
     """Enumerate UHF spin blocks allowed for a chemistry tensor."""
-    symbol = tensor.symbol
+    symbol = tensor.symbol if transform_like is None else transform_like.get(tensor.symbol, tensor.symbol)
     rank = tensor.rank
 
     if rank == 0:
@@ -66,7 +71,12 @@ def _spin_patterns(tensor: Tensor, *, target_rhf: bool = False) -> Iterable[tupl
         raise NotImplementedError(f"spin integration not implemented for tensor {symbol!r}")
 
 
-def _allowed_patterns(tensor: Tensor, *, target_rhf: bool = False) -> list[tuple[str, ...]]:
+def _allowed_patterns(
+    tensor: Tensor,
+    *,
+    target_rhf: bool = False,
+    transform_like: Mapping[str, str] | None = None,
+) -> list[tuple[str, ...]]:
     """Filter spin patterns against any spin already carried by the tensor."""
     fixed = [
         spin if spin in (OrbitalType.ALPHA.subscript, OrbitalType.BETA.subscript) else None
@@ -74,14 +84,22 @@ def _allowed_patterns(tensor: Tensor, *, target_rhf: bool = False) -> list[tuple
     ]
     return [
         pattern
-        for pattern in _spin_patterns(tensor, target_rhf=target_rhf)
+        for pattern in _spin_patterns(tensor, target_rhf=target_rhf, transform_like=transform_like)
         if all(old is None or old == new for old, new in zip(fixed, pattern, strict=True))
     ]
 
 
-def _ghf_tensor_to_uhf(tensor: Tensor, *, target_rhf: bool = False) -> list[Tensor]:
+def _ghf_tensor_to_uhf(
+    tensor: Tensor,
+    *,
+    target_rhf: bool = False,
+    transform_like: Mapping[str, str] | None = None,
+) -> list[Tensor]:
     """Return the allowed UHF blocks for one GHF tensor."""
-    return [_tensor_with_spins(tensor, pattern) for pattern in _allowed_patterns(tensor, target_rhf=target_rhf)]
+    return [
+        _tensor_with_spins(tensor, pattern)
+        for pattern in _allowed_patterns(tensor, target_rhf=target_rhf, transform_like=transform_like)
+    ]
 
 
 def _spin_consistent(nodes: Sequence[Node]) -> bool:
@@ -102,7 +120,12 @@ def _spin_consistent(nodes: Sequence[Node]) -> bool:
     return True
 
 
-def _ghf_term_to_uhf(term: Node, *, target_rhf: bool = False) -> list[Node]:
+def _ghf_term_to_uhf(
+    term: Node,
+    *,
+    target_rhf: bool = False,
+    transform_like: Mapping[str, str] | None = None,
+) -> list[Node]:
     """Expand one GHF term into spin-consistent UHF terms."""
     factors = term.children if isinstance(term, Mul) else [term]
     scalar_factors = [factor for factor in factors if isinstance(factor, Scalar)]
@@ -110,7 +133,9 @@ def _ghf_term_to_uhf(term: Node, *, target_rhf: bool = False) -> list[Node]:
     if len(scalar_factors) + len(tensor_factors) != len(factors):
         raise NotImplementedError("spin integration supports only scalar and tensor factors")
 
-    tensor_choices = [_ghf_tensor_to_uhf(tensor, target_rhf=target_rhf) for tensor in tensor_factors]
+    tensor_choices = [
+        _ghf_tensor_to_uhf(tensor, target_rhf=target_rhf, transform_like=transform_like) for tensor in tensor_factors
+    ]
     if not tensor_choices:
         return [term]
 
@@ -123,7 +148,7 @@ def _ghf_term_to_uhf(term: Node, *, target_rhf: bool = False) -> list[Node]:
     return terms
 
 
-def _uhf_tensor_to_rhf(node: Node) -> Node:
+def _uhf_tensor_to_rhf(node: Node, transform_like: Mapping[str, str] | None = None) -> Node:
     """Convert a UHF tensor to spatial-orbital form."""
     if not isinstance(node, Tensor):
         return node
@@ -140,7 +165,8 @@ def _uhf_tensor_to_rhf(node: Node) -> Node:
     # blocks therefore contribute the difference of the two virtual orders;
     # opposite-spin blocks contribute one of those orders, with the crossed
     # block carrying the antisymmetry sign.
-    if node.symbol in {"t2", "l2"} and node.rank == 4:
+    symbol = node.symbol if transform_like is None else transform_like.get(node.symbol, node.symbol)
+    if symbol in {"t2", "l2"} and node.rank == 4:
         alpha = OrbitalType.ALPHA.subscript
         beta = OrbitalType.BETA.subscript
         swapped = [*indices[:2], indices[3], indices[2]]
@@ -155,21 +181,38 @@ def _uhf_tensor_to_rhf(node: Node) -> Node:
     return Tensor(node.symbol, indices)
 
 
-def _ghf_to_uhf(expression: Expression, *, target_rhf: bool = False) -> list[Node]:
+def _ghf_to_uhf(
+    expression: Expression,
+    *,
+    target_rhf: bool = False,
+    transform_like: Mapping[str, str] | None = None,
+) -> list[Node]:
     """Transform and expand an expression's right-hand side to UHF blocks."""
-    expanded_antisymmetry = expression.rhs.apply(expand_antisymmetrized_eris)
+    expanded_antisymmetry = expression.rhs.apply(
+        lambda node: expand_antisymmetrized_eris(node, transform_like=transform_like)
+    )
     expanded_rhs = simplify(flatten(expand(expanded_antisymmetry)))
     return [
         transformed
         for term in _additive_terms(expanded_rhs)
-        for transformed in _ghf_term_to_uhf(term, target_rhf=target_rhf)
+        for transformed in _ghf_term_to_uhf(term, target_rhf=target_rhf, transform_like=transform_like)
     ]
 
 
-def _uhf_to_rhf(expression: Expression, metadata: Metadata | None = None) -> Node:
+def _uhf_to_rhf(
+    expression: Expression,
+    metadata: Metadata | None = None,
+    transform_like: Mapping[str, str] | None = None,
+) -> Node:
     """Transform and collect the UHF right-hand side in spatial orbitals."""
-    expanded_antisymmetry = expression.rhs.apply(expand_antisymmetrized_eris)
-    transformed = simplify(flatten(expand(expanded_antisymmetry.apply(_uhf_tensor_to_rhf))))
+    expanded_antisymmetry = expression.rhs.apply(
+        lambda node: expand_antisymmetrized_eris(node, transform_like=transform_like)
+    )
+    transformed = simplify(
+        flatten(
+            expand(expanded_antisymmetry.apply(lambda node: _uhf_tensor_to_rhf(node, transform_like=transform_like)))
+        )
+    )
     if expression.lhs.rank == 0 and metadata is not None:
         transformed = _collect_scalar_dummy_permutations(transformed, metadata)
     return transformed
@@ -249,11 +292,16 @@ def _collect_scalar_dummy_permutations(node: Node, metadata: Metadata) -> Node:
     return simplify(collected[0] if len(collected) == 1 else Add(collected))
 
 
-def _ghf_expression_to_uhf(expression: Expression, *, target_rhf: bool = False) -> list[Expression]:
+def _ghf_expression_to_uhf(
+    expression: Expression,
+    *,
+    target_rhf: bool = False,
+    transform_like: Mapping[str, str] | None = None,
+) -> list[Expression]:
     """Convert a GHF equation to one UHF equation per external spin block."""
     grouped_terms: dict[tuple[str, ...], list[Node]] = {}
-    allowed_lhs_patterns = set(_allowed_patterns(expression.lhs, target_rhf=target_rhf))
-    for term in _ghf_to_uhf(expression, target_rhf=target_rhf):
+    allowed_lhs_patterns = set(_allowed_patterns(expression.lhs, target_rhf=target_rhf, transform_like=transform_like))
+    for term in _ghf_to_uhf(expression, target_rhf=target_rhf, transform_like=transform_like):
         external_spins = {_strip_spin(index)[0]: _strip_spin(index)[1] for index in term.external_indices}
         lhs_indices = []
         lhs_pattern = []
@@ -274,20 +322,28 @@ def _ghf_expression_to_uhf(expression: Expression, *, target_rhf: bool = False) 
     ]
 
 
-def _uhf_expression_to_rhf(expression: Expression, metadata: Metadata | None = None) -> list[Expression]:
+def _uhf_expression_to_rhf(
+    expression: Expression,
+    metadata: Metadata | None = None,
+    transform_like: Mapping[str, str] | None = None,
+) -> list[Expression]:
     """Convert a UHF equation to one spatial-orbital equation."""
-    transformed_rhs = _uhf_to_rhf(expression, metadata)
+    transformed_rhs = _uhf_to_rhf(expression, metadata, transform_like)
     terms = _additive_terms(flatten(expand(transformed_rhs)))
     combined = simplify(flatten(expand(Add(terms))))
     return [Expression(Tensor(expression.lhs.symbol, combined.external_indices), combined)]
 
 
-def _ghf_expression_to_rhf(expression: Expression, metadata: Metadata | None = None) -> list[Expression]:
+def _ghf_expression_to_rhf(
+    expression: Expression,
+    metadata: Metadata | None = None,
+    transform_like: Mapping[str, str] | None = None,
+) -> list[Expression]:
     """Convert a GHF equation to one spatial-orbital equation."""
     terms = [
         term
-        for uhf_expression in _ghf_expression_to_uhf(expression, target_rhf=True)
-        for term in _additive_terms(flatten(expand(_uhf_to_rhf(uhf_expression, metadata))))
+        for uhf_expression in _ghf_expression_to_uhf(expression, target_rhf=True, transform_like=transform_like)
+        for term in _additive_terms(flatten(expand(_uhf_to_rhf(uhf_expression, metadata, transform_like))))
     ]
     if not terms:
         return []
@@ -297,11 +353,42 @@ def _ghf_expression_to_rhf(expression: Expression, metadata: Metadata | None = N
     return [Expression(Tensor(expression.lhs.symbol, combined.external_indices), combined)]
 
 
+def _validate_transform_like(
+    expression: Expression,
+    transform_like: dict[str, str] | None,
+) -> dict[str, str]:
+    """Validate aliases and ensure aliased tensors match their reference ranks."""
+    if transform_like is None:
+        return {}
+    if not isinstance(transform_like, dict):
+        raise TypeError("transform_like must be a dict mapping tensor symbols to chemistry tensor symbols")
+    for symbol, reference in transform_like.items():
+        if not isinstance(symbol, str) or not symbol:
+            raise ValueError("transform_like keys must be non-empty tensor symbols")
+        if not isinstance(reference, str) or reference not in SUPPORTED_TENSOR_SYMBOLS:
+            raise ValueError(f"unknown transform_like reference tensor {reference!r}")
+
+    stack = [expression.lhs, expression.rhs]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, Tensor):
+            reference_symbol = transform_like.get(node.symbol)
+            if reference_symbol is not None and node.rank != SUPPORTED_TENSOR_SYMBOLS[reference_symbol].rank:
+                raise ValueError(
+                    f"tensor {node.symbol!r} has rank {node.rank}, but transform_like reference "
+                    f"{reference_symbol!r} has rank {SUPPORTED_TENSOR_SYMBOLS[reference_symbol].rank}"
+                )
+        else:
+            stack.extend(node.children)
+    return transform_like
+
+
 def spin_integrate(
     expression: Expression,
     src: ReferenceType,
     dst: ReferenceType,
     metadata: Metadata | None = None,
+    transform_like: dict[str, str] | None = None,
 ) -> list[Expression]:
     """Perform spin integration to project onto a more restricted reference type.
 
@@ -310,18 +397,20 @@ def spin_integrate(
         src: The source reference type.
         dst: The destination reference type.
         metadata: Tensor metadata used to collect scalar contractions by space-preserving dummy relabelling.
+        transform_like: Map tensor symbols to known chemistry tensors with matching spin behavior.
 
     Returns:
         A list of expressions resulting from the transformation.
     """
     src = ReferenceType(src)
     dst = ReferenceType(dst)
+    transform_like = _validate_transform_like(expression, transform_like)
     if src == dst:
         return [expression]
     if src is ReferenceType.GHF and dst is ReferenceType.UHF:
-        return _ghf_expression_to_uhf(expression)
+        return _ghf_expression_to_uhf(expression, transform_like=transform_like)
     if src is ReferenceType.UHF and dst is ReferenceType.RHF:
-        return _uhf_expression_to_rhf(expression, metadata)
+        return _uhf_expression_to_rhf(expression, metadata, transform_like)
     if src is ReferenceType.GHF and dst is ReferenceType.RHF:
-        return _ghf_expression_to_rhf(expression, metadata)
+        return _ghf_expression_to_rhf(expression, metadata, transform_like)
     raise ValueError(f"unsupported spin integration from {src.value} to {dst.value}")
