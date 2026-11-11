@@ -10,6 +10,7 @@ from albert import (
     EncodingMethod,
     Expression,
     LatexEncoder,
+    Metadata,
     Mul,
     Node,
     ReadableEncoder,
@@ -390,4 +391,23 @@ def test_einsum_encoder_distributes_products_over_sums_and_formats_scalars() -> 
 
     assert expression.format(EinsumEncoder(einsum_kwargs={})) == (
         'out = -2.0 * np.einsum("i,j->ij", a, z)\nout += -2.0 * np.einsum("i,j->ij", b, z)'
+    )
+
+
+def test_einsum_encoder_allows_space_specific_tensor_formatting() -> None:
+    class SpaceAwareEncoder(EinsumEncoder):
+        def tensor_format(self, symbol: str, spaces: tuple[str, ...]) -> str:
+            return f"{symbol}.{''.join(spaces)}"
+
+    metadata = Metadata(
+        indices={"o": ["i", "j"], "v": ["k"]},
+        sizes={"o": 2, "v": 3},
+    )
+    expression = Expression(
+        Tensor("out", ["i", "j"]),
+        Mul([Tensor("eri", ["i", "k"]), Tensor("eri", ["k", "j"])]),
+    )
+
+    assert expression.format(SpaceAwareEncoder(metadata=metadata)) == (
+        'out.oo = np.einsum("ik,kj->ij", eri.ov, eri.vo, optimize=True)'
     )

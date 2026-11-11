@@ -1,6 +1,6 @@
 import pytest
 
-from albert import Add, Expression, Mul, Tensor, topological_sort
+from albert import Add, Expression, Metadata, Mul, Tensor, topological_sort
 
 
 def _expression(symbol: str, rhs) -> Expression:
@@ -70,6 +70,21 @@ def test_topological_sort_rejects_duplicate_definitions() -> None:
 
     with pytest.raises(ValueError, match="duplicate expression definition"):
         topological_sort([first, second])
+
+
+def test_topological_sort_can_distinguish_definitions_by_spaces() -> None:
+    output = _expression("Y", Mul([Tensor("A", ["i"]), Tensor("A", ["a"])]))
+    virtual_definition = _expression("A", Tensor("V", ["a"]))
+    occupied_definition = _expression("A", Tensor("O", ["i"]))
+    metadata = Metadata(indices={"o": ["i"], "v": ["a"]}, sizes={"o": 2, "v": 3})
+
+    ordered = topological_sort([output, virtual_definition, occupied_definition], metadata)
+
+    assert [tuple(expression.lhs.indices) for expression in ordered] == [
+        ("a",),
+        ("i",),
+        ("i", "a"),
+    ]
 
 
 @pytest.mark.parametrize(

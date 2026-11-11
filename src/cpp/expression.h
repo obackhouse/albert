@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ast.h"
+#include "cost.h"
 
 #include <cstddef>
 #include <memory>
@@ -30,5 +31,9 @@ struct ExpressionDependencyGraph {
 // Treats RHS symbols with no definition in the list as external inputs.
 ExpressionDependencyGraph expression_dependency_graph(
     const std::vector<Expression>& expressions);
+// When spaces are provided, definitions and references are matched by symbol
+// and ordered index-space tuple rather than symbol alone.
+ExpressionDependencyGraph expression_dependency_graph(
+    const std::vector<Expression>& expressions, const IndexSpaces& spaces);
 
 }  // namespace albert

@@ -565,9 +565,19 @@ PYBIND11_MODULE(_core, module) {
         .def_property_readonly("arity", &albert::Mul::arity)
         .def_property_readonly("children", &albert::Mul::children);
 
-    module.def("topological_sort", &albert::topological_sort,
-               py::arg("expressions"),
-               "Return expressions in stable dependency order.");
+    module.def(
+        "topological_sort",
+        [](std::vector<albert::Expression> expressions,
+           const py::object& metadata) {
+            if (metadata.is_none()) {
+                return albert::topological_sort(std::move(expressions));
+            }
+            const auto spaces = metadata.attr("indices")
+                                    .cast<albert::IndexSpaces>();
+            return albert::topological_sort(std::move(expressions), spaces);
+        },
+        py::arg("expressions"), py::arg("metadata") = py::none(),
+        "Return expressions in stable dependency order.");
     module.def("substitute_expressions",
                [](std::vector<albert::Expression> expressions,
                   const py::object& metadata) {

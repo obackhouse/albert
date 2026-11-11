@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from typing import Any, TextIO
 
     from albert._core import Node
+    from albert.metadata import Metadata
 
 
 @dataclass(frozen=True)
@@ -382,6 +383,25 @@ class EinsumEncoder(Encoder):
     copy_function: str = "np.copy"
     """Name of the copy function used to protect aliased intermediate results."""
 
+    metadata: Metadata | None = None
+    """Metadata used to resolve tensor index spaces for ``tensor_format``."""
+
+    def tensor_format(self, symbol: str, spaces: tuple[str, ...]) -> str:
+        """Return the Python expression used to access one tensor array."""
+        return symbol
+
+    def _tensor_spaces(self, tensor: Tensor) -> tuple[str, ...]:
+        if self.metadata is None:
+            return ()
+        index_spaces = {index: space for space, indices in self.metadata.indices.items() for index in indices}
+        try:
+            return tuple(index_spaces[index] for index in tensor.indices)
+        except KeyError as error:
+            raise ValueError(f"index {error.args[0]!r} does not belong to a metadata space") from error
+
+    def _tensor_expression(self, tensor: Tensor) -> str:
+        return self.tensor_format(tensor.symbol, self._tensor_spaces(tensor))
+
     def _terms(self, node: Node) -> list[list[Node]]:
         """Expand a node into additive terms of multiplicative factors."""
         if isinstance(node, Add):
@@ -442,7 +462,7 @@ class EinsumEncoder(Encoder):
             return repr(coefficient)
 
         if len(tensors) == 1 and tuple(tensors[0].indices) == output_indices:
-            call = tensors[0].symbol
+            call = self._tensor_expression(tensors[0])
             if coefficient == 1.0 and is_assignment:
                 call = f"{self.copy_function}({call})"
             return self._apply_coefficient(call, coefficient)
@@ -450,7 +470,7 @@ class EinsumEncoder(Encoder):
         input_subscripts = ["".join(labels[index] for index in tensor.indices) for tensor in tensors]
         output_subscript = "".join(labels[index] for index in output_indices)
         subscripts = f"{','.join(input_subscripts)}->{output_subscript}"
-        arguments = [f'"{subscripts}"', *(tensor.symbol for tensor in tensors)]
+        arguments = [f'"{subscripts}"', *(self._tensor_expression(tensor) for tensor in tensors)]
         arguments.extend(f"{key}={value!r}" for key, value in self.einsum_kwargs.items())
         call = f"{self.einsum_function}({', '.join(arguments)})"
 
@@ -524,9 +544,8 @@ class EinsumEncoder(Encoder):
         """
         terms = self._terms(expression.rhs)
         calls = self._format_terms(terms, tuple(expression.lhs.indices), assignment=True)
-        return "\n".join(
-            f"{expression.lhs.symbol} {'=' if index == 0 else '+='} {call}" for index, call in enumerate(calls)
-        )
+        output = self._tensor_expression(expression.lhs)
+        return "\n".join(f"{output} {'=' if index == 0 else '+='} {call}" for index, call in enumerate(calls))
 
 
 @dataclass(frozen=True)

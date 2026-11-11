@@ -39,29 +39,47 @@ const NodePtr& Expression::rhs() const noexcept {
 
 namespace {
 
-void collect_tensor_symbols(const NodePtr& node,
-                            std::unordered_set<std::string>& symbols) {
+std::string tensor_key(
+    const Tensor& tensor,
+    const std::unordered_map<std::string, std::string>* index_spaces) {
+    if (!index_spaces) {
+        return tensor.symbol();
+    }
+    std::string key = std::to_string(tensor.symbol().size()) + ":" + tensor.symbol() + ";" +
+                      std::to_string(tensor.indices().size()) + ";";
+    for (const auto& index : tensor.indices()) {
+        const auto space = index_spaces->find(index);
+        if (space == index_spaces->end()) {
+            throw std::invalid_argument("index " + index + " does not belong to a metadata space");
+        }
+        key += std::to_string(space->second.size()) + ":" + space->second + ";";
+    }
+    return key;
+}
+
+void collect_tensor_keys(
+    const NodePtr& node, std::unordered_set<std::string>& keys,
+    const std::unordered_map<std::string, std::string>* index_spaces) {
     if (const auto* tensor = dynamic_cast<const Tensor*>(node.get())) {
-        symbols.insert(tensor->symbol());
+        keys.insert(tensor_key(*tensor, index_spaces));
         return;
     }
     for (const auto& child : node->children()) {
-        collect_tensor_symbols(child, symbols);
+        collect_tensor_keys(child, keys, index_spaces);
     }
 }
 
-}  // namespace
-
-ExpressionDependencyGraph expression_dependency_graph(
-    const std::vector<Expression>& expressions) {
+ExpressionDependencyGraph expression_dependency_graph_impl(
+    const std::vector<Expression>& expressions,
+    const std::unordered_map<std::string, std::string>* index_spaces) {
     std::unordered_map<std::string, std::size_t> definitions;
     definitions.reserve(expressions.size());
     for (std::size_t i = 0; i < expressions.size(); ++i) {
-        const auto& symbol = expressions[i].lhs()->symbol();
-        const auto [entry, inserted] = definitions.emplace(symbol, i);
+        const auto key = tensor_key(*expressions[i].lhs(), index_spaces);
+        const auto [entry, inserted] = definitions.emplace(key, i);
         if (!inserted) {
             throw std::invalid_argument("duplicate expression definition for symbol " +
-                                        symbol);
+                                        expressions[i].lhs()->symbol());
         }
         static_cast<void>(entry);
     }
@@ -70,11 +88,11 @@ ExpressionDependencyGraph expression_dependency_graph(
     graph.dependents.resize(expressions.size());
     graph.indegrees.assign(expressions.size(), 0);
     for (std::size_t consumer = 0; consumer < expressions.size(); ++consumer) {
-        std::unordered_set<std::string> symbols;
-        collect_tensor_symbols(expressions[consumer].rhs(), symbols);
+        std::unordered_set<std::string> keys;
+        collect_tensor_keys(expressions[consumer].rhs(), keys, index_spaces);
         std::unordered_set<std::size_t> dependencies;
-        for (const auto& symbol : symbols) {
-            const auto definition = definitions.find(symbol);
+        for (const auto& key : keys) {
+            const auto definition = definitions.find(key);
             if (definition != definitions.end()) {
                 dependencies.insert(definition->second);
             }
@@ -85,6 +103,27 @@ ExpressionDependencyGraph expression_dependency_graph(
         }
     }
     return graph;
+}
+
+}  // namespace
+
+ExpressionDependencyGraph expression_dependency_graph(
+    const std::vector<Expression>& expressions) {
+    return expression_dependency_graph_impl(expressions, nullptr);
+}
+
+ExpressionDependencyGraph expression_dependency_graph(
+    const std::vector<Expression>& expressions, const IndexSpaces& spaces) {
+    std::unordered_map<std::string, std::string> index_spaces;
+    for (const auto& [space, indices] : spaces) {
+        for (const auto& index : indices) {
+            const auto [entry, inserted] = index_spaces.emplace(index, space);
+            if (!inserted && entry->second != space) {
+                throw std::invalid_argument("index " + index + " belongs to multiple metadata spaces");
+            }
+        }
+    }
+    return expression_dependency_graph_impl(expressions, &index_spaces);
 }
 
 }  // namespace albert

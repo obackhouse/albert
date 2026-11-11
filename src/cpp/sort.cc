@@ -7,9 +7,10 @@
 #include <vector>
 
 namespace albert {
+namespace {
 
-std::vector<Expression> topological_sort(std::vector<Expression> expressions) {
-    auto graph = expression_dependency_graph(expressions);
+std::vector<Expression> sort_with_graph(
+    std::vector<Expression> expressions, ExpressionDependencyGraph graph) {
     using ReadyQueue = std::priority_queue<std::size_t,
                                            std::vector<std::size_t>,
                                            std::greater<std::size_t>>;
@@ -36,6 +37,19 @@ std::vector<Expression> topological_sort(std::vector<Expression> expressions) {
         throw std::invalid_argument("cycle detected in expression dependencies");
     }
     return ordered;
+}
+
+}  // namespace
+
+std::vector<Expression> topological_sort(std::vector<Expression> expressions) {
+    auto graph = expression_dependency_graph(expressions);
+    return sort_with_graph(std::move(expressions), std::move(graph));
+}
+
+std::vector<Expression> topological_sort(std::vector<Expression> expressions,
+                                         const IndexSpaces& spaces) {
+    auto graph = expression_dependency_graph(expressions, spaces);
+    return sort_with_graph(std::move(expressions), std::move(graph));
 }
 
 }  // namespace albert
