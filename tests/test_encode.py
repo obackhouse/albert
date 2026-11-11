@@ -136,16 +136,17 @@ def test_einsum_function_encoder_orders_assignments_and_deletes_dead_intermediat
     result = Expression(Tensor("result", ["i", "k"]), Tensor("tmp", ["i", "k"]))
     encoder = EinsumFunctionEncoder(StringIO(), metadata=metadata)
 
-    assert encoder.input_keys([result, intermediate]) == (
-        ("A", ("o", "o")),
-        ("B", ("o", "v")),
-    )
+    assert encoder.input_keys([result, intermediate]) == ("A", "B")
     generated = encoder.format_function([result, intermediate])
 
-    assert "def evaluate(A, B):" in generated
-    assert generated.index("_albert_value_0 = np.einsum") < generated.index("_albert_value_1 = np.copy")
-    assert "del _albert_value_0" in generated
-    assert "return {('result', ('o', 'v')): _albert_value_1}" in generated
+    assert "def evaluate(**kwargs):" in generated
+    assert "kwargs = SimpleNamespace(**kwargs)" in generated
+    assert "A = kwargs.A" in generated
+    assert "B = kwargs.B" in generated
+    assert 'np.einsum("ij,jk->ik", A, B' in generated
+    assert generated.index("tmp = np.einsum") < generated.index("result = np.copy(tmp)")
+    assert "del tmp" in generated
+    assert "return {'result': result}" in generated
     compile(generated, "<einsum function>", "exec")
     namespace: dict[str, object] = {}
     exec(generated, namespace)
@@ -156,26 +157,37 @@ def test_einsum_function_encoder_orders_assignments_and_deletes_dead_intermediat
         "B": np.arange(6, dtype=np.float64).reshape(2, 3),
     }
     results = evaluate(**arrays)
-    np.testing.assert_allclose(results[("result", ("o", "v"))], arrays["A"] @ arrays["B"])
+    np.testing.assert_allclose(results["result"], arrays["A"] @ arrays["B"])
 
 
 def test_einsum_function_encoder_supports_space_specific_input_formatting() -> None:
-    class SpaceAwareEncoder(EinsumEncoder):
-        def tensor_format(self, symbol: str, spaces: tuple[str, ...]) -> str:
-            return f"{symbol}[{''.join(spaces)!r}]"
+    from types import SimpleNamespace
+
+    import numpy as np
 
     metadata = Metadata(indices={"o": ["i"], "v": ["a"]}, sizes={"o": 2, "v": 3})
     expression = Expression(
         Tensor("result", ["i", "a"]),
         Mul([Tensor("A", ["i"]), Tensor("A", ["a"])]),
     )
-    generated = EinsumFunctionEncoder(
-        StringIO(), metadata=metadata, einsum_encoder=SpaceAwareEncoder()
-    ).format_function([expression])
+    encoder = EinsumFunctionEncoder(
+        StringIO(),
+        metadata=metadata,
+        einsum_encoder=EinsumEncoder(tensor_formatter=lambda symbol, spaces: f"{symbol}.{''.join(spaces)}"),
+    )
+    generated = encoder.format_function([expression])
 
-    assert "def evaluate(A):" in generated
-    assert "A['o']" in generated
-    assert "A['v']" in generated
+    assert "def evaluate(**kwargs):" in generated
+    assert encoder.input_keys([expression]) == ("A",)
+    assert "A = kwargs.A" in generated
+    assert "A.o, A.v" in generated
+    namespace: dict[str, object] = {}
+    exec(generated, namespace)
+    evaluate = namespace["evaluate"]
+    assert callable(evaluate)
+    arrays = {"o": np.array([1.0, 2.0]), "v": np.array([3.0, 4.0, 5.0])}
+    result = evaluate(A=SimpleNamespace(**arrays))
+    np.testing.assert_allclose(result["result.ov"], np.outer(arrays["o"], arrays["v"]))
 
 
 def test_einsum_function_encoder_can_return_multiple_named_outputs() -> None:
@@ -184,8 +196,114 @@ def test_einsum_function_encoder_can_return_multiple_named_outputs() -> None:
     second = Expression(Tensor("second", ["i"]), Tensor("B", ["i"]))
     generated = EinsumFunctionEncoder(StringIO(), metadata=metadata).format_function([first, second])
 
-    assert "def evaluate(A, B):" in generated
-    assert "return {('first', ('o',)): _albert_value_0, ('second', ('o',)): _albert_value_1}" in generated
+    assert "def evaluate(**kwargs):" in generated
+    assert "return {'first': first, 'second': second}" in generated
+
+
+def test_einsum_function_uses_formatted_names_for_same_symbol_in_different_spaces() -> None:
+    import numpy as np
+
+    metadata = Metadata(indices={"o": ["i"], "v": ["a"]}, sizes={"o": 2, "v": 3})
+    expressions = [
+        Expression(Tensor("A", ["i"]), Tensor("X", ["i"])),
+        Expression(Tensor("A", ["a"]), Tensor("Y", ["a"])),
+    ]
+    encoder = EinsumFunctionEncoder(
+        StringIO(),
+        metadata=metadata,
+        einsum_encoder=EinsumEncoder(
+            tensor_formatter=lambda symbol, spaces: f"{symbol}_{''.join(spaces)}" if symbol == "A" else symbol
+        ),
+    )
+    generated = encoder.format_function(expressions)
+
+    assert "X = kwargs.X" in generated
+    assert "Y = kwargs.Y" in generated
+    assert "A_o = np.copy(X)" in generated
+    assert "A_v = np.copy(Y)" in generated
+    assert "return {'A_o': A_o, 'A_v': A_v}" in generated
+    namespace: dict[str, object] = {}
+    exec(generated, namespace)
+    evaluate = namespace["evaluate"]
+    assert callable(evaluate)
+    arrays = {"X": np.array([1.0, 2.0]), "Y": np.array([3.0, 4.0, 5.0])}
+
+    results = evaluate(**arrays)
+
+    np.testing.assert_array_equal(results["A_o"], arrays["X"])
+    np.testing.assert_array_equal(results["A_v"], arrays["Y"])
+
+
+def test_einsum_function_encoder_customizes_imports() -> None:
+    metadata = Metadata(indices={"o": ["i"]}, sizes={"o": 2})
+    expression = Expression(Tensor("result", ["i"]), Tensor("A", ["i"]))
+    encoder = EinsumFunctionEncoder(
+        StringIO(),
+        metadata=metadata,
+        imports=("import jax.numpy as jnp",),
+        einsum_encoder=EinsumEncoder(einsum_function="jnp.einsum", copy_function="jnp.copy"),
+    )
+
+    generated = encoder.format_function([expression])
+
+    assert generated.startswith("import jax.numpy as jnp\nfrom types import SimpleNamespace\n\ndef evaluate(**kwargs):")
+    assert "import numpy as np" not in generated
+    assert "A = kwargs.A" in generated
+    assert "jnp.copy(A)" in generated
+
+
+def test_einsum_function_encoder_can_omit_imports_per_function() -> None:
+    metadata = Metadata(indices={"o": ["i"]}, sizes={"o": 2})
+    expression = Expression(Tensor("result", ["i"]), Tensor("A", ["i"]))
+    buffer = StringIO()
+    encoder = EinsumFunctionEncoder(buffer, metadata=metadata)
+
+    formatted = encoder.format_function([expression], with_imports=False)
+    encoder.encode_function([expression], function_name="again", with_imports=False)
+
+    assert formatted.startswith("def evaluate(**kwargs):")
+    assert "import numpy as np" not in formatted
+    assert buffer.getvalue().startswith("def again(**kwargs):")
+    assert "import numpy as np" not in buffer.getvalue()
+
+
+def test_einsum_function_outputs_can_feed_an_iterative_function() -> None:
+    import numpy as np
+
+    metadata = Metadata(
+        indices={"i": ["i"], "j": ["j"], "k": ["k"], "l": ["l"]},
+        sizes={"i": 2, "j": 2, "k": 3, "l": 4},
+    )
+    static_expression = Expression(
+        Tensor("ab", ["i", "k"]),
+        Mul([Tensor("A", ["i", "j"]), Tensor("B", ["j", "k"])]),
+    )
+    iterative_expression = Expression(
+        Tensor("result", ["i", "l"]),
+        Mul([Tensor("ab", ["i", "k"]), Tensor("C", ["k", "l"])]),
+    )
+    static_code = EinsumFunctionEncoder(StringIO(), metadata=metadata, function_name="static").format_function(
+        [static_expression]
+    )
+    iterative_code = EinsumFunctionEncoder(StringIO(), metadata=metadata, function_name="iterate").format_function(
+        [iterative_expression]
+    )
+    namespace: dict[str, object] = {}
+    exec(static_code + iterative_code, namespace)
+    static = namespace["static"]
+    iterate = namespace["iterate"]
+    assert callable(static)
+    assert callable(iterate)
+    arrays = {
+        "A": np.arange(4, dtype=np.float64).reshape(2, 2),
+        "B": np.arange(6, dtype=np.float64).reshape(2, 3),
+        "C": np.arange(12, dtype=np.float64).reshape(3, 4),
+    }
+
+    static_arrays = static(**arrays)
+    result = iterate(**{**static_arrays, "C": arrays["C"]})
+
+    np.testing.assert_allclose(result["result"], arrays["A"] @ arrays["B"] @ arrays["C"])
 
 
 def test_formats_addition_subtraction_and_parentheses() -> None:
@@ -459,10 +577,6 @@ def test_einsum_encoder_distributes_products_over_sums_and_formats_scalars() -> 
 
 
 def test_einsum_encoder_allows_space_specific_tensor_formatting() -> None:
-    class SpaceAwareEncoder(EinsumEncoder):
-        def tensor_format(self, symbol: str, spaces: tuple[str, ...]) -> str:
-            return f"{symbol}.{''.join(spaces)}"
-
     metadata = Metadata(
         indices={"o": ["i", "j"], "v": ["k"]},
         sizes={"o": 2, "v": 3},
@@ -472,6 +586,9 @@ def test_einsum_encoder_allows_space_specific_tensor_formatting() -> None:
         Mul([Tensor("eri", ["i", "k"]), Tensor("eri", ["k", "j"])]),
     )
 
-    assert expression.format(SpaceAwareEncoder(metadata=metadata)) == (
-        'out.oo = np.einsum("ik,kj->ij", eri.ov, eri.vo, optimize=True)'
-    )
+    assert expression.format(
+        EinsumEncoder(
+            metadata=metadata,
+            tensor_formatter=lambda symbol, spaces: f"{symbol}.{''.join(spaces)}",
+        )
+    ) == ('out.oo = np.einsum("ik,kj->ij", eri.ov, eri.vo, optimize=True)')

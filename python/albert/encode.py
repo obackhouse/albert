@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import keyword
 import math
@@ -14,10 +15,13 @@ from typing import TYPE_CHECKING
 from albert._core import Add, Expression, Mul, Scalar, Tensor, topological_sort
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from typing import Any, TextIO
 
     from albert._core import Node
     from albert.metadata import Metadata
+
+    type TensorArrayKey = tuple[str, tuple[str, ...]]
 
 
 @dataclass(frozen=True)
@@ -384,12 +388,15 @@ class EinsumEncoder(Encoder):
     copy_function: str = "np.copy"
     """Name of the copy function used to protect aliased intermediate results."""
 
-    metadata: Metadata | None = None
-    """Metadata used to resolve tensor index spaces for ``tensor_format``."""
+    tensor_formatter: Callable[[str, tuple[str, ...]], str] = field(default=lambda symbol, spaces: symbol)
+    """Function that returns the Python expression used to access one tensor array."""
 
-    def tensor_format(self, symbol: str, spaces: tuple[str, ...]) -> str:
+    metadata: Metadata | None = None
+    """The tensor metadata."""
+
+    def format_tensor(self, symbol: str, spaces: tuple[str, ...]) -> str:
         """Return the Python expression used to access one tensor array."""
-        return symbol
+        return self.tensor_formatter(symbol, spaces)
 
     def _tensor_spaces(self, tensor: Tensor) -> tuple[str, ...]:
         if self.metadata is None:
@@ -401,7 +408,7 @@ class EinsumEncoder(Encoder):
             raise ValueError(f"index {error.args[0]!r} does not belong to a metadata space") from error
 
     def _tensor_expression(self, tensor: Tensor) -> str:
-        return self.tensor_format(tensor.symbol, self._tensor_spaces(tensor))
+        return self.format_tensor(tensor.symbol, self._tensor_spaces(tensor))
 
     def _terms(self, node: Node) -> list[list[Node]]:
         """Expand a node into additive terms of multiplicative factors."""
@@ -549,9 +556,6 @@ class EinsumEncoder(Encoder):
         return "\n".join(f"{output} {'=' if index == 0 else '+='} {call}" for index, call in enumerate(calls))
 
 
-TensorArrayKey = tuple[str, tuple[str, ...]]
-
-
 @dataclass(frozen=True)
 class _ScopedEinsumEncoder(EinsumEncoder):
     """Render tensors defined inside a generated function as local variables."""
@@ -559,11 +563,11 @@ class _ScopedEinsumEncoder(EinsumEncoder):
     delegate: EinsumEncoder = field(default_factory=EinsumEncoder)
     local_names: dict[TensorArrayKey, str] = field(default_factory=dict)
 
-    def tensor_format(self, symbol: str, spaces: tuple[str, ...]) -> str:
+    def format_tensor(self, symbol: str, spaces: tuple[str, ...]) -> str:
         key = (symbol, spaces)
         if key in self.local_names:
             return self.local_names[key]
-        return self.delegate.tensor_format(symbol, spaces)
+        return self.delegate.format_tensor(symbol, spaces)
 
 
 @dataclass(frozen=True)
@@ -571,10 +575,22 @@ class EinsumFunctionEncoder:
     """Encode assignments as a Python function that evaluates the expressions."""
 
     buffer: TextIO = field(default_factory=lambda: sys.stdout)
+    """The buffer to write to."""
+
     metadata: Metadata | None = None
+    """The tensor metadata."""
+
     einsum_encoder: EinsumEncoder = field(default_factory=EinsumEncoder)
+    """Encoder for ``einsum`` calls."""
+
     function_name: str = "evaluate"
-    outputs: tuple[TensorArrayKey, ...] | None = None
+    """Name of the generated function."""
+
+    imports: tuple[str, ...] = ("import numpy as np",)
+    """Import statements written before the generated function."""
+
+    outputs: tuple[str, ...] | None = None
+    """Formatted array names to return from the function."""
 
     def _index_spaces(self) -> dict[str, str]:
         if self.metadata is None:
@@ -589,6 +605,29 @@ class EinsumFunctionEncoder:
         return tensor.symbol, spaces
 
     @staticmethod
+    def _tensor_root(array_path: str) -> str:
+        """Return the keyword argument name at the root of a formatted tensor path."""
+        try:
+            node = ast.parse(array_path, mode="eval").body
+        except SyntaxError as error:
+            raise ValueError(f"tensor_formatter returned an invalid array path: {array_path!r}") from error
+        while isinstance(node, (ast.Attribute, ast.Subscript)):
+            node = node.value
+        if not isinstance(node, ast.Name):
+            raise ValueError(f"tensor_formatter must return an attribute or subscript path: {array_path!r}")
+        if keyword.iskeyword(node.id):
+            raise ValueError(f"tensor_formatter returned a Python keyword as an array root: {node.id!r}")
+        return node.id
+
+    @staticmethod
+    def _local_tensor_name(array_path: str) -> str:
+        """Turn a formatted tensor path into a readable Python identifier."""
+        name = "".join(character if character.isalnum() or character == "_" else "_" for character in array_path)
+        if not name or name[0].isdigit():
+            name = f"_{name}"
+        return name
+
+    @staticmethod
     def _tensors(node: Node) -> list[Tensor]:
         if isinstance(node, Tensor):
             return [node]
@@ -597,7 +636,7 @@ class EinsumFunctionEncoder:
             tensors.extend(EinsumFunctionEncoder._tensors(child))
         return tensors
 
-    def input_keys(self, expressions: list[Expression]) -> tuple[TensorArrayKey, ...]:
+    def _input_tensor_keys(self, expressions: list[Expression]) -> tuple[TensorArrayKey, ...]:
         """Return external tensor keys referenced by these equations, in use order."""
         if self.metadata is None:
             raise ValueError("metadata is required to determine tensor spaces")
@@ -612,12 +651,17 @@ class EinsumFunctionEncoder:
                     result.append(key)
         return tuple(result)
 
+    def input_keys(self, expressions: list[Expression]) -> tuple[str, ...]:
+        """Return external tensor symbols needed as keyword arguments."""
+        return tuple(dict.fromkeys(key[0] for key in self._input_tensor_keys(expressions)))
+
     def format_function(  # noqa: PLR0912, PLR0915
         self,
         expressions: list[Expression],
         *,
         function_name: str | None = None,
-        outputs: tuple[TensorArrayKey, ...] | None = None,
+        outputs: tuple[str, ...] | None = None,
+        with_imports: bool = True,
     ) -> str:
         """Return a standalone function that evaluates equations in dependency order."""
         if self.metadata is None:
@@ -625,14 +669,14 @@ class EinsumFunctionEncoder:
         name = self.function_name if function_name is None else function_name
         if not name.isidentifier() or keyword.iskeyword(name):
             raise ValueError(f"invalid Python function name: {name!r}")
+        if not isinstance(with_imports, bool):
+            raise ValueError("with_imports must be a bool")
         if not expressions:
             raise ValueError("at least one expression is required")
 
         index_spaces = self._index_spaces()
         ordered = topological_sort(expressions, self.metadata)
         keys = [self._tensor_key(expression.lhs, index_spaces) for expression in ordered]
-        definition_names = {key: f"_albert_value_{index}" for index, key in enumerate(keys)}
-        definition_set = set(keys)
         consumers: dict[TensorArrayKey, int] = dict.fromkeys(keys, 0)
         for expression in ordered:
             for tensor in self._tensors(expression.rhs):
@@ -640,30 +684,81 @@ class EinsumFunctionEncoder:
                 if key in consumers:
                     consumers[key] += 1
 
-        selected_outputs = outputs if outputs is not None else self.outputs
-        if selected_outputs is None:
-            selected_outputs = tuple(key for key in keys if consumers[key] == 0)
-        else:
-            selected_outputs = tuple(selected_outputs)
-            unknown = set(selected_outputs) - definition_set
-            if unknown:
-                raise ValueError(f"requested outputs are not defined: {sorted(unknown)!r}")
-        if not selected_outputs:
-            raise ValueError("the expressions do not define any output tensors")
-
-        input_keys = self.input_keys(ordered)
-        input_symbols = list(dict.fromkeys(symbol for symbol, _ in input_keys))
+        input_tensor_keys = self._input_tensor_keys(ordered)
+        input_array_paths = tuple(self.einsum_encoder.format_tensor(*key) for key in input_tensor_keys)
+        if any(not isinstance(path, str) or not path for path in input_array_paths):
+            raise ValueError("tensor_formatter must return non-empty array-name strings")
+        if len(set(input_array_paths)) != len(input_array_paths):
+            raise ValueError("tensor_formatter must return distinct names for external arrays")
+        for path in input_array_paths:
+            self._tensor_root(path)
+        input_symbols = tuple(dict.fromkeys(key[0] for key in input_tensor_keys))
         for symbol in input_symbols:
             if not symbol.isidentifier() or keyword.iskeyword(symbol):
-                raise ValueError(f"tensor symbol is not a valid Python argument: {symbol!r}")
-        for symbol in input_symbols:
-            symbol_keys = [key for key in input_keys if key[0] == symbol]
-            if len(symbol_keys) > 1:
-                formatted = [self.einsum_encoder.tensor_format(*key) for key in symbol_keys]
-                if len(set(formatted)) != len(formatted):
-                    raise ValueError(f"tensor_format must distinguish input spaces for tensor {symbol!r}")
+                raise ValueError(f"input tensor symbol is not a valid Python name: {symbol!r}")
 
-        lines = ["import numpy as np", "", f"def {name}({', '.join(input_symbols)}):"]
+        output_names = {key: self.einsum_encoder.format_tensor(*key) for key in keys}
+        if any(not isinstance(name, str) or not name for name in output_names.values()):
+            raise ValueError("tensor_formatter must return non-empty array-name strings")
+        if len(set(output_names.values())) != len(output_names):
+            raise ValueError("tensor_formatter must return distinct names for defined arrays")
+
+        reserved_names = {"kwargs", "SimpleNamespace"}
+        for callable_path in (self.einsum_encoder.einsum_function, self.einsum_encoder.copy_function):
+            try:
+                function_node = ast.parse(callable_path, mode="eval").body
+            except SyntaxError:
+                continue
+            while isinstance(function_node, ast.Attribute):
+                function_node = function_node.value
+            if isinstance(function_node, ast.Name):
+                reserved_names.add(function_node.id)
+        reserved_names.update(input_symbols)
+        symbol_counts = {symbol: sum(key[0] == symbol for key in keys) for symbol, _ in keys}
+        used_names = set(reserved_names)
+        definition_names: dict[TensorArrayKey, str] = {}
+        for index, key in enumerate(keys):
+            symbol = key[0]
+            if (
+                symbol.isidentifier()
+                and not keyword.iskeyword(symbol)
+                and symbol_counts[symbol] == 1
+                and symbol not in used_names
+            ):
+                local_name = symbol
+            else:
+                base_name = self._local_tensor_name(output_names[key])
+                local_name = base_name
+                suffix = 1
+                while local_name in used_names or keyword.iskeyword(local_name):
+                    local_name = f"{base_name}_{suffix}"
+                    suffix += 1
+                if not local_name.isidentifier():
+                    local_name = f"_albert_value_{index}"
+            definition_names[key] = local_name
+            used_names.add(local_name)
+
+        selected_outputs = outputs if outputs is not None else self.outputs
+        if selected_outputs is None:
+            selected_output_keys = tuple(key for key in keys if consumers[key] == 0)
+        else:
+            selected_output_names = tuple(selected_outputs)
+            output_keys_by_name = {array_name: key for key, array_name in output_names.items()}
+            unknown = set(selected_output_names) - output_keys_by_name.keys()
+            if unknown:
+                raise ValueError(f"requested outputs are not defined: {sorted(unknown)!r}")
+            selected_output_keys = tuple(output_keys_by_name[array_name] for array_name in selected_output_names)
+        if not selected_output_keys:
+            raise ValueError("the expressions do not define any output tensors")
+
+        imports = list(self.imports)
+        if "from types import SimpleNamespace" not in imports:
+            imports.append("from types import SimpleNamespace")
+        lines = [*imports, ""] if with_imports else []
+        lines.append(f"def {name}(**kwargs):")
+        lines.append("    kwargs = SimpleNamespace(**kwargs)")
+        for symbol in input_symbols:
+            lines.append(f"    {symbol} = kwargs.{symbol}")
         local_map: dict[TensorArrayKey, str] = {}
         last_use: dict[TensorArrayKey, int] = {key: index for index, key in enumerate(keys)}
         for expression_index, expression in enumerate(ordered):
@@ -672,7 +767,7 @@ class EinsumFunctionEncoder:
                 if key in last_use:
                     last_use[key] = expression_index
 
-        output_set = set(selected_outputs)
+        output_set = set(selected_output_keys)
         for expression_index, (expression, key) in enumerate(zip(ordered, keys, strict=True)):
             local_map[key] = definition_names[key]
             scoped = _ScopedEinsumEncoder(
@@ -690,7 +785,7 @@ class EinsumFunctionEncoder:
                 if last == expression_index and candidate not in output_set:
                     lines.append(f"    del {definition_names[candidate]}")
 
-        outputs_payload = ", ".join(f"{key!r}: {definition_names[key]}" for key in selected_outputs)
+        outputs_payload = ", ".join(f"{output_names[key]!r}: {definition_names[key]}" for key in selected_output_keys)
         lines.append(f"    return {{{outputs_payload}}}")
         return "\n".join(lines) + "\n"
 
@@ -699,11 +794,19 @@ class EinsumFunctionEncoder:
         expressions: list[Expression],
         *,
         function_name: str | None = None,
-        outputs: tuple[TensorArrayKey, ...] | None = None,
+        outputs: tuple[str, ...] | None = None,
+        with_imports: bool = True,
         end: str = "\n",
     ) -> None:
         """Write a generated function to the configured buffer."""
-        self.buffer.write(self.format_function(expressions, function_name=function_name, outputs=outputs))
+        self.buffer.write(
+            self.format_function(
+                expressions,
+                function_name=function_name,
+                outputs=outputs,
+                with_imports=with_imports,
+            )
+        )
         if end:
             self.buffer.write(end)
 
@@ -712,10 +815,16 @@ class EinsumFunctionEncoder:
         expressions: list[Expression],
         *,
         function_name: str | None = None,
-        outputs: tuple[TensorArrayKey, ...] | None = None,
+        outputs: tuple[str, ...] | None = None,
+        with_imports: bool = True,
     ) -> None:
         """Encode expressions as a function in the configured buffer."""
-        self.encode_function(expressions, function_name=function_name, outputs=outputs)
+        self.encode_function(
+            expressions,
+            function_name=function_name,
+            outputs=outputs,
+            with_imports=with_imports,
+        )
 
 
 @dataclass(frozen=True)

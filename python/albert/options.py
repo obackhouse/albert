@@ -64,8 +64,7 @@ class CostModel:
     read: float = 0.1
     write: float = 0.1
     cost_factors: dict[str, int] = field(default_factory=dict)
-    """Tensor cost factors keyed by tensor symbol."""
-    apply_cost_factors: bool = False
+    apply_cost_factors: bool = True
     cost_factor_aggregation: Literal["product", "maximum"] = "product"
 
     def __post_init__(self) -> None:
