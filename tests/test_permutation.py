@@ -64,13 +64,20 @@ def test_empty_permutation_is_valid() -> None:
     assert permutation.phase is PhaseFactor.POSITIVE
 
 
-@pytest.mark.parametrize("values", [[0, 0], [0, 2], [-1, 0]])
-def test_permutation_rejects_invalid_orders(values: list[int]) -> None:
-    with pytest.raises(ValueError, match="permutation must contain"):
+@pytest.mark.parametrize(
+    ("values", "message"),
+    [
+        ([0, 0], r"invalid permutation \(0, 0\): axis 0 occurs more than once"),
+        ([0, 2], r"invalid permutation \(0, 2\): axis 2 is outside \[0, 2\)"),
+        ([-1, 0], r"invalid permutation \(-1, 0\): axis -1 is outside \[0, 2\)"),
+    ],
+)
+def test_permutation_rejects_invalid_orders(values: list[int], message: str) -> None:
+    with pytest.raises(ValueError, match=message):
         Permutation(values)
 
 
 @pytest.mark.parametrize("phase", [0, 2])
 def test_permutation_rejects_invalid_phase(phase: int) -> None:
-    with pytest.raises(ValueError, match="phase must be"):
+    with pytest.raises(ValueError, match=rf"permutation phase must be \+1 or -1; received {phase}"):
         Permutation([0], phase)  # type: ignore[arg-type]

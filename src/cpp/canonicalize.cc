@@ -26,6 +26,23 @@ using IndexMap = std::unordered_map<std::string, std::string>;
 using SpaceMap = std::unordered_map<std::string, std::string>;
 using Symmetry = std::pair<std::vector<std::size_t>, int>;
 
+template <typename T>
+std::string format_permutation(const std::vector<T>& permutation) {
+    std::string result = "(";
+    for (std::size_t i = 0; i < permutation.size(); ++i) {
+        if (i != 0) {
+            result += ", ";
+        }
+        result += std::to_string(permutation[i]);
+    }
+    result += ")";
+    return result;
+}
+
+std::string format_phase(int phase) {
+    return phase > 0 ? "+1" : "-1";
+}
+
 struct Form {
     NodePtr node;
     int phase = 1;
@@ -394,13 +411,26 @@ std::vector<Symmetry> symmetry_group(const Tensor& tensor,
         const auto current_phase = group.at(current);
         for (const auto& generator : generators->second) {
             if (generator.permutation().size() != rank) {
-                throw std::invalid_argument("tensor symmetry rank mismatch");
+                throw std::invalid_argument(
+                    "tensor symmetry rank mismatch for symbol '" + tensor.symbol() +
+                    "': tensor rank is " + std::to_string(rank) +
+                    ", but permutation " +
+                    format_permutation(generator.permutation()) + " has rank " +
+                    std::to_string(generator.permutation().size()));
             }
             std::vector<bool> seen(rank, false);
             for (const auto axis : generator.permutation()) {
                 if (axis < 0 || static_cast<std::size_t>(axis) >= rank ||
                     seen[static_cast<std::size_t>(axis)]) {
-                    throw std::invalid_argument("invalid tensor symmetry permutation");
+                    const auto reason = axis < 0 || static_cast<std::size_t>(axis) >= rank
+                        ? "axis " + std::to_string(axis) + " is outside [0, " +
+                              std::to_string(rank) + ")"
+                        : "axis " + std::to_string(axis) + " occurs more than once";
+                    throw std::invalid_argument(
+                        "invalid tensor symmetry permutation " +
+                        format_permutation(generator.permutation()) + " for symbol '" +
+                        tensor.symbol() + "' of rank " + std::to_string(rank) + ": " +
+                        reason);
                 }
                 seen[static_cast<std::size_t>(axis)] = true;
             }
@@ -414,7 +444,13 @@ std::vector<Symmetry> symmetry_group(const Tensor& tensor,
             const auto existing = group.find(composed);
             if (existing != group.end()) {
                 if (existing->second != composed_phase) {
-                    throw std::invalid_argument("inconsistent tensor symmetry phases");
+                    throw std::invalid_argument(
+                        "inconsistent tensor symmetry phases for symbol '" +
+                        tensor.symbol() + "' of rank " + std::to_string(rank) +
+                        ": permutation " + format_permutation(composed) +
+                        " is reached with both phase " +
+                        format_phase(existing->second) + " and phase " +
+                        format_phase(composed_phase));
                 }
             } else {
                 group.emplace(composed, composed_phase);
@@ -429,6 +465,184 @@ std::vector<Symmetry> symmetry_group(const Tensor& tensor,
         result.emplace_back(entry.first, entry.second);
     }
     return result;
+}
+
+using IndexColors = std::unordered_map<std::string, std::size_t>;
+
+struct RefinementTensor {
+    const Tensor* tensor;
+    std::vector<Symmetry> symmetries;
+};
+
+void append_signature_field(std::string& signature, const std::string& value) {
+    signature += std::to_string(value.size());
+    signature += ':';
+    signature += value;
+}
+
+std::string tensor_context(const Tensor& tensor, const std::string& distinguished,
+                           const IndexColors& colors,
+                           const std::vector<Symmetry>& symmetries) {
+    std::optional<std::string> best;
+    const auto& indices = tensor.indices();
+    for (const auto& [permutation, phase] : symmetries) {
+        static_cast<void>(phase);
+        std::string candidate;
+        append_signature_field(candidate, tensor.symbol());
+        for (const auto position : permutation) {
+            const auto& index = indices[position];
+            if (index == distinguished) {
+                append_signature_field(candidate, "self");
+            } else if (const auto found = colors.find(index); found != colors.end()) {
+                append_signature_field(candidate, "internal:" + std::to_string(found->second));
+            } else {
+                append_signature_field(candidate, "external:" + index);
+            }
+        }
+        if (!best || candidate < *best) {
+            best = std::move(candidate);
+        }
+    }
+    return *best;
+}
+
+IndexColors refine_index_colors(const std::vector<RefinementTensor>& tensors,
+                                const std::vector<std::string>& internal,
+                                const SpaceMap& spaces, IndexColors colors) {
+    for (;;) {
+        std::unordered_map<std::string, std::string> signatures;
+        std::set<std::string> unique_signatures;
+        for (const auto& index : internal) {
+            std::vector<std::string> contexts;
+            for (const auto& item : tensors) {
+                if (std::find(item.tensor->indices().begin(), item.tensor->indices().end(), index) !=
+                    item.tensor->indices().end()) {
+                    contexts.push_back(tensor_context(*item.tensor, index, colors, item.symmetries));
+                }
+            }
+            std::sort(contexts.begin(), contexts.end());
+
+            std::string signature;
+            append_signature_field(signature, index_space(index, spaces));
+            append_signature_field(signature, std::to_string(colors.at(index)));
+            for (const auto& context : contexts) {
+                append_signature_field(signature, context);
+            }
+            unique_signatures.insert(signature);
+            signatures.emplace(index, std::move(signature));
+        }
+
+        std::unordered_map<std::string, std::size_t> color_by_signature;
+        std::size_t next_color = 0;
+        for (const auto& signature : unique_signatures) {
+            color_by_signature.emplace(signature, next_color++);
+        }
+        IndexColors refined;
+        for (const auto& index : internal) {
+            refined.emplace(index, color_by_signature.at(signatures.at(index)));
+        }
+        std::set<std::size_t> old_colors;
+        for (const auto& [index, color] : colors) {
+            static_cast<void>(index);
+            old_colors.insert(color);
+        }
+        const auto old_color_count = old_colors.size();
+        if (unique_signatures.size() == old_color_count) {
+            return refined;
+        }
+        colors = std::move(refined);
+    }
+}
+
+std::vector<LabelGroup> refined_label_groups(
+    const std::vector<LabelGroup>& groups, const IndexColors& colors) {
+    std::vector<LabelGroup> result;
+    for (const auto& group : groups) {
+        std::map<std::size_t, std::vector<std::string>> sources_by_color;
+        for (const auto& source : group.sources) {
+            sources_by_color[colors.at(source)].push_back(source);
+        }
+        std::size_t target_position = 0;
+        for (auto& [color, sources] : sources_by_color) {
+            static_cast<void>(color);
+            const auto target_end = target_position + sources.size();
+            std::vector<std::string> targets(
+                group.targets.begin() + static_cast<std::ptrdiff_t>(target_position),
+                group.targets.begin() + static_cast<std::ptrdiff_t>(target_end));
+            result.push_back({group.space, std::move(sources), std::move(targets)});
+            target_position = target_end;
+        }
+    }
+    return result;
+}
+
+void enumerate_refined_mappings(
+    const std::vector<RefinementTensor>& tensors,
+    const std::vector<std::string>& internal,
+    const std::vector<LabelGroup>& groups,
+    const SpaceMap& spaces, IndexColors colors,
+    std::vector<IndexMap>& results) {
+    colors = refine_index_colors(tensors, internal, spaces, std::move(colors));
+    const auto classes = refined_label_groups(groups, colors);
+    const auto tied = std::find_if(classes.begin(), classes.end(),
+                                   [](const LabelGroup& group) {
+                                       return group.sources.size() > 1;
+                                   });
+    if (tied == classes.end()) {
+        IndexMap mapping;
+        for (const auto& group : classes) {
+            mapping.emplace(group.sources.front(), group.targets.front());
+        }
+        results.push_back(std::move(mapping));
+        return;
+    }
+
+    const auto highest_color = std::max_element(
+        colors.begin(), colors.end(),
+        [](const auto& lhs, const auto& rhs) { return lhs.second < rhs.second; })->second;
+    for (const auto& source : tied->sources) {
+        auto individualized = colors;
+        individualized[source] = highest_color + 1;
+        enumerate_refined_mappings(tensors, internal, groups, spaces,
+                                   std::move(individualized), results);
+    }
+}
+
+std::vector<IndexMap> refined_index_mappings(
+    const Children& factors, const std::vector<std::string>& internal,
+    const std::set<std::string>& reserved_external,
+    const std::set<std::string>& all_used_indices,
+    const CanonicalizationMetadata& metadata, const SpaceMap& spaces) {
+    std::vector<RefinementTensor> tensors;
+    for (const auto& factor : factors) {
+        if (const auto* tensor = dynamic_cast<const Tensor*>(factor.get())) {
+            tensors.push_back({tensor, symmetry_group(*tensor, metadata)});
+        } else if (factor->kind() != NodeKind::Scalar) {
+            return index_mappings(internal, reserved_external, all_used_indices,
+                                  metadata, spaces);
+        }
+    }
+
+    const auto groups = internal_label_groups(internal, reserved_external,
+                                              all_used_indices, metadata, spaces);
+    IndexColors colors;
+    std::size_t initial_color = 0;
+    std::map<std::string, std::vector<std::string>> sources_by_space;
+    for (const auto& index : unique_indices(internal)) {
+        sources_by_space[index_space(index, spaces)].push_back(index);
+    }
+    for (const auto& [space, sources] : sources_by_space) {
+        static_cast<void>(space);
+        for (const auto& source : sources) {
+            colors.emplace(source, initial_color);
+        }
+        ++initial_color;
+    }
+
+    std::vector<IndexMap> results;
+    enumerate_refined_mappings(tensors, unique_indices(internal), groups,
+                               spaces, std::move(colors), results);
+    return results;
 }
 
 NodePtr replace_tensor_indices(const Tensor& tensor, const IndexMap& mapping) {
@@ -603,8 +817,8 @@ Form canonicalize_mul(const NodePtr& node,
             internal.push_back(index);
         }
     }
-    const auto mappings = index_mappings(internal, reserved_external,
-                                         all_used_indices, metadata, spaces);
+    const auto mappings = refined_index_mappings(
+        factors, internal, reserved_external, all_used_indices, metadata, spaces);
 
     std::optional<NodePtr> best;
     for (const auto& mapping : mappings) {

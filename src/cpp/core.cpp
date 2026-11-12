@@ -565,7 +565,9 @@ PYBIND11_MODULE(_core, module) {
     py::class_<albert::Permutation>(module, "Permutation")
         .def(py::init([](std::vector<int> permutation, int phase) {
                  if (phase != 1 && phase != -1) {
-                     throw py::value_error("phase must be PhaseFactor.POSITIVE or NEGATIVE");
+                     throw py::value_error(
+                         "permutation phase must be +1 or -1; received " +
+                         std::to_string(phase));
                  }
                  return albert::Permutation(
                      std::move(permutation),

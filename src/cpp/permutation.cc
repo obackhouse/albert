@@ -3,23 +3,50 @@
 #include "algebra.h"
 
 #include <stdexcept>
+#include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
 namespace albert {
+namespace {
+
+std::string format_permutation(const std::vector<int>& permutation) {
+    std::string result = "(";
+    for (std::size_t i = 0; i < permutation.size(); ++i) {
+        if (i != 0) {
+            result += ", ";
+        }
+        result += std::to_string(permutation[i]);
+    }
+    result += ")";
+    return result;
+}
+
+}  // namespace
 
 Permutation::Permutation(std::vector<int> permutation, PhaseFactor phase)
     : permutation_(std::move(permutation)), phase_(phase) {
     if (phase_ != PhaseFactor::Positive && phase_ != PhaseFactor::Negative) {
-        throw std::invalid_argument("permutation phase must be positive or negative");
+        throw std::invalid_argument(
+            "permutation phase must be +1 or -1; received " +
+            std::to_string(static_cast<int>(phase_)));
     }
 
     std::vector<bool> seen(permutation_.size(), false);
     for (const auto index : permutation_) {
-        if (index < 0 || static_cast<std::size_t>(index) >= permutation_.size() ||
-            seen[static_cast<std::size_t>(index)]) {
-            throw std::invalid_argument("permutation must contain each index from 0 to n-1 once");
+        if (index < 0 || static_cast<std::size_t>(index) >= permutation_.size()) {
+            throw std::invalid_argument(
+                "invalid permutation " + format_permutation(permutation_) +
+                ": axis " + std::to_string(index) + " is outside [0, " +
+                std::to_string(permutation_.size()) +"); expected each axis in this range exactly once");
+        }
+        if (seen[static_cast<std::size_t>(index)]) {
+            throw std::invalid_argument(
+                "invalid permutation " + format_permutation(permutation_) +
+                ": axis " + std::to_string(index) +
+                " occurs more than once; expected each axis in [0, " +
+                std::to_string(permutation_.size()) + ") exactly once");
         }
         seen[static_cast<std::size_t>(index)] = true;
     }

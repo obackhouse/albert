@@ -85,6 +85,25 @@ def test_canonicalize_is_independent_of_internal_label_and_factor_order() -> Non
     assert canonicalize(left, metadata) == canonicalize(reordered, metadata)
 
 
+def test_canonicalize_refines_long_dummy_index_chains() -> None:
+    count = 12
+    first = [f"x{index}" for index in range(count)]
+    renamed = [f"z{index}" for index in range(count)]
+    metadata = Metadata(
+        indices={"all": ["i", "j", *first, *renamed]},
+        sizes={"all": 8},
+        symmetries={"A": [Permutation([1, 0])]},
+    )
+
+    def chain(indices: list[str]) -> Mul:
+        factors = [Tensor("A", ["i", indices[0]])]
+        factors.extend(Tensor("A", [indices[index], indices[index + 1]]) for index in range(count - 1))
+        factors.append(Tensor("A", [indices[-1], "j"]))
+        return Mul(factors)
+
+    assert canonicalize(chain(first), metadata) == canonicalize(chain(renamed), metadata)
+
+
 def test_canonicalize_relabels_internal_indices_independently_of_their_names() -> None:
     metadata = Metadata(indices={"occupied": ["i", "j", "k", "l", "m"]}, sizes={"occupied": 8})
     left = Mul([Tensor("A", ["i", "j"]), Tensor("B", ["j", "k"])])
@@ -194,7 +213,10 @@ def test_canonicalize_rejects_symmetry_generators_with_the_wrong_rank() -> None:
         symmetries={"A": [Permutation([1, 0])]},
     )
 
-    with pytest.raises(ValueError, match="rank mismatch"):
+    with pytest.raises(
+        ValueError,
+        match=r"tensor symmetry rank mismatch for symbol 'A': tensor rank is 3, but permutation \(1, 0\) has rank 2",
+    ):
         canonicalize(Tensor("A", ["i", "j", "k"]), metadata)
 
 
@@ -205,7 +227,13 @@ def test_canonicalize_rejects_inconsistent_symmetry_phases() -> None:
         symmetries={"A": [Permutation([0], PhaseFactor.NEGATIVE)]},
     )
 
-    with pytest.raises(ValueError, match="inconsistent"):
+    with pytest.raises(
+        ValueError,
+        match=(
+            r"inconsistent tensor symmetry phases for symbol 'A' of rank 1: "
+            r"permutation \(0\) is reached with both phase \+1 and phase -1"
+        ),
+    ):
         canonicalize(Tensor("A", ["i"]), metadata)
 
 
