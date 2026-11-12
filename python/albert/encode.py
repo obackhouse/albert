@@ -394,6 +394,9 @@ class EinsumEncoder(Encoder):
     metadata: Metadata | None = None
     """The tensor metadata."""
 
+    transpose_function: str | None = "np.transpose"
+    """Name of the transpose function, or ``None`` to emit a trivial einsum."""
+
     def format_tensor(self, symbol: str, spaces: tuple[str, ...]) -> str:
         """Return the Python expression used to access one tensor array."""
         return self.tensor_formatter(symbol, spaces)
@@ -475,6 +478,21 @@ class EinsumEncoder(Encoder):
                 call = f"{self.copy_function}({call})"
             return self._apply_coefficient(call, coefficient)
 
+        if len(tensors) == 1:
+            input_indices = tuple(tensors[0].indices)
+            if (
+                self.transpose_function is not None
+                and len(input_indices) == len(output_indices)
+                and len(set(input_indices)) == len(input_indices)
+                and set(input_indices) == set(output_indices)
+            ):
+                permutation = tuple(input_indices.index(index) for index in output_indices)
+                if permutation != tuple(range(len(input_indices))):
+                    call = f"{self.transpose_function}({self._tensor_expression(tensors[0])}, {permutation!r})"
+                    if is_assignment:
+                        call = f"{self.copy_function}({call})"
+                    return self._apply_coefficient(call, coefficient)
+
         input_subscripts = ["".join(labels[index] for index in tensor.indices) for tensor in tensors]
         output_subscript = "".join(labels[index] for index in output_indices)
         subscripts = f"{','.join(input_subscripts)}->{output_subscript}"
@@ -553,7 +571,15 @@ class EinsumEncoder(Encoder):
         terms = self._terms(expression.rhs)
         calls = self._format_terms(terms, tuple(expression.lhs.indices), assignment=True)
         output = self._tensor_expression(expression.lhs)
-        return "\n".join(f"{output} {'=' if index == 0 else '+='} {call}" for index, call in enumerate(calls))
+        lines = []
+        for index, call in enumerate(calls):
+            if index == 0:
+                lines.append(f"{output} = {call}")
+            elif call.startswith("-"):
+                lines.append(f"{output} -= {call[1:]}")
+            else:
+                lines.append(f"{output} += {call}")
+        return "\n".join(lines)
 
 
 @dataclass(frozen=True)
@@ -704,7 +730,10 @@ class EinsumFunctionEncoder:
             raise ValueError("tensor_formatter must return distinct names for defined arrays")
 
         reserved_names = {"kwargs", "SimpleNamespace"}
-        for callable_path in (self.einsum_encoder.einsum_function, self.einsum_encoder.copy_function):
+        callable_paths = [self.einsum_encoder.einsum_function, self.einsum_encoder.copy_function]
+        if self.einsum_encoder.transpose_function is not None:
+            callable_paths.append(self.einsum_encoder.transpose_function)
+        for callable_path in callable_paths:
             try:
                 function_node = ast.parse(callable_path, mode="eval").body
             except SyntaxError:
@@ -775,6 +804,7 @@ class EinsumFunctionEncoder:
                 einsum_function=self.einsum_encoder.einsum_function,
                 einsum_kwargs=self.einsum_encoder.einsum_kwargs,
                 copy_function=self.einsum_encoder.copy_function,
+                transpose_function=self.einsum_encoder.transpose_function,
                 metadata=self.metadata,
                 delegate=self.einsum_encoder,
                 local_names=local_map,

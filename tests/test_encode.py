@@ -200,6 +200,14 @@ def test_einsum_function_encoder_can_return_multiple_named_outputs() -> None:
     assert "return {'first': first, 'second': second}" in generated
 
 
+def test_einsum_function_encoder_uses_transpose_function() -> None:
+    metadata = Metadata(indices={"o": ["i", "j"]}, sizes={"o": 2})
+    expression = Expression(Tensor("result", ["j", "i"]), Tensor("A", ["i", "j"]))
+    encoder = EinsumFunctionEncoder(StringIO(), metadata=metadata)
+
+    assert "result = np.copy(np.transpose(A, (1, 0)))" in encoder.format_function([expression])
+
+
 def test_einsum_function_uses_formatted_names_for_same_symbol_in_different_spaces() -> None:
     import numpy as np
 
@@ -528,8 +536,34 @@ def test_einsum_encoder_copies_a_view_before_accumulating() -> None:
     expression = Expression(Tensor("x", ["j", "i"]), Add([z, Mul([a, b])]))
 
     assert expression.format(EinsumEncoder) == (
-        'x = np.copy(np.einsum("ij->ji", z, optimize=True))\nx += np.einsum("ik,jk->ji", a, b, optimize=True)'
+        'x = np.copy(np.transpose(z, (1, 0)))\nx += np.einsum("ik,jk->ji", a, b, optimize=True)'
     )
+
+
+def test_einsum_encoder_falls_back_to_einsum_when_transpose_function_is_none() -> None:
+    z = Tensor("z", ["i", "j"])
+    expression = Expression(Tensor("out", ["j", "i"]), z)
+
+    assert expression.format(EinsumEncoder(transpose_function=None)) == (
+        'out = np.copy(np.einsum("ij->ji", z, optimize=True))'
+    )
+
+
+def test_einsum_encoder_uses_transpose_function_for_accumulated_term() -> None:
+    a, b = Tensor("a", ["i"]), Tensor("b", ["j"])
+    z = Tensor("z", ["i", "j"])
+    expression = Expression(Tensor("out", ["j", "i"]), Add([Mul([a, b]), z]))
+
+    assert expression.format(EinsumEncoder()) == (
+        'out = np.einsum("i,j->ji", a, b, optimize=True)\nout += np.transpose(z, (1, 0))'
+    )
+
+
+def test_einsum_encoder_subtracts_negative_accumulated_terms() -> None:
+    a, b = Tensor("a", ["i"]), Tensor("b", ["i"])
+    expression = Expression(Tensor("out", ["i"]), Add([a, Mul([Scalar(-2), b])]))
+
+    assert expression.format(EinsumEncoder()) == "out = np.copy(a)\nout -= 2.0 * b"
 
 
 def test_einsum_encoder_uses_tensor_directly_for_identity_indices() -> None:
@@ -558,7 +592,7 @@ def test_einsum_encoder_supports_custom_options_and_method_name() -> None:
     )
 
     assert expression.format(encoder) == (
-        'x = copy(einsum("ij->ji", z, optimize=False))\nx += einsum("ik,jk->ji", a, b, optimize=False)'
+        'x = copy(np.transpose(z, (1, 0)))\nx += einsum("ik,jk->ji", a, b, optimize=False)'
     )
     assert expression.format("einsum") == expression.format(EinsumEncoder)
 
@@ -572,7 +606,7 @@ def test_einsum_encoder_distributes_products_over_sums_and_formats_scalars() -> 
     )
 
     assert expression.format(EinsumEncoder(einsum_kwargs={})) == (
-        'out = -2.0 * np.einsum("i,j->ij", a, z)\nout += -2.0 * np.einsum("i,j->ij", b, z)'
+        'out = -2.0 * np.einsum("i,j->ij", a, z)\nout -= 2.0 * np.einsum("i,j->ij", b, z)'
     )
 
 
