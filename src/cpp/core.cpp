@@ -191,6 +191,14 @@ PYBIND11_MODULE(_core, module) {
         });
     py::class_<albert::CostEstimate>(module, "CostEstimate",
                                      "Operation and traffic counts with their weighted total.")
+        .def(py::init([](double multiplications, double additions, double reads,
+                         double writes, double total) {
+                 return albert::CostEstimate{multiplications, additions, reads,
+                                             writes, total};
+             }),
+             py::arg("multiplications") = 0.0, py::arg("additions") = 0.0,
+             py::arg("reads") = 0.0, py::arg("writes") = 0.0,
+             py::arg("total") = 0.0)
         .def_readonly("multiplications", &albert::CostEstimate::multiplications)
         .def_readonly("additions", &albert::CostEstimate::additions)
         .def_readonly("reads", &albert::CostEstimate::reads)

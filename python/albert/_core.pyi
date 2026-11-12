@@ -33,6 +33,15 @@ class CostEstimate:
     writes: float
     total: float
 
+    def __init__(
+        self,
+        multiplications: float = 0.0,
+        additions: float = 0.0,
+        reads: float = 0.0,
+        writes: float = 0.0,
+        total: float = 0.0,
+    ) -> None: ...
+
 class ParenthesizationCandidate:
     path: list[tuple[int, int]]
     cost: CostEstimate

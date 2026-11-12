@@ -2,7 +2,17 @@ import math
 
 import pytest
 
-from albert import Add, CostModel, Metadata, Mul, Scalar, Tensor, estimate_cost
+from albert import Add, CostEstimate, CostModel, Metadata, Mul, Scalar, Tensor, estimate_cost
+
+
+def test_cost_estimate_can_be_constructed_with_named_fields() -> None:
+    estimate = CostEstimate(multiplications=1, additions=2, reads=3, writes=4, total=5)
+
+    assert estimate.multiplications == 1
+    assert estimate.additions == 2
+    assert estimate.reads == 3
+    assert estimate.writes == 4
+    assert estimate.total == 5
 
 
 def test_cost_estimate_for_contraction_counts_arithmetic_and_traffic() -> None:
