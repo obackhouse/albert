@@ -520,7 +520,7 @@ bool dynamic_programming_bitmask(
     const CostFactors& cost_factors,
     std::vector<ParenthesizationCandidate>& result) {
     const auto count = node.children().size();
-    if (count > 20) {
+    if (count > 12) {
         return false;
     }
     std::set<std::string> unique_indices;
@@ -750,6 +750,322 @@ bool dynamic_programming_bitmask(
     return true;
 }
 
+// Sparse subset DP for larger networks. Restricting intermediate subsets to
+// connected operand groups avoids exploring partitions that cannot be formed
+// by pairwise contractions, while the memoized recurrence remains exact.
+bool dynamic_programming_sparse_bitmask(
+    const Mul& node, const IndexSpaces& spaces, const SpaceSizes& sizes,
+    const ScalingLimits& limits, const CostModel& model,
+    const CostFactors& cost_factors,
+    std::vector<ParenthesizationCandidate>& result) {
+    const auto count = node.children().size();
+    if (count <= 12 || count > 63) {
+        return false;
+    }
+
+    std::set<std::string> unique_indices;
+    for (const auto& child : node.children()) {
+        const auto external = child->external_indices();
+        unique_indices.insert(external.begin(), external.end());
+    }
+    if (unique_indices.size() > 64) {
+        return false;
+    }
+
+    std::vector<std::string> axis_names(unique_indices.begin(), unique_indices.end());
+    std::unordered_map<std::string, std::size_t> axis_positions;
+    std::vector<double> axis_sizes;
+    axis_sizes.reserve(axis_names.size());
+    for (std::size_t axis = 0; axis < axis_names.size(); ++axis) {
+        axis_positions.emplace(axis_names[axis], axis);
+        bool found_space = false;
+        for (const auto& [space, indices] : spaces) {
+            if (std::find(indices.begin(), indices.end(), axis_names[axis]) == indices.end()) {
+                continue;
+            }
+            const auto size = sizes.find(space);
+            if (size == sizes.end()) {
+                throw std::invalid_argument("space " + space + " has no declared size");
+            }
+            axis_sizes.push_back(static_cast<double>(size->second));
+            found_space = true;
+            break;
+        }
+        if (!found_space) {
+            throw std::invalid_argument("index " + axis_names[axis] + " does not belong to a space");
+        }
+    }
+
+    const auto make_caps = [&](const ScalingCaps& caps) {
+        std::vector<MaskCap> result_caps;
+        result_caps.reserve(caps.size());
+        for (const auto& [cap_spaces, maximum] : caps) {
+            std::uint64_t cap_axes = 0;
+            for (std::size_t axis = 0; axis < axis_names.size(); ++axis) {
+                for (const auto& [space, indices] : spaces) {
+                    if (std::find(indices.begin(), indices.end(), axis_names[axis]) !=
+                            indices.end() &&
+                        std::find(cap_spaces.begin(), cap_spaces.end(), space) !=
+                            cap_spaces.end()) {
+                        cap_axes |= std::uint64_t{1} << axis;
+                        break;
+                    }
+                }
+            }
+            result_caps.push_back({cap_axes, maximum});
+        }
+        return result_caps;
+    };
+    const auto time_caps = make_caps(limits.time);
+    const auto memory_caps = make_caps(limits.memory);
+    const auto under_caps = [](std::uint64_t axes, const std::vector<MaskCap>& caps) {
+        for (const auto& cap : caps) {
+            if (popcount(axes & cap.axes) > cap.maximum) {
+                return false;
+            }
+        }
+        return true;
+    };
+    const auto axes_size = [&](std::uint64_t axes) {
+        double product = 1.0;
+        while (axes != 0) {
+            const auto bit = static_cast<std::size_t>(__builtin_ctzll(axes));
+            product *= axis_sizes[bit];
+            axes &= axes - 1;
+        }
+        return product;
+    };
+
+    std::vector<std::uint64_t> leaf_axes;
+    leaf_axes.reserve(count);
+    for (const auto& child : node.children()) {
+        std::uint64_t axes = 0;
+        for (const auto& index : child->external_indices()) {
+            axes |= std::uint64_t{1} << axis_positions.at(index);
+        }
+        leaf_axes.push_back(axes);
+    }
+    std::vector<std::uint64_t> adjacency(count, 0);
+    for (std::size_t i = 0; i < count; ++i) {
+        for (std::size_t j = i + 1; j < count; ++j) {
+            if ((leaf_axes[i] & leaf_axes[j]) != 0) {
+                adjacency[i] |= std::uint64_t{1} << j;
+                adjacency[j] |= std::uint64_t{1} << i;
+            }
+        }
+    }
+
+    std::unordered_map<std::uint64_t, std::uint64_t> subset_axes_memo;
+    const auto subset_axes = [&](const auto& self, std::uint64_t mask) -> std::uint64_t {
+        const auto found = subset_axes_memo.find(mask);
+        if (found != subset_axes_memo.end()) {
+            return found->second;
+        }
+        const auto first_bit = mask & (~mask + 1);
+        const auto first_index = static_cast<std::size_t>(__builtin_ctzll(first_bit));
+        const auto axes = mask == first_bit
+            ? leaf_axes[first_index]
+            : leaf_axes[first_index] ^ self(self, mask ^ first_bit);
+        return subset_axes_memo.emplace(mask, axes).first->second;
+    };
+
+    std::unordered_map<std::uint64_t, bool> connected_memo;
+    const auto is_connected = [&](std::uint64_t mask) {
+        const auto found = connected_memo.find(mask);
+        if (found != connected_memo.end()) {
+            return found->second;
+        }
+        if (mask == 0) {
+            return false;
+        }
+        const auto first_bit = mask & (~mask + 1);
+        auto visited = first_bit;
+        auto frontier = first_bit;
+        while (frontier != 0) {
+            const auto vertex = static_cast<std::size_t>(__builtin_ctzll(frontier));
+            frontier &= frontier - 1;
+            const auto added = adjacency[vertex] & mask & ~visited;
+            visited |= added;
+            frontier |= added;
+        }
+        const auto connected = visited == mask;
+        connected_memo.emplace(mask, connected);
+        return connected;
+    };
+
+    const auto connected_subsets = [&](std::uint64_t mask) {
+        std::vector<std::uint64_t> subsets;
+        std::vector<std::uint64_t> pending;
+        std::unordered_set<std::uint64_t> seen;
+        auto vertices = mask;
+        while (vertices != 0) {
+            const auto bit = vertices & (~vertices + 1);
+            vertices &= vertices - 1;
+            pending.push_back(bit);
+            seen.insert(bit);
+        }
+        while (!pending.empty()) {
+            const auto subset = pending.back();
+            pending.pop_back();
+            subsets.push_back(subset);
+            auto frontier = std::uint64_t{0};
+            auto vertices = subset;
+            while (vertices != 0) {
+                const auto vertex = static_cast<std::size_t>(__builtin_ctzll(vertices));
+                vertices &= vertices - 1;
+                frontier |= adjacency[vertex];
+            }
+            frontier &= mask & ~subset;
+            while (frontier != 0) {
+                const auto bit = frontier & (~frontier + 1);
+                frontier &= frontier - 1;
+                const auto expanded = subset | bit;
+                if (seen.insert(expanded).second) {
+                    pending.push_back(expanded);
+                }
+            }
+        }
+        const auto lexicographically_less = [](std::uint64_t lhs, std::uint64_t rhs) {
+            while (lhs != 0 && rhs != 0) {
+                const auto left_bit = lhs & (~lhs + 1);
+                const auto right_bit = rhs & (~rhs + 1);
+                if (left_bit != right_bit) {
+                    return left_bit < right_bit;
+                }
+                lhs &= lhs - 1;
+                rhs &= rhs - 1;
+            }
+            return false;
+        };
+        std::sort(subsets.begin(), subsets.end(), [&](auto lhs, auto rhs) {
+            const auto lhs_count = popcount(lhs);
+            const auto rhs_count = popcount(rhs);
+            return lhs_count == rhs_count
+                ? lexicographically_less(lhs, rhs)
+                : lhs_count < rhs_count;
+        });
+        return subsets;
+    };
+
+    std::unordered_map<std::uint64_t, BitmaskDpEntry> memo;
+    const auto solve = [&](const auto& self, std::uint64_t mask) -> double {
+        const auto found = memo.find(mask);
+        if (found != memo.end()) {
+            return found->second.score;
+        }
+        memo.emplace(mask, BitmaskDpEntry{.computed = true});
+        if ((mask & (mask - 1)) == 0) {
+            memo.at(mask).score = 0.0;
+            return 0.0;
+        }
+        if (!is_connected(mask)) {
+            return std::numeric_limits<double>::infinity();
+        }
+        const auto output_axes = subset_axes(subset_axes, mask);
+        if (!under_caps(output_axes, memory_caps)) {
+            return std::numeric_limits<double>::infinity();
+        }
+
+        double best_score = std::numeric_limits<double>::infinity();
+        std::uint64_t best_left = 0;
+        std::uint64_t best_right = 0;
+        const auto operand_count = popcount(mask);
+        for (const auto left : connected_subsets(mask)) {
+            if (left == mask || popcount(left) > operand_count / 2) {
+                continue;
+            }
+            const auto right = mask ^ left;
+            if (popcount(left) * 2 == operand_count && left >= right) {
+                continue;
+            }
+            if (!is_connected(right)) {
+                continue;
+            }
+            const auto left_axes = subset_axes(subset_axes, left);
+            const auto right_axes = subset_axes(subset_axes, right);
+            if ((left_axes & right_axes) == 0) {
+                continue;
+            }
+            const auto operation_axes = left_axes | right_axes;
+            if (!under_caps(operation_axes, time_caps)) {
+                continue;
+            }
+            const auto left_score = self(self, left);
+            const auto right_score = self(self, right);
+            if (!std::isfinite(left_score) || !std::isfinite(right_score)) {
+                continue;
+            }
+            const auto score = left_score + right_score + axes_size(operation_axes);
+            if (score < best_score) {
+                best_score = score;
+                best_left = left;
+                best_right = right;
+            }
+        }
+        auto& entry = memo.at(mask);
+        entry.score = best_score;
+        entry.left = best_left;
+        entry.right = best_right;
+        return best_score;
+    };
+
+    const auto full_mask = (std::uint64_t{1} << count) - 1;
+    auto components = connected_components(count, [&](auto lhs, auto rhs) {
+        return (subset_axes(subset_axes, lhs) & subset_axes(subset_axes, rhs)) != 0;
+    });
+    std::vector<std::uint64_t> active;
+    active.reserve(count);
+    for (std::size_t i = 0; i < count; ++i) {
+        active.push_back(std::uint64_t{1} << i);
+    }
+    std::vector<Contraction> path;
+    for (const auto component : components) {
+        if (!std::isfinite(solve(solve, component))) {
+            return true;
+        }
+        append_dp_path(component, active, path, [&](std::uint64_t mask) {
+            const auto found = memo.find(mask);
+            return found == memo.end() ? nullptr : &found->second;
+        });
+    }
+    std::stable_sort(components.begin(), components.end(), [&](auto lhs, auto rhs) {
+        return axes_size(subset_axes(subset_axes, lhs)) <
+               axes_size(subset_axes(subset_axes, rhs));
+    });
+    auto accumulated = components.front();
+    for (std::size_t index = 1; index < components.size(); ++index) {
+        const auto next = components[index];
+        const auto operation_axes = subset_axes(subset_axes, accumulated) |
+                                    subset_axes(subset_axes, next);
+        const auto output_axes = subset_axes(subset_axes, accumulated) ^
+                                 subset_axes(subset_axes, next);
+        if (!under_caps(operation_axes, time_caps) ||
+            !under_caps(output_axes, memory_caps)) {
+            return true;
+        }
+        const auto left_pos = std::find(active.begin(), active.end(), accumulated);
+        const auto right_pos = std::find(active.begin(), active.end(), next);
+        if (left_pos == active.end() || right_pos == active.end()) {
+            throw std::logic_error("invalid sparse DP parenthesization state");
+        }
+        auto i = static_cast<std::size_t>(left_pos - active.begin());
+        auto j = static_cast<std::size_t>(right_pos - active.begin());
+        if (i > j) {
+            std::swap(i, j);
+        }
+        path.emplace_back(i, j);
+        active.erase(active.begin() + static_cast<std::ptrdiff_t>(j));
+        active.erase(active.begin() + static_cast<std::ptrdiff_t>(i));
+        accumulated |= next;
+        active.push_back(accumulated);
+    }
+    if (accumulated != full_mask) {
+        throw std::logic_error("sparse DP did not cover all operands");
+    }
+    result.push_back(make_candidate(path, node, spaces, sizes, model, cost_factors));
+    return true;
+}
+
 std::vector<ParenthesizationCandidate> dynamic_programming_generic(
     const Mul& node, const LimitsChecker& checker, const IndexSpaces& spaces,
     const SpaceSizes& sizes, const CostModel& model,
@@ -900,6 +1216,10 @@ std::vector<ParenthesizationCandidate> dynamic_programming(
     std::vector<ParenthesizationCandidate> tensor_result;
     if (dynamic_programming_bitmask(node, spaces, sizes, limits, model,
                                     cost_factors, tensor_result)) {
+        return tensor_result;
+    }
+    if (dynamic_programming_sparse_bitmask(node, spaces, sizes, limits, model,
+                                           cost_factors, tensor_result)) {
         return tensor_result;
     }
     // Inputs beyond the mask limits use general Axes sets.

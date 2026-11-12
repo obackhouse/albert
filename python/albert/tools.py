@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, overload
 
-from albert._core import CostEstimate, Tensor, estimate_cost, scaling_exponent
+from albert._core import CostEstimate, Node, Tensor, estimate_cost, scaling_exponent, topological_sort
 from albert.options import ScalingLimits, ScalingMetric
 
 if TYPE_CHECKING:
+    from collections.abc import Collection
+
     from albert._core import Expression, Node
     from albert.metadata import Metadata
     from albert.options import CostModel
@@ -145,6 +147,72 @@ def print_cost_report(
                 print(f"- {space_str}:".ljust(19), f"{exponent}")
 
     print("-" * 28, end=end)
+
+
+def split_by_dependencies(
+    expressions: list[Expression],
+    dependency_symbols: Collection[str],
+    *,
+    metadata: Metadata,
+) -> tuple[list[Expression], list[Expression]]:
+    """Split equations into independent and dependent parts by tensor dependencies.
+
+    Any equation whose RHS uses a tensor with a symbol in ``dependency_symbols``
+    is dependent. This classification propagates through intermediate definitions:
+    an equation that uses a dependent intermediate is also dependent. Equations
+    whose LHS symbol is in ``dependency_symbols`` are iterative as well.
+
+    Tensor definitions are matched by both symbol and spaces, so distinct arrays
+    represented by the same symbol remain independent. Both returned lists are in
+    dependency order.
+
+    Args:
+        expressions: Equations to split.
+        dependency_symbols: Tensor symbols that identify iterative dependencies,
+        whose dependencies should mark equations as dependent.
+        metadata: Metadata used to resolve tensor indices to spaces.
+
+    Returns:
+        A pair ``(independent, dependent)`` of equations, each in dependency order.
+    """
+    if isinstance(dependency_symbols, str):
+        raise TypeError("dependency_symbols must be a collection of tensor symbols, not a string")
+    symbols = set(dependency_symbols)
+    if any(not isinstance(symbol, str) for symbol in symbols):
+        raise TypeError("dependency_symbols must contain only strings")
+
+    index_spaces = {index: space for space, indices in metadata.indices.items() for index in indices}
+
+    def tensor_key(tensor: Tensor) -> tuple[str, tuple[str, ...]]:
+        try:
+            spaces = tuple(index_spaces[index] for index in tensor.indices)
+        except KeyError as error:
+            raise ValueError(f"index {error.args[0]!r} does not belong to a metadata space") from error
+        return tensor.symbol, spaces
+
+    def tensor_nodes(node: Node) -> list[Tensor]:
+        if isinstance(node, Tensor):
+            return [node]
+        tensors: list[Tensor] = []
+        for child in node.children:
+            tensors.extend(tensor_nodes(child))
+        return tensors
+
+    ordered = topological_sort(expressions, metadata)
+    dependent_definitions: set[tuple[str, tuple[str, ...]]] = set()
+    independent: list[Expression] = []
+    dependent: list[Expression] = []
+    for expression in ordered:
+        rhs_tensors = tensor_nodes(expression.rhs)
+        is_dependent = expression.lhs.symbol in symbols or any(
+            tensor.symbol in symbols or tensor_key(tensor) in dependent_definitions for tensor in rhs_tensors
+        )
+        if is_dependent:
+            dependent.append(expression)
+            dependent_definitions.add(tensor_key(expression.lhs))
+        else:
+            independent.append(expression)
+    return independent, dependent
 
 
 def next_unused_index(node: Node, space: str, *, metadata: Metadata, skip: int = 0) -> str:

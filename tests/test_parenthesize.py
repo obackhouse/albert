@@ -176,6 +176,57 @@ def test_parallel_generic_dp_returns_stable_path() -> None:
     assert (first[0].path, first[0].cost.total) == (second[0].path, second[0].cost.total)
 
 
+def test_sparse_dp_finds_exact_path_for_more_than_20_connected_operands() -> None:
+    indices = [f"i{index}" for index in range(25)]
+    factors = [Tensor(f"T{index}", indices[index : index + 2]) for index in range(24)]
+    node = Mul(factors)
+    metadata = Metadata(indices={"n": indices}, sizes={"n": 2})
+    limits = ScalingLimits(time={"n": 3}, memory={"n": 2})
+    requests = PathRequests(bounds=(), requests=(PathRequest(dynamic=True),))
+
+    candidates = parenthesization_candidates(
+        node,
+        metadata,
+        scaling_limits=limits,
+        path_requests=requests,
+    )
+
+    assert len(candidates) == 1
+    assert len(candidates[0].path) == len(factors) - 1
+
+
+def test_sparse_dp_matches_matrix_chain_optimum() -> None:
+    dimensions = [3, 7, 2, 11, 5, 13, 4, 17, 6, 19, 8, 23, 9, 29, 10, 31, 12, 37, 14, 41, 16, 43]
+    indices = [f"i{index}" for index in range(len(dimensions))]
+    factors = [Tensor(f"T{index}", indices[index : index + 2]) for index in range(len(dimensions) - 1)]
+    spaces = {f"S{index}": [index_name] for index, index_name in enumerate(indices)}
+    sizes = {f"S{index}": size for index, size in enumerate(dimensions)}
+    metadata = Metadata(indices=spaces, sizes=sizes)
+    model = CostModel(multiply=1, add=0, read=0, write=0)
+    requests = PathRequests(bounds=(), requests=(PathRequest(dynamic=True),))
+
+    expected = [[0.0] * len(factors) for _ in factors]
+    for width in range(2, len(factors) + 1):
+        for start in range(len(factors) - width + 1):
+            stop = start + width - 1
+            expected[start][stop] = min(
+                expected[start][split]
+                + expected[split + 1][stop]
+                + dimensions[start] * dimensions[split + 1] * dimensions[stop + 1]
+                for split in range(start, stop)
+            )
+
+    candidates = parenthesization_candidates(
+        Mul(factors),
+        metadata,
+        cost_model=model,
+        path_requests=requests,
+    )
+
+    assert len(candidates) == 1
+    assert candidates[0].cost.total == expected[0][-1]
+
+
 def test_dp_checks_every_partition_against_exhaustive_search() -> None:
     factors = [
         Tensor("A", ["i", "j"]),
