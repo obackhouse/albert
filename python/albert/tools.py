@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, overload
 
-from albert._core import CostEstimate, estimate_cost, scaling_exponent, Tensor
+from albert._core import CostEstimate, Tensor, estimate_cost, scaling_exponent
 from albert.options import ScalingLimits, ScalingMetric
 
 if TYPE_CHECKING:
@@ -161,8 +161,8 @@ def next_unused_index(node: Node, space: str, *, metadata: Metadata, skip: int =
     """
     used_indices = set()
     for tensor in node.search(lambda n: isinstance(n, Tensor)):
-        used_indices.update(tensor.indices)
-    for index in metadata.spaces[space]:
+        used_indices.update(tensor.external_indices)
+    for index in metadata.indices[space]:
         if index not in used_indices:
             if skip == 0:
                 return index

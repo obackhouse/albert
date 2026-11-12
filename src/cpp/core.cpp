@@ -235,14 +235,22 @@ PYBIND11_MODULE(_core, module) {
         "Estimate arithmetic operations and memory traffic for an AST.");
     module.def(
         "canonicalize",
-        [](const albert::NodePtr& node, const py::object& metadata) {
-            return albert::canonicalize(
+        [](const albert::NodePtr& node, const py::object& metadata,
+           bool return_external_map) -> py::object {
+            auto canonicalized = albert::canonicalize_with_mapping(
                 node, parse_canonicalization_metadata(metadata));
+            if (return_external_map) {
+                return py::make_tuple(std::move(canonicalized.node),
+                                     std::move(canonicalized.external_index_mapping));
+            }
+            return py::cast(std::move(canonicalized.node));
         },
-        py::arg("node"), py::arg("metadata") = py::none());
+        py::arg("node"), py::arg("metadata") = py::none(),
+        py::arg("return_external_map") = false);
     module.def(
         "canonicalize",
-        [](const albert::Expression& expression, const py::object& metadata) {
+        [](const albert::Expression& expression, const py::object& metadata,
+           bool return_external_map) -> py::object {
             auto canonicalized = albert::canonicalize_with_mapping(
                 expression.rhs(), parse_canonicalization_metadata(metadata));
             auto lhs_indices = expression.lhs()->indices();
@@ -254,9 +262,15 @@ PYBIND11_MODULE(_core, module) {
             }
             auto lhs = std::make_shared<albert::Tensor>(
                 expression.lhs()->symbol(), std::move(lhs_indices));
-            return albert::Expression(std::move(lhs), std::move(canonicalized.node));
+            albert::Expression result(std::move(lhs), std::move(canonicalized.node));
+            if (return_external_map) {
+                return py::make_tuple(std::move(result),
+                                     std::move(canonicalized.external_index_mapping));
+            }
+            return py::cast(std::move(result));
         },
-        py::arg("node"), py::arg("metadata") = py::none());
+        py::arg("node"), py::arg("metadata") = py::none(),
+        py::arg("return_external_map") = false);
     module.def("expand", &albert::expand, py::arg("node"));
     module.def("flatten", &albert::flatten, py::arg("node"));
     module.def("collect", &albert::collect, py::arg("node"));

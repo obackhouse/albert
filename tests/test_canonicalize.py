@@ -44,6 +44,27 @@ def test_canonicalize_expression_preserves_lhs_axis_order_while_remapping() -> N
     assert canonical.lhs.indices == ["i", "j"]
 
 
+def test_canonicalize_can_return_external_index_mapping() -> None:
+    metadata = Metadata(indices={"occupied": ["i", "j", "k"]}, sizes={"occupied": 8})
+    node = Tensor("A", ["k"])
+
+    canonical, external_map = canonicalize(node, metadata, return_external_map=True)
+
+    assert canonical == Tensor("A", ["i"])
+    assert external_map == {"k": "i"}
+
+
+def test_canonicalize_expression_can_return_external_index_mapping() -> None:
+    metadata = Metadata(indices={"occupied": ["i", "j", "k"]}, sizes={"occupied": 8})
+    expression = Expression(Tensor("Y", ["k"]), Tensor("A", ["k"]))
+
+    canonical, external_map = canonicalize(expression, metadata, return_external_map=True)
+
+    assert canonical.lhs.indices == ["i"]
+    assert canonical.rhs.external_indices == ["i"]
+    assert external_map == {"k": "i"}
+
+
 def test_canonicalize_reserves_canonical_external_labels_before_dummy_labels() -> None:
     metadata = Metadata(indices={"occupied": ["i", "j", "k", "l", "x", "y", "z"]}, sizes={"occupied": 8})
     expression = Mul([Tensor("A", ["j", "k"]), Tensor("B", ["k", "i"])])

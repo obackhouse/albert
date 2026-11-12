@@ -1,5 +1,5 @@
 from collections.abc import Callable, Iterator, Sequence
-from typing import Protocol, Self
+from typing import Literal, Protocol, Self, overload
 
 from numpy import complex64, complex128, float32, float64
 from numpy.typing import NDArray
@@ -169,7 +169,18 @@ def common_subexpression_elimination(
     exhaustive_limit: int = ...,
     path_requests: PathRequests | None = ...,
 ) -> list[Expression]: ...
-def canonicalize[N: (Node, Expression)](node: N, metadata: Metadata | None = None) -> N: ...
+@overload
+def canonicalize[N: (Node, Expression)](
+    node: N,
+    metadata: Metadata | None = None,
+    return_external_map: Literal[False] = False,
+) -> N: ...
+@overload
+def canonicalize[N: (Node, Expression)](
+    node: N,
+    metadata: Metadata | None = None,
+    return_external_map: Literal[True] = True,
+) -> tuple[N, dict[str, str]]: ...
 def expand(node: Node) -> Node: ...
 def flatten(node: Node) -> Node: ...
 def collect(node: Node) -> Node: ...
