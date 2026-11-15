@@ -160,6 +160,47 @@ def test_einsum_function_encoder_orders_assignments_and_deletes_dead_intermediat
     np.testing.assert_allclose(results["result"], arrays["A"] @ arrays["B"])
 
 
+def test_einsum_function_encoder_schedules_additive_terms_independently() -> None:
+    import numpy as np
+
+    metadata = Metadata(indices={"o": ["i"]}, sizes={"o": 3})
+    result = Expression(
+        Tensor("result", ["i"]),
+        Add([Tensor("left", ["i"]), Mul([Scalar(-2), Tensor("right", ["i"])])]),
+    )
+    final = Expression(Tensor("final", ["i"]), Mul([Tensor("result", ["i"]), Tensor("E", [])]))
+    left = Expression(Tensor("left", ["i"]), Tensor("A", ["i"]))
+    right = Expression(Tensor("right", ["i"]), Tensor("B", ["i"]))
+    later = Expression(
+        Tensor("later", ["i"]),
+        Mul([Tensor("C", ["i"]), Tensor("D", [])]),
+    )
+    generated = EinsumFunctionEncoder(StringIO(), metadata=metadata).format_function(
+        [final, result, left, right, later], outputs=("final",)
+    )
+
+    assert generated.index("left = np.copy(A)") < generated.index("result = np.copy(left)")
+    assert generated.index("result = np.copy(left)") < generated.index("del left")
+    assert generated.index("del left") < generated.index("right = np.copy(B)")
+    assert generated.index("result -= 2.0 * right") < generated.index("del right")
+    assert generated.index("result -= 2.0 * right") < generated.index('final = np.einsum("i,->i"')
+    assert generated.index('final = np.einsum("i,->i"') < generated.index("del result")
+    assert generated.index("del result") < generated.index("later = np.einsum")
+
+    namespace: dict[str, object] = {}
+    exec(generated, namespace)
+    arrays = {
+        "A": np.array([1.0, 2.0, 3.0]),
+        "B": np.array([4.0, 5.0, 6.0]),
+        "C": np.array([2.0, 3.0, 4.0]),
+        "D": np.array(2.0),
+        "E": np.array(3.0),
+    }
+    np.testing.assert_array_equal(
+        namespace["evaluate"](**arrays)["final"], (arrays["A"] - 2 * arrays["B"]) * arrays["E"]
+    )
+
+
 def test_einsum_function_encoder_supports_space_specific_input_formatting() -> None:
     from types import SimpleNamespace
 

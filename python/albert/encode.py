@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import heapq
 import json
 import keyword
 import math
@@ -722,6 +723,62 @@ class EinsumFunctionEncoder:
             tensors.extend(EinsumFunctionEncoder._tensors(child))
         return tensors
 
+    def _ordered_terms(
+        self,
+        expressions: list[Expression],
+        index_spaces: dict[str, str],
+    ) -> list[tuple[Expression, list[Node], TensorArrayKey, bool]]:
+        """Schedule additive terms independently while keeping each sum ordered."""
+        tasks: list[tuple[Expression, list[Node], TensorArrayKey, bool]] = []
+        producers: dict[TensorArrayKey, list[int]] = {}
+        task_inputs: list[set[TensorArrayKey]] = []
+        per_output: dict[TensorArrayKey, list[int]] = {}
+
+        for expression in expressions:
+            key = self._tensor_key(expression.lhs, index_spaces)
+            terms = self.einsum_encoder._terms(expression.rhs)
+            for term_index, factors in enumerate(terms):
+                task_index = len(tasks)
+                tasks.append((expression, factors, key, term_index == 0))
+                producers.setdefault(key, []).append(task_index)
+                per_output.setdefault(key, []).append(task_index)
+                input_keys = {
+                    self._tensor_key(tensor, index_spaces) for factor in factors for tensor in self._tensors(factor)
+                }
+                task_inputs.append(input_keys)
+
+        dependents: list[set[int]] = [set() for _ in tasks]
+        indegrees = [0] * len(tasks)
+
+        def add_dependency(source: int, target: int) -> None:
+            if target not in dependents[source]:
+                dependents[source].add(target)
+                indegrees[target] += 1
+
+        # A consumer sees the completed sum, so it depends on every term that
+        # contributes to that tensor. Terms of one sum retain source order.
+        for indices in per_output.values():
+            for previous, current in zip(indices, indices[1:], strict=False):
+                add_dependency(previous, current)
+        for consumer, inputs in enumerate(task_inputs):
+            for input_key in inputs:
+                for producer in producers.get(input_key, ()):
+                    add_dependency(producer, consumer)
+
+        ready = [index for index, indegree in enumerate(indegrees) if indegree == 0]
+        heapq.heapify(ready)
+        ordered_indices: list[int] = []
+        while ready:
+            current = heapq.heappop(ready)
+            ordered_indices.append(current)
+            for dependent in dependents[current]:
+                indegrees[dependent] -= 1
+                if indegrees[dependent] == 0:
+                    heapq.heappush(ready, dependent)
+        if len(ordered_indices) != len(tasks):
+            raise ValueError("cycle detected in expression dependencies")
+        return [tasks[index] for index in ordered_indices]
+
     def _input_tensor_keys(self, expressions: list[Expression]) -> tuple[TensorArrayKey, ...]:
         """Return external tensor keys referenced by these equations, in use order."""
         if self.metadata is None:
@@ -849,15 +906,19 @@ class EinsumFunctionEncoder:
         for symbol in input_symbols:
             lines.append(f"    {symbol} = kwargs.{symbol}")
         local_map: dict[TensorArrayKey, str] = {}
-        last_use: dict[TensorArrayKey, int] = {key: index for index, key in enumerate(keys)}
-        for expression_index, expression in enumerate(ordered):
-            for tensor in self._tensors(expression.rhs):
-                key = self._tensor_key(tensor, index_spaces)
-                if key in last_use:
-                    last_use[key] = expression_index
+        term_tasks = self._ordered_terms(expressions, index_spaces)
+        last_use: dict[TensorArrayKey, int] = {}
+        for task_index, (_, _, key, _) in enumerate(term_tasks):
+            last_use[key] = task_index
+        for task_index, (expression, factors, _, _) in enumerate(term_tasks):
+            for factor in factors:
+                for tensor in self._tensors(factor):
+                    key = self._tensor_key(tensor, index_spaces)
+                    if key in last_use:
+                        last_use[key] = task_index
 
         output_set = set(selected_output_keys)
-        for expression_index, (expression, key) in enumerate(zip(ordered, keys, strict=True)):
+        for task_index, (expression, factors, key, initialize) in enumerate(term_tasks):
             local_map[key] = definition_names[key]
             scoped = _ScopedEinsumEncoder(
                 buffer=self.buffer,
@@ -870,10 +931,16 @@ class EinsumFunctionEncoder:
                 delegate=self.einsum_encoder,
                 local_names=local_map,
             )
-            rendered = scoped.format_expression(expression)
-            lines.extend(f"    {line}" for line in rendered.splitlines())
+            call = scoped._format_terms([factors], tuple(expression.lhs.indices), assignment=initialize)[0]
+            target = definition_names[key]
+            if initialize:
+                lines.append(f"    {target} = {call}")
+            elif call.startswith("-"):
+                lines.append(f"    {target} -= {call[1:]}")
+            else:
+                lines.append(f"    {target} += {call}")
             for candidate, last in last_use.items():
-                if last == expression_index and candidate not in output_set:
+                if last == task_index and candidate not in output_set:
                     lines.append(f"    del {definition_names[candidate]}")
 
         outputs_payload = ", ".join(f"{output_names[key]!r}: {definition_names[key]}" for key in selected_output_keys)
