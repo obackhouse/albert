@@ -9,6 +9,7 @@ from albert.options import ScalingLimits, ScalingMetric
 
 if TYPE_CHECKING:
     from collections.abc import Collection
+    from typing import Any
 
     from albert._core import Expression, Node
     from albert.metadata import Metadata
@@ -99,16 +100,14 @@ def cost_report(
     return total_cost, max_scaling
 
 
-def print_cost_report(
+def cost_report_json(
     expressions: list[Expression],
     *,
     metadata: Metadata,
     cost_model: CostModel | None = None,
     scaling_limits: ScalingLimits | None = None,
-    title: str | None = None,
-    end: str = "\n",
-) -> None:
-    """Print a cost report for a list of expressions.
+) -> dict[str, Any]:
+    """Get a cost report for a list of expressions as a JSON-serializable dictionary.
 
     Args:
         expressions: List of expressions to analyze.
@@ -118,35 +117,28 @@ def print_cost_report(
             provided.
         scaling_limits: The scaling limits used for the CSE. This is used to determine which spaces
             to report scaling for. Set to ``None`` if no scaling limits are provided.
-        title: Optional title to print before the report.
-        end: String to print at the end of the report.
+
+    Returns:
+        A dictionary containing the total cost estimate and the observed maximum scaling limits.
     """
-    if not cost_model and not scaling_limits:
-        return
     total_cost, max_scaling = cost_report(
         expressions, metadata=metadata, cost_model=cost_model, scaling_limits=scaling_limits
     )
-    full_title = f"Cost report {'(' if title else ''}{title if title else ''}{')' if title else ''}"
-    print(full_title.center(28))
-    print("-" * 28)
-
+    report: dict[str, Any] = {}
     if total_cost is not None:
-        print("FLOPs:")
-        print(f"- total:            {total_cost.total:.2e}")
-        print(f"- multiplications:  {total_cost.multiplications:.2e}")
-        print(f"- additions:        {total_cost.additions:.2e}")
-        print(f"- reads:            {total_cost.reads:.2e}")
-        print(f"- writes:           {total_cost.writes:.2e}")
-
+        report["cost"] = {
+            "total": total_cost.total,
+            "multiplications": total_cost.multiplications,
+            "additions": total_cost.additions,
+            "reads": total_cost.reads,
+            "writes": total_cost.writes,
+        }
     if max_scaling is not None:
-        for which in ("time", "memory"):
-            if getattr(max_scaling, which):
-                print(f"Scaling ({which}):")
-            for space, exponent in getattr(max_scaling, which).items():
-                space_str = ",".join(space) if isinstance(space, tuple) else space
-                print(f"- {space_str}:".ljust(19), f"{exponent}")
-
-    print("-" * 28, end=end)
+        report["scaling"] = {
+            which: {space: exponent for space, exponent in getattr(max_scaling, which).items()}
+            for which in ("time", "memory")
+        }
+    return report
 
 
 def split_by_dependencies(

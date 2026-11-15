@@ -530,6 +530,93 @@ def test_einsum_encoder_formats_sums_as_assignments() -> None:
     )
 
 
+def test_einsum_encoder_can_use_matmul_for_rank_two_contractions() -> None:
+    a, b = Tensor("a", ["i", "k"]), Tensor("b", ["k", "j"])
+    expression = Expression(Tensor("out", ["i", "j"]), Mul([a, b]))
+
+    assert expression.format(EinsumEncoder(use_matmul=True)) == "out = a @ b"
+
+
+@pytest.mark.parametrize(
+    ("a_indices", "b_indices", "out_indices", "expected"),
+    [
+        (("k", "i"), ("k", "j"), ("i", "j"), "out = a.T @ b"),
+        (("i", "k"), ("j", "k"), ("i", "j"), "out = a @ b.T"),
+        (("k", "i"), ("j", "k"), ("j", "i"), "out = (a.T @ b.T).T"),
+        (("i", "k"), ("k", "j"), ("j", "i"), "out = (a @ b).T"),
+    ],
+)
+def test_einsum_encoder_transposes_rank_two_matmul_operands(
+    a_indices: tuple[str, str],
+    b_indices: tuple[str, str],
+    out_indices: tuple[str, str],
+    expected: str,
+) -> None:
+    expression = Expression(
+        Tensor("out", out_indices),
+        Mul([Tensor("a", a_indices), Tensor("b", b_indices)]),
+    )
+
+    assert expression.format(EinsumEncoder(use_matmul=True)) == expected
+
+
+def test_einsum_encoder_keeps_einsum_for_batched_contractions() -> None:
+    a = Tensor("a", ["batch", "i", "k"])
+    b = Tensor("b", ["batch", "k", "j"])
+    expression = Expression(Tensor("out", ["i", "j"]), Mul([a, b]))
+
+    assert expression.format(EinsumEncoder(use_matmul=True)) == ('out = np.einsum("aik,akj->ij", a, b, optimize=True)')
+
+
+def test_einsum_function_encoder_propagates_matmul_option() -> None:
+    import numpy as np
+
+    metadata = Metadata(indices={"o": ["i", "k", "j"]}, sizes={"o": 2})
+    expression = Expression(
+        Tensor("out", ["i", "j"]),
+        Mul([Tensor("A", ["i", "k"]), Tensor("B", ["k", "j"])]),
+    )
+    source = EinsumFunctionEncoder(
+        StringIO(),
+        metadata=metadata,
+        einsum_encoder=EinsumEncoder(use_matmul=True),
+    ).format_function([expression])
+
+    assert "out = A @ B" in source
+    namespace: dict[str, object] = {}
+    exec(source, namespace)
+    a = np.arange(4, dtype=np.float64).reshape(2, 2)
+    b = np.arange(4, dtype=np.float64).reshape(2, 2)
+    result = namespace["evaluate"](A=a, B=b)
+    np.testing.assert_array_equal(result["out"], a @ b)
+
+
+def test_einsum_function_encoder_evaluates_transposed_matmul() -> None:
+    import numpy as np
+
+    metadata = Metadata(
+        indices={"o": ["i", "j"], "x": ["k"]},
+        sizes={"o": 2, "x": 3},
+    )
+    expression = Expression(
+        Tensor("out", ["j", "i"]),
+        Mul([Tensor("A", ["k", "i"]), Tensor("B", ["j", "k"])]),
+    )
+    source = EinsumFunctionEncoder(
+        StringIO(),
+        metadata=metadata,
+        einsum_encoder=EinsumEncoder(use_matmul=True),
+    ).format_function([expression])
+
+    assert "out = (A.T @ B.T).T" in source
+    namespace: dict[str, object] = {}
+    exec(source, namespace)
+    a = np.arange(6, dtype=np.float64).reshape(3, 2)
+    b = np.arange(6, dtype=np.float64).reshape(2, 3)
+    result = namespace["evaluate"](A=a, B=b)
+    np.testing.assert_array_equal(result["out"], np.einsum("ki,jk->ji", a, b))
+
+
 def test_einsum_encoder_copies_a_view_before_accumulating() -> None:
     z = Tensor("z", ["i", "j"])
     a, b = Tensor("a", ["i", "k"]), Tensor("b", ["j", "k"])

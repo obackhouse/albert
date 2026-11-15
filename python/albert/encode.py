@@ -397,6 +397,9 @@ class EinsumEncoder(Encoder):
     transpose_function: str | None = "np.transpose"
     """Name of the transpose function, or ``None`` to emit a trivial einsum."""
 
+    use_matmul: bool = False
+    """Use ``@`` for eligible rank-two matrix contractions."""
+
     def format_tensor(self, symbol: str, spaces: tuple[str, ...]) -> str:
         """Return the Python expression used to access one tensor array."""
         return self.tensor_formatter(symbol, spaces)
@@ -450,7 +453,7 @@ class EinsumEncoder(Encoder):
             used.add(label)
         return labels
 
-    def _term_call(
+    def _term_call(  # noqa: PLR0912
         self,
         factors: list[Node],
         output_indices: tuple[str, ...],
@@ -493,6 +496,10 @@ class EinsumEncoder(Encoder):
                         call = f"{self.copy_function}({call})"
                     return self._apply_coefficient(call, coefficient)
 
+        matmul_call = self._matmul_call(tensors, output_indices)
+        if matmul_call is not None:
+            return self._apply_coefficient(matmul_call, coefficient)
+
         input_subscripts = ["".join(labels[index] for index in tensor.indices) for tensor in tensors]
         output_subscript = "".join(labels[index] for index in output_indices)
         subscripts = f"{','.join(input_subscripts)}->{output_subscript}"
@@ -511,6 +518,59 @@ class EinsumEncoder(Encoder):
         if coefficient == -1.0:
             return f"-{call}"
         return f"{coefficient!r} * {call}"
+
+    def _matmul_call(  # noqa: PLR0911
+        self, tensors: list[Tensor], output_indices: tuple[str, ...]
+    ) -> str | None:
+        """Render an eligible rank-two contraction as a matrix product."""
+        if not self.use_matmul or len(tensors) != 2:
+            return None
+
+        left_indices = tuple(tensors[0].indices)
+        right_indices = tuple(tensors[1].indices)
+        if (
+            len(left_indices) != 2
+            or len(right_indices) != 2
+            or len(set(left_indices)) != 2
+            or len(set(right_indices)) != 2
+            or len(set(output_indices)) != len(output_indices)
+        ):
+            return None
+
+        shared = set(left_indices) & set(right_indices)
+        if len(shared) != 1:
+            return None
+        contracted_index = next(iter(shared))
+        if contracted_index in output_indices:
+            return None
+
+        left_free = set(left_indices) - shared
+        right_free = set(right_indices) - shared
+        if len(left_free) != 1 or len(right_free) != 1:
+            return None
+        row_index = next(iter(left_free))
+        column_index = next(iter(right_free))
+        if set(output_indices) != {row_index, column_index}:
+            return None
+
+        def render_axes(tensor: Tensor, expected: tuple[str, str]) -> str | None:
+            indices = tuple(tensor.indices)
+            expression = self._tensor_expression(tensor)
+            if indices == expected:
+                return expression
+            if indices == expected[::-1]:
+                return f"{expression}.T"
+            return None
+
+        left = render_axes(tensors[0], (row_index, contracted_index))
+        right = render_axes(tensors[1], (contracted_index, column_index))
+        if left is None or right is None:
+            return None
+
+        call = f"{left} @ {right}"
+        if output_indices == (column_index, row_index):
+            call = f"({call}).T"
+        return call
 
     @staticmethod
     def _may_alias_output(tensors: list[Tensor], output_indices: tuple[str, ...]) -> bool:
@@ -805,6 +865,7 @@ class EinsumFunctionEncoder:
                 einsum_kwargs=self.einsum_encoder.einsum_kwargs,
                 copy_function=self.einsum_encoder.copy_function,
                 transpose_function=self.einsum_encoder.transpose_function,
+                use_matmul=self.einsum_encoder.use_matmul,
                 metadata=self.metadata,
                 delegate=self.einsum_encoder,
                 local_names=local_map,
