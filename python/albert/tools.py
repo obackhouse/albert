@@ -207,6 +207,45 @@ def split_by_dependencies(
     return independent, dependent
 
 
+def get_intermediate_output_keys(
+    producers: list[Expression],
+    consumers: list[Expression],
+    *,
+    metadata: Metadata,
+) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    """Get producer tensor keys that are used by downstream expressions.
+
+    Tensor definitions are matched by both symbol and spaces, so distinct arrays
+    represented by the same symbol remain independent. The returned keys follow
+    the producer order.
+
+    Args:
+        producers: Expressions that compute candidate intermediate tensors.
+        consumers: Downstream expressions that use some of those intermediates.
+        metadata: Metadata used to resolve tensor indices to spaces.
+
+    Returns:
+        Keys for producer tensors consumed by at least one downstream expression.
+    """
+    index_spaces = {index: space for space, indices in metadata.indices.items() for index in indices}
+
+    def tensor_key(tensor: Tensor) -> tuple[str, tuple[str, ...]]:
+        try:
+            spaces = tuple(index_spaces[index] for index in tensor.indices)
+        except KeyError as error:
+            raise ValueError(f"index {error.args[0]!r} does not belong to a metadata space") from error
+        return tensor.symbol, spaces
+
+    consumer_inputs = {
+        tensor_key(tensor)  # type: ignore[arg-type]
+        for expression in consumers
+        for tensor in expression.rhs.search(lambda node: isinstance(node, Tensor))
+    }
+    return tuple(
+        tensor_key(expression.lhs) for expression in producers if tensor_key(expression.lhs) in consumer_inputs
+    )
+
+
 def next_unused_index(node: Node, space: str, *, metadata: Metadata, skip: int = 0) -> str:
     """Get the next unused index in a given space for a node.
 

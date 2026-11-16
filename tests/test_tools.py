@@ -1,5 +1,5 @@
 from albert import Add, Expression, Metadata, Mul, Tensor
-from albert.tools import split_by_dependencies
+from albert.tools import get_intermediate_output_keys, split_by_dependencies
 
 
 def _symbols(expressions: list[Expression]) -> list[str]:
@@ -55,3 +55,17 @@ def test_split_by_dependencies_classifies_dependency_symbol_definitions_as_depen
 
     assert _symbols(independent_part) == ["static"]
     assert _symbols(dependent_part) == ["t"]
+
+
+def test_get_intermediate_output_keys_matches_symbol_and_spaces_in_producer_order() -> None:
+    metadata = Metadata(indices={"o": ["i", "j"], "v": ["a"]}, sizes={"o": 2, "v": 3})
+    occupied = Expression(Tensor("P", ["i"]), Tensor("A", ["i"]))
+    virtual = Expression(Tensor("P", ["a"]), Tensor("B", ["a"]))
+    consumer = Expression(
+        Tensor("result", ["i", "a"]),
+        Mul([Tensor("P", ["i"]), Tensor("P", ["a"])]),
+    )
+
+    outputs = get_intermediate_output_keys([virtual, occupied], [consumer], metadata=metadata)
+
+    assert outputs == (("P", ("v",)), ("P", ("o",)))
