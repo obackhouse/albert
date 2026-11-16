@@ -629,7 +629,10 @@ class EinsumEncoder(Encoder):
             The string representation of the expression.
         """
         terms = self._terms(expression.rhs)
-        calls = self._format_terms(terms, tuple(expression.lhs.indices), assignment=True)
+        # A copy is only needed when the first term will be mutated by later
+        # ``+=``/``-=`` contributions. A one-term assignment can safely reuse
+        # its input array or view.
+        calls = self._format_terms(terms, tuple(expression.lhs.indices), assignment=len(terms) > 1)
         output = self._tensor_expression(expression.lhs)
         lines = []
         for index, call in enumerate(calls):
@@ -929,6 +932,9 @@ class EinsumFunctionEncoder:
             lines.append(f"    {symbol} = kwargs.{symbol}")
         local_map: dict[TensorArrayKey, str] = {}
         term_tasks = self._ordered_terms(expressions, index_spaces)
+        term_counts: dict[TensorArrayKey, int] = {}
+        for _, _, key, _ in term_tasks:
+            term_counts[key] = term_counts.get(key, 0) + 1
         last_use: dict[TensorArrayKey, int] = {}
         for task_index, (_, _, key, _) in enumerate(term_tasks):
             last_use[key] = task_index
@@ -953,7 +959,8 @@ class EinsumFunctionEncoder:
                 delegate=self.einsum_encoder,
                 local_names=local_map,
             )
-            call = scoped._format_terms([factors], tuple(expression.lhs.indices), assignment=initialize)[0]
+            needs_accumulation_copy = initialize and term_counts[key] > 1
+            call = scoped._format_terms([factors], tuple(expression.lhs.indices), assignment=needs_accumulation_copy)[0]
             target = definition_names[key]
             if initialize:
                 lines.append(f"    {target} = {call}")

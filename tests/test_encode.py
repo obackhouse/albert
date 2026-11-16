@@ -144,7 +144,7 @@ def test_einsum_function_encoder_orders_assignments_and_deletes_dead_intermediat
     assert "A = kwargs.A" in generated
     assert "B = kwargs.B" in generated
     assert 'np.einsum("ij,jk->ik", A, B' in generated
-    assert generated.index("tmp = np.einsum") < generated.index("result = np.copy(tmp)")
+    assert generated.index("tmp = np.einsum") < generated.index("result = tmp")
     assert "del tmp" in generated
     assert "return {'result': result}" in generated
     compile(generated, "<einsum function>", "exec")
@@ -179,9 +179,9 @@ def test_einsum_function_encoder_schedules_additive_terms_independently() -> Non
         [final, result, left, right, later], outputs=("final",)
     )
 
-    assert generated.index("left = np.copy(A)") < generated.index("result = np.copy(left)")
+    assert generated.index("left = A") < generated.index("result = np.copy(left)")
     assert generated.index("result = np.copy(left)") < generated.index("del left")
-    assert generated.index("del left") < generated.index("right = np.copy(B)")
+    assert generated.index("del left") < generated.index("right = B")
     assert generated.index("result -= 2.0 * right") < generated.index("del right")
     assert generated.index("result -= 2.0 * right") < generated.index('final = np.einsum("i,->i"')
     assert generated.index('final = np.einsum("i,->i"') < generated.index("del result")
@@ -210,8 +210,8 @@ def test_einsum_function_encoder_can_contract_ready_additive_terms_first() -> No
         [result, left], outputs=("result",)
     )
 
-    assert generated.index("result = np.copy(B)") < generated.index("left = np.copy(A)")
-    assert generated.index("left = np.copy(A)") < generated.index("result += left")
+    assert generated.index("result = np.copy(B)") < generated.index("left = A")
+    assert generated.index("left = A") < generated.index("result += left")
 
 
 def test_einsum_function_encoder_schedules_ready_consumers_before_independent_tasks() -> None:
@@ -225,10 +225,10 @@ def test_einsum_function_encoder_schedules_ready_consumers_before_independent_ta
         [source, independent, middle, consumer]
     )
 
-    source_position = generated.index("source = np.copy(A)")
-    middle_position = generated.index("middle = np.copy(source)")
-    consumer_position = generated.index("consumer = np.copy(middle)")
-    independent_position = generated.index("independent = np.copy(B)")
+    source_position = generated.index("source = A")
+    middle_position = generated.index("middle = source")
+    consumer_position = generated.index("consumer = middle")
+    independent_position = generated.index("independent = B")
     assert source_position < middle_position < consumer_position < independent_position
 
 
@@ -277,7 +277,7 @@ def test_einsum_function_encoder_uses_transpose_function() -> None:
     expression = Expression(Tensor("result", ["j", "i"]), Tensor("A", ["i", "j"]))
     encoder = EinsumFunctionEncoder(StringIO(), metadata=metadata)
 
-    assert "result = np.copy(np.transpose(A, (1, 0)))" in encoder.format_function([expression])
+    assert "result = np.transpose(A, (1, 0))" in encoder.format_function([expression])
 
 
 def test_einsum_function_uses_formatted_names_for_same_symbol_in_different_spaces() -> None:
@@ -299,8 +299,8 @@ def test_einsum_function_uses_formatted_names_for_same_symbol_in_different_space
 
     assert "X = kwargs.X" in generated
     assert "Y = kwargs.Y" in generated
-    assert "A_o = np.copy(X)" in generated
-    assert "A_v = np.copy(Y)" in generated
+    assert "A_o = X" in generated
+    assert "A_v = Y" in generated
     assert "return {'A_o': A_o, 'A_v': A_v}" in generated
     namespace: dict[str, object] = {}
     exec(generated, namespace)
@@ -329,7 +329,7 @@ def test_einsum_function_encoder_customizes_imports() -> None:
     assert generated.startswith("import jax.numpy as jnp\nfrom types import SimpleNamespace\n\ndef evaluate(**kwargs):")
     assert "import numpy as np" not in generated
     assert "A = kwargs.A" in generated
-    assert "jnp.copy(A)" in generated
+    assert "result = A" in generated
 
 
 def test_einsum_function_encoder_can_omit_imports_per_function() -> None:
@@ -703,9 +703,7 @@ def test_einsum_encoder_falls_back_to_einsum_when_transpose_function_is_none() -
     z = Tensor("z", ["i", "j"])
     expression = Expression(Tensor("out", ["j", "i"]), z)
 
-    assert expression.format(EinsumEncoder(transpose_function=None)) == (
-        'out = np.copy(np.einsum("ij->ji", z, optimize=True))'
-    )
+    assert expression.format(EinsumEncoder(transpose_function=None)) == ('out = np.einsum("ij->ji", z, optimize=True)')
 
 
 def test_einsum_encoder_uses_transpose_function_for_accumulated_term() -> None:
@@ -730,13 +728,15 @@ def test_einsum_encoder_uses_tensor_directly_for_identity_indices() -> None:
     expression = Expression(Tensor("out", ["i", "j"]), tensor)
 
     assert tensor.format(EinsumEncoder) == "a"
-    assert expression.format(EinsumEncoder) == "out = np.copy(a)"
+    assert expression.format(EinsumEncoder) == "out = a"
 
 
-def test_einsum_encoder_copies_assigned_tensor_but_not_accumulated_terms() -> None:
+def test_einsum_encoder_only_copies_before_in_place_accumulation() -> None:
     a, b = Tensor("a", ["i"]), Tensor("b", ["i"])
+    single_term = Expression(Tensor("single", ["i"]), a)
     expression = Expression(Tensor("out", ["i"]), Add([a, b]))
 
+    assert single_term.format(EinsumEncoder()) == "single = a"
     assert expression.format(EinsumEncoder) == "out = np.copy(a)\nout += b"
 
 
