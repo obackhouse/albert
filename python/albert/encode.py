@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import ast
-import heapq
 import json
 import keyword
 import math
@@ -723,6 +722,35 @@ class EinsumFunctionEncoder:
             tensors.extend(EinsumFunctionEncoder._tensors(child))
         return tensors
 
+    @staticmethod
+    def _schedule_tasks(indegrees: list[int], dependents: list[set[int]]) -> list[int]:
+        """Topologically schedule tasks, closing the oldest ready dependency gaps first."""
+        parents: list[set[int]] = [set() for _ in dependents]
+        for source, children in enumerate(dependents):
+            for child in children:
+                parents[child].add(source)
+
+        ready = [index for index, indegree in enumerate(indegrees) if indegree == 0]
+        ordered: list[int] = []
+        scheduled_at = [-1] * len(dependents)
+        while ready:
+            position = len(ordered)
+            current = max(
+                ready,
+                key=lambda index: (
+                    sum(position - scheduled_at[parent] for parent in parents[index]),
+                    -index,
+                ),
+            )
+            ready.remove(current)
+            scheduled_at[current] = position
+            ordered.append(current)
+            for dependent in dependents[current]:
+                indegrees[dependent] -= 1
+                if indegrees[dependent] == 0:
+                    ready.append(dependent)
+        return ordered
+
     def _ordered_terms(
         self,
         expressions: list[Expression],
@@ -765,16 +793,7 @@ class EinsumFunctionEncoder:
                 for producer in producers.get(input_key, ()):
                     add_dependency(producer, consumer)
 
-        ready = [index for index, indegree in enumerate(indegrees) if indegree == 0]
-        heapq.heapify(ready)
-        ordered_indices: list[int] = []
-        while ready:
-            current = heapq.heappop(ready)
-            ordered_indices.append(current)
-            for dependent in dependents[current]:
-                indegrees[dependent] -= 1
-                if indegrees[dependent] == 0:
-                    heapq.heappush(ready, dependent)
+        ordered_indices = self._schedule_tasks(indegrees, dependents)
         if len(ordered_indices) != len(tasks):
             raise ValueError("cycle detected in expression dependencies")
         return [tasks[index] for index in ordered_indices]

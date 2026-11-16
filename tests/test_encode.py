@@ -201,6 +201,24 @@ def test_einsum_function_encoder_schedules_additive_terms_independently() -> Non
     )
 
 
+def test_einsum_function_encoder_schedules_ready_consumers_before_independent_tasks() -> None:
+    metadata = Metadata(indices={"o": ["i"]}, sizes={"o": 2})
+    source = Expression(Tensor("source", ["i"]), Tensor("A", ["i"]))
+    independent = Expression(Tensor("independent", ["i"]), Tensor("B", ["i"]))
+    middle = Expression(Tensor("middle", ["i"]), Tensor("source", ["i"]))
+    consumer = Expression(Tensor("consumer", ["i"]), Tensor("middle", ["i"]))
+
+    generated = EinsumFunctionEncoder(StringIO(), metadata=metadata).format_function(
+        [source, independent, middle, consumer]
+    )
+
+    source_position = generated.index("source = np.copy(A)")
+    middle_position = generated.index("middle = np.copy(source)")
+    consumer_position = generated.index("consumer = np.copy(middle)")
+    independent_position = generated.index("independent = np.copy(B)")
+    assert source_position < middle_position < consumer_position < independent_position
+
+
 def test_einsum_function_encoder_supports_space_specific_input_formatting() -> None:
     from types import SimpleNamespace
 
