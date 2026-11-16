@@ -756,20 +756,18 @@ class EinsumFunctionEncoder:
         expressions: list[Expression],
         index_spaces: dict[str, str],
     ) -> list[tuple[Expression, list[Node], TensorArrayKey, bool]]:
-        """Schedule additive terms independently while keeping each sum ordered."""
-        tasks: list[tuple[Expression, list[Node], TensorArrayKey, bool]] = []
+        """Schedule additive terms independently, accumulating in scheduled order."""
+        tasks: list[tuple[Expression, list[Node], TensorArrayKey]] = []
         producers: dict[TensorArrayKey, list[int]] = {}
         task_inputs: list[set[TensorArrayKey]] = []
-        per_output: dict[TensorArrayKey, list[int]] = {}
 
         for expression in expressions:
             key = self._tensor_key(expression.lhs, index_spaces)
             terms = self.einsum_encoder._terms(expression.rhs)
-            for term_index, factors in enumerate(terms):
+            for factors in terms:
                 task_index = len(tasks)
-                tasks.append((expression, factors, key, term_index == 0))
+                tasks.append((expression, factors, key))
                 producers.setdefault(key, []).append(task_index)
-                per_output.setdefault(key, []).append(task_index)
                 input_keys = {
                     self._tensor_key(tensor, index_spaces) for factor in factors for tensor in self._tensors(factor)
                 }
@@ -784,10 +782,8 @@ class EinsumFunctionEncoder:
                 indegrees[target] += 1
 
         # A consumer sees the completed sum, so it depends on every term that
-        # contributes to that tensor. Terms of one sum retain source order.
-        for indices in per_output.values():
-            for previous, current in zip(indices, indices[1:], strict=False):
-                add_dependency(previous, current)
+        # contributes to that tensor. Contributions to one output can otherwise
+        # be scheduled independently to keep each contraction near its inputs.
         for consumer, inputs in enumerate(task_inputs):
             for input_key in inputs:
                 for producer in producers.get(input_key, ()):
@@ -796,7 +792,14 @@ class EinsumFunctionEncoder:
         ordered_indices = self._schedule_tasks(indegrees, dependents)
         if len(ordered_indices) != len(tasks):
             raise ValueError("cycle detected in expression dependencies")
-        return [tasks[index] for index in ordered_indices]
+        initialized: set[TensorArrayKey] = set()
+        ordered_tasks = []
+        for index in ordered_indices:
+            expression, factors, key = tasks[index]
+            initialize = key not in initialized
+            initialized.add(key)
+            ordered_tasks.append((expression, factors, key, initialize))
+        return ordered_tasks
 
     def _input_tensor_keys(self, expressions: list[Expression]) -> tuple[TensorArrayKey, ...]:
         """Return external tensor keys referenced by these equations, in use order."""

@@ -201,6 +201,19 @@ def test_einsum_function_encoder_schedules_additive_terms_independently() -> Non
     )
 
 
+def test_einsum_function_encoder_can_contract_ready_additive_terms_first() -> None:
+    metadata = Metadata(indices={"o": ["i"]}, sizes={"o": 2})
+    result = Expression(Tensor("result", ["i"]), Add([Tensor("left", ["i"]), Tensor("B", ["i"])]))
+    left = Expression(Tensor("left", ["i"]), Tensor("A", ["i"]))
+
+    generated = EinsumFunctionEncoder(StringIO(), metadata=metadata).format_function(
+        [result, left], outputs=("result",)
+    )
+
+    assert generated.index("result = np.copy(B)") < generated.index("left = np.copy(A)")
+    assert generated.index("left = np.copy(A)") < generated.index("result += left")
+
+
 def test_einsum_function_encoder_schedules_ready_consumers_before_independent_tasks() -> None:
     metadata = Metadata(indices={"o": ["i"]}, sizes={"o": 2})
     source = Expression(Tensor("source", ["i"]), Tensor("A", ["i"]))
