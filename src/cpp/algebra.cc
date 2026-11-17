@@ -38,10 +38,14 @@ std::vector<std::string> external_indices_impl(const Node& node) {
         return result;
     }
     if (const auto* add = dynamic_cast<const Add*>(&node)) {
-        if (add->children().empty()) {
-            return {};
+        for (const auto& child : add->children()) {
+            const auto* scalar = dynamic_cast<const Scalar*>(child.get());
+            if (scalar && scalar->value() == 0.0) {
+                continue;
+            }
+            return external_indices_impl(*child);
         }
-        return external_indices_impl(*add->children().front());
+        return {};
     }
     if (const auto* mul = dynamic_cast<const Mul*>(&node)) {
         std::unordered_map<std::string, std::size_t> counts;
@@ -102,13 +106,25 @@ std::vector<std::string> internal_indices_impl(const Node& node) {
 }
 
 void validate_add_indices(const Children& children) {
-    if (children.empty()) {
+    const auto is_zero_scalar = [](const NodePtr& child) {
+        const auto* scalar = dynamic_cast<const Scalar*>(child.get());
+        return scalar && scalar->value() == 0.0;
+    };
+    const auto first_summand = std::find_if(
+        children.begin(), children.end(), [&](const NodePtr& child) {
+            return !is_zero_scalar(child);
+        });
+    if (first_summand == children.end()) {
         return;
     }
-    auto expected = external_indices_impl(*children.front());
+
+    auto expected = external_indices_impl(**first_summand);
     std::sort(expected.begin(), expected.end());
-    for (std::size_t position = 1; position < children.size(); ++position) {
-        auto current = external_indices_impl(*children[position]);
+    for (const auto& child : children) {
+        if (is_zero_scalar(child) || child == *first_summand) {
+            continue;
+        }
+        auto current = external_indices_impl(*child);
         std::sort(current.begin(), current.end());
         if (current != expected) {
             throw std::invalid_argument("Add operands must have the same external indices");
