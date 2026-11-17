@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, overload
 
-from albert._core import CostEstimate, Node, Tensor, estimate_cost, scaling_exponent, topological_sort
+from albert._core import CostEstimate, Mul, Node, Tensor, estimate_cost, scaling_exponent, topological_sort
 from albert.options import ScalingLimits, ScalingMetric
 
 if TYPE_CHECKING:
@@ -244,6 +244,62 @@ def get_intermediate_output_keys(
     return tuple(
         tensor_key(expression.lhs) for expression in producers if tensor_key(expression.lhs) in consumer_inputs
     )
+
+
+def _validate_external_index_pairs(node: Node, index_pairs: list[tuple[str, str]], operation: str) -> None:
+    external_indices = set(node.external_indices)
+    for pair in index_pairs:
+        if len(pair) != 2:
+            raise ValueError(f"each {operation} index pair must contain exactly two indices")
+        first, second = pair
+        if not isinstance(first, str) or not isinstance(second, str):
+            raise TypeError(f"{operation} indices must be strings")
+        if first == second:
+            raise ValueError(f"{operation} index pairs must contain two distinct indices, got {pair!r}")
+        for index in pair:
+            if index not in external_indices:
+                raise ValueError(
+                    f"{operation} index {index!r} is not external to the node; "
+                    f"external indices are {node.external_indices!r}"
+                )
+
+
+def diagonal(node: Node, index_pairs: list[tuple[str, str]]) -> Node:
+    """Constrain each pair of external indices to be equal with explicit deltas.
+
+    Args:
+        node: The expression to diagonalize.
+        index_pairs: Pairs of external indices to equate.
+
+    Returns:
+        The node multiplied by one Kronecker delta tensor per index pair.
+    """
+    _validate_external_index_pairs(node, index_pairs, "diagonal")
+    if not index_pairs:
+        return node
+    deltas = [Tensor("δ", pair) for pair in index_pairs]
+    return Mul([node, *deltas])
+
+
+def trace(node: Node, index_pairs: list[tuple[str, str]]) -> Node:
+    """Trace over pairs of external indices by identifying each second index with the first.
+
+    Args:
+        node: The expression to trace.
+        index_pairs: Pairs of external indices to identify, in ``(first, second)`` order.
+
+    Returns:
+        The node with each second index replaced by its paired first index.
+    """
+    _validate_external_index_pairs(node, index_pairs, "trace")
+    if not index_pairs:
+        return node
+    mapping: dict[str, str] = {}
+    for first, second in index_pairs:
+        if second in mapping and mapping[second] != first:
+            raise ValueError(f"trace index {second!r} cannot be mapped to both {mapping[second]!r} and {first!r}")
+        mapping[second] = first
+    return node.map_indices(mapping)
 
 
 def next_unused_index(node: Node, space: str, *, metadata: Metadata, skip: int = 0) -> str:

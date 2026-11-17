@@ -1,5 +1,7 @@
+import pytest
+
 from albert import Add, Expression, Metadata, Mul, Tensor
-from albert.tools import get_intermediate_output_keys, split_by_dependencies
+from albert.tools import diagonal, get_intermediate_output_keys, split_by_dependencies, trace
 
 
 def _symbols(expressions: list[Expression]) -> list[str]:
@@ -69,3 +71,32 @@ def test_get_intermediate_output_keys_matches_symbol_and_spaces_in_producer_orde
     outputs = get_intermediate_output_keys([virtual, occupied], [consumer], metadata=metadata)
 
     assert outputs == (("P", ("v",)), ("P", ("o",)))
+
+
+def test_diagonal_multiplies_by_delta_tensors_for_external_index_pairs() -> None:
+    node = Tensor("A", ["i", "j", "k"])
+
+    result = diagonal(node, [("i", "j")])
+
+    assert result == Mul([node, Tensor("δ", ["i", "j"])])
+    assert result.external_indices == ["k"]
+
+
+def test_trace_replaces_each_second_index_with_its_first() -> None:
+    node = Tensor("A", ["i", "j", "k", "l"])
+
+    result = trace(node, [("i", "j"), ("k", "l")])
+
+    assert result == Tensor("A", ["i", "i", "k", "k"])
+    assert result.external_indices == []
+
+
+@pytest.mark.parametrize("operation", [diagonal, trace])
+def test_diagonal_and_trace_require_external_indices(operation) -> None:
+    node = Mul([Tensor("A", ["i", "k"]), Tensor("B", ["k", "j"])])
+
+    with pytest.raises(ValueError, match="'k' is not external"):
+        operation(node, [("i", "k")])
+
+    with pytest.raises(ValueError, match="'x' is not external"):
+        operation(node, [("i", "x")])
