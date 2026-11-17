@@ -73,13 +73,50 @@ def test_get_intermediate_output_keys_matches_symbol_and_spaces_in_producer_orde
     assert outputs == (("P", ("v",)), ("P", ("o",)))
 
 
-def test_diagonal_multiplies_by_delta_tensors_for_external_index_pairs() -> None:
+def test_diagonal_uses_three_index_equality_tensor_for_external_index_pairs() -> None:
+    metadata = Metadata(indices={"o": ["i", "j", "k", "l"]}, sizes={"o": 4})
+    node = Tensor("A", ["i", "j"])
+
+    result = diagonal(node, [("i", "j")], metadata=metadata)
+
+    assert result == Mul([Tensor("A", ["j", "k"]), Tensor("δ", ["i", "j", "k"])])
+    assert result.external_indices == ["i"]
+
+
+def test_diagonal_keeps_unpaired_external_indices_and_supports_multiple_pairs() -> None:
+    metadata = Metadata(indices={"o": ["i", "j", "k", "l", "m", "n"]}, sizes={"o": 6})
+    node = Tensor("A", ["i", "j", "k", "l"])
+
+    result = diagonal(node, [("i", "j"), ("k", "l")], metadata=metadata)
+
+    assert result == Mul(
+        [
+            Tensor("A", ["j", "m", "l", "n"]),
+            Tensor("δ", ["i", "j", "m"]),
+            Tensor("δ", ["k", "l", "n"]),
+        ]
+    )
+    assert result.external_indices == ["i", "k"]
+
+
+def test_diagonal_requires_same_space_and_a_fresh_dummy_index() -> None:
+    metadata = Metadata(indices={"o": ["i", "j"], "v": ["a", "b"]}, sizes={"o": 2, "v": 2})
+    node = Tensor("A", ["i", "a"])
+
+    with pytest.raises(ValueError, match="must belong to the same space"):
+        diagonal(node, [("i", "a")], metadata=metadata)
+
+    no_free_index_metadata = Metadata(indices={"o": ["i", "j"]}, sizes={"o": 2})
+    with pytest.raises(ValueError, match="no unused index is available"):
+        diagonal(Tensor("A", ["i", "j"]), [("i", "j")], metadata=no_free_index_metadata)
+
+
+def test_diagonal_requires_disjoint_index_pairs() -> None:
+    metadata = Metadata(indices={"o": ["i", "j", "k", "l", "m"]}, sizes={"o": 5})
     node = Tensor("A", ["i", "j", "k"])
 
-    result = diagonal(node, [("i", "j")])
-
-    assert result == Mul([node, Tensor("δ", ["i", "j"])])
-    assert result.external_indices == ["k"]
+    with pytest.raises(ValueError, match="index pairs must be disjoint"):
+        diagonal(node, [("i", "j"), ("i", "k")], metadata=metadata)
 
 
 def test_trace_replaces_each_second_index_with_its_first() -> None:
@@ -91,12 +128,18 @@ def test_trace_replaces_each_second_index_with_its_first() -> None:
     assert result.external_indices == []
 
 
-@pytest.mark.parametrize("operation", [diagonal, trace])
-def test_diagonal_and_trace_require_external_indices(operation) -> None:
+def test_diagonal_and_trace_require_external_indices() -> None:
+    metadata = Metadata(indices={"o": ["i", "j", "k", "x"]}, sizes={"o": 4})
     node = Mul([Tensor("A", ["i", "k"]), Tensor("B", ["k", "j"])])
 
     with pytest.raises(ValueError, match="'k' is not external"):
-        operation(node, [("i", "k")])
+        diagonal(node, [("i", "k")], metadata=metadata)
 
     with pytest.raises(ValueError, match="'x' is not external"):
-        operation(node, [("i", "x")])
+        diagonal(node, [("i", "x")], metadata=metadata)
+
+    with pytest.raises(ValueError, match="'k' is not external"):
+        trace(node, [("i", "k")])
+
+    with pytest.raises(ValueError, match="'x' is not external"):
+        trace(node, [("i", "x")])

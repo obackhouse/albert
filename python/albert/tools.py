@@ -264,21 +264,53 @@ def _validate_external_index_pairs(node: Node, index_pairs: list[tuple[str, str]
                 )
 
 
-def diagonal(node: Node, index_pairs: list[tuple[str, str]]) -> Node:
-    """Constrain each pair of external indices to be equal with explicit deltas.
+def diagonal(node: Node, index_pairs: list[tuple[str, str]], *, metadata: Metadata) -> Node:
+    """Extract diagonals with explicit three-index equality tensors.
 
     Args:
         node: The expression to diagonalize.
-        index_pairs: Pairs of external indices to equate.
+        index_pairs: Pairs of external indices to diagonalize, in output-index order.
+        metadata: Tensor metadata used to find fresh dummy indices in the same spaces.
 
     Returns:
-        The node multiplied by one Kronecker delta tensor per index pair.
+        The diagonal expression. Each pair ``(i, j)`` produces an output index ``i``,
+        contracts the original axes through a three-index equality tensor, and removes ``j``.
     """
     _validate_external_index_pairs(node, index_pairs, "diagonal")
     if not index_pairs:
         return node
-    deltas = [Tensor("δ", pair) for pair in index_pairs]
-    return Mul([node, *deltas])
+
+    used_indices: set[str] = set()
+    for child in node.search(lambda child: isinstance(child, Tensor)):
+        if isinstance(child, Tensor):
+            used_indices.update(child.indices)
+    replacements: dict[str, str] = {}
+    deltas: list[Tensor] = []
+    paired_indices: set[str] = set()
+    for first, second in index_pairs:
+        if first in paired_indices or second in paired_indices:
+            raise ValueError(f"diagonal index pairs must be disjoint, got {index_pairs!r}")
+        paired_indices.update((first, second))
+
+        first_space = next((space for space, indices in metadata.indices.items() if first in indices), None)
+        second_space = next((space for space, indices in metadata.indices.items() if second in indices), None)
+        if first_space is None:
+            raise ValueError(f"diagonal index {first!r} does not belong to a metadata space")
+        if second_space is None:
+            raise ValueError(f"diagonal index {second!r} does not belong to a metadata space")
+        if first_space != second_space:
+            raise ValueError(f"diagonal indices {first!r} and {second!r} must belong to the same space")
+
+        dummy = next((index for index in metadata.indices[first_space] if index not in used_indices), None)
+        if dummy is None:
+            raise ValueError(f"no unused index is available in space {first_space!r} for diagonal extraction")
+        used_indices.add(dummy)
+        # Keep `first` free in the copy tensor; sum the original pair over `second` and `dummy`.
+        replacements[first] = second
+        replacements[second] = dummy
+        deltas.append(Tensor("δ", [first, second, dummy]))
+
+    return Mul([node.map_indices(replacements), *deltas])
 
 
 def trace(node: Node, index_pairs: list[tuple[str, str]]) -> Node:
