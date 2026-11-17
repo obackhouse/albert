@@ -90,6 +90,68 @@ std::vector<NodePtr> terms(const NodePtr& rhs) {
     return {expanded};
 }
 
+bool is_zero_expression(const NodePtr& node) {
+    if (const auto* scalar = dynamic_cast<const Scalar*>(node.get())) {
+        return scalar->value() == 0.0;
+    }
+    if (const auto* add = dynamic_cast<const Add*>(node.get())) {
+        return std::all_of(add->children().begin(), add->children().end(), is_zero_expression);
+    }
+    if (const auto* mul = dynamic_cast<const Mul*>(node.get())) {
+        return std::any_of(mul->children().begin(), mul->children().end(), is_zero_expression);
+    }
+    return false;
+}
+
+NodePtr prune_zero_terms(const NodePtr& rhs) {
+    if (const auto* add = dynamic_cast<const Add*>(rhs.get())) {
+        Children nonzero_terms;
+        Children zero_terms;
+        bool changed = false;
+        for (const auto& child : add->children()) {
+            auto pruned = prune_zero_terms(child);
+            changed = changed || pruned != child;
+            if (is_zero_expression(pruned)) {
+                changed = true;
+                zero_terms.push_back(std::move(pruned));
+            } else {
+                nonzero_terms.push_back(std::move(pruned));
+            }
+        }
+        if (nonzero_terms.empty()) {
+            auto expected_indices = rhs->external_indices();
+            std::sort(expected_indices.begin(), expected_indices.end());
+            for (const auto& term : zero_terms) {
+                auto term_indices = term->external_indices();
+                std::sort(term_indices.begin(), term_indices.end());
+                if (term_indices == expected_indices) {
+                    return term;
+                }
+            }
+            return rhs;
+        }
+        if (!changed) {
+            return rhs;
+        }
+        if (nonzero_terms.size() == 1) {
+            return nonzero_terms.front();
+        }
+        return std::make_shared<Add>(std::move(nonzero_terms));
+    }
+    if (const auto* mul = dynamic_cast<const Mul*>(rhs.get())) {
+        Children factors;
+        factors.reserve(mul->children().size());
+        bool changed = false;
+        for (const auto& child : mul->children()) {
+            auto pruned = prune_zero_terms(child);
+            changed = changed || pruned != child;
+            factors.push_back(std::move(pruned));
+        }
+        return changed ? std::make_shared<Mul>(std::move(factors)) : rhs;
+    }
+    return rhs;
+}
+
 NodePtr parenthesize_products(const NodePtr& node, const IndexSpaces& spaces,
                              const SpaceSizes& sizes, const CostFactors& factors,
                              const CSEOptions& options,
@@ -249,6 +311,9 @@ std::vector<GraphRecord> build_graphs(const std::vector<Expression>& expressions
         std::unordered_map<IndexPartition, BipartiteGraph, IndexPartitionHash> expression_graphs;
         std::vector<std::pair<NodePtr, std::size_t>> unique_terms;
         for (const auto& term : terms(expressions[expression_id].rhs())) {
+            if (is_zero_expression(term)) {
+                continue;
+            }
             const auto found = std::find_if(
                 unique_terms.begin(), unique_terms.end(), [&](const auto& item) {
                     return item.first->structurally_equal(*term);
@@ -494,6 +559,71 @@ std::string next_available_name(const std::string& format,
     return name;
 }
 
+NodePtr materialize_pairwise_products(
+    const NodePtr& node, bool is_root, std::vector<Expression>& generated,
+    std::unordered_set<std::string>& reserved, const std::string& format) {
+    const auto make_intermediate = [&](NodePtr rhs) {
+        const auto name = next_available_name(format, reserved);
+        reserved.insert(name);
+        auto lhs = std::make_shared<Tensor>(name, rhs->external_indices());
+        generated.emplace_back(lhs, std::move(rhs));
+        return lhs;
+    };
+
+    if (const auto* add = dynamic_cast<const Add*>(node.get())) {
+        Children summands;
+        summands.reserve(add->children().size());
+        for (const auto& child : add->children()) {
+            summands.push_back(materialize_pairwise_products(
+                child, true, generated, reserved, format));
+        }
+        NodePtr sum = summands.size() == 1
+            ? summands.front()
+            : std::make_shared<Add>(std::move(summands));
+        return is_root ? sum : make_intermediate(std::move(sum));
+    }
+    if (const auto* mul = dynamic_cast<const Mul*>(node.get())) {
+        Children factors;
+        factors.reserve(mul->children().size());
+        for (const auto& child : mul->children()) {
+            factors.push_back(materialize_pairwise_products(
+                child, false, generated, reserved, format));
+        }
+
+        Children scalars;
+        Children operands;
+        for (auto& factor : factors) {
+            if (factor->kind() == NodeKind::Scalar) {
+                scalars.push_back(std::move(factor));
+            } else {
+                operands.push_back(std::move(factor));
+            }
+        }
+        if (operands.size() <= 2) {
+            const auto operand_count = operands.size();
+            factors = std::move(operands);
+            factors.insert(factors.end(), scalars.begin(), scalars.end());
+            NodePtr product = std::make_shared<Mul>(std::move(factors));
+            return is_root || operand_count == 0
+                ? product
+                : make_intermediate(std::move(product));
+        }
+
+        NodePtr current = operands.front();
+        for (std::size_t i = 1; i < operands.size(); ++i) {
+            Children pair{current, operands[i]};
+            const bool final_root = is_root && i + 1 == operands.size();
+            if (final_root) {
+                pair.insert(pair.end(), scalars.begin(), scalars.end());
+                return std::make_shared<Mul>(std::move(pair));
+            }
+            current = make_intermediate(std::make_shared<Mul>(std::move(pair)));
+        }
+        return current;
+    }
+    return node;
+}
+
 std::vector<NodePtr> covered_terms(const BipartiteGraph& graph,
                                    const ConstrictableBiclique& cb) {
     std::vector<NodePtr> covered;
@@ -516,9 +646,12 @@ NodePtr build_side(const std::vector<BicliqueVertex>& vertices,
     Children summands;
     summands.reserve(subset.vertices.size());
     for (std::size_t i = 0; i < subset.vertices.size(); ++i) {
+        const auto coefficient = subset.coefficients[i];
+        if (coefficient == 0.0) {
+            continue;
+        }
         const auto vertex = subset.vertices[i];
         Children product_factors;
-        const auto coefficient = subset.coefficients[i];
         if (coefficient != 1.0) {
             product_factors.push_back(std::make_shared<Scalar>(coefficient));
         }
@@ -528,6 +661,9 @@ NodePtr build_side(const std::vector<BicliqueVertex>& vertices,
         summands.push_back(product_factors.size() == 1
                                ? product_factors.front()
                                : std::make_shared<Mul>(std::move(product_factors)));
+    }
+    if (summands.empty()) {
+        throw std::logic_error("biclique side has no nonzero summands");
     }
     return summands.size() == 1 ? summands.front() : std::make_shared<Add>(std::move(summands));
 }
@@ -558,10 +694,11 @@ NodePtr replace_covered(const NodePtr& rhs, const std::vector<NodePtr>& covered,
         return rhs;
     }
     remaining.push_back(replacement);
-    return albert::apply(
+    auto result = albert::apply(
         std::make_shared<Add>(std::move(remaining)),
         [](const NodePtr& node) { return collect(node); },
         [](const NodePtr& node) { return node->kind() == NodeKind::Add; });
+    return prune_zero_terms(result);
 }
 
 void validate_expression_axes(const Tensor& lhs, const NodePtr& rhs) {
@@ -774,6 +911,10 @@ std::vector<Expression> common_subexpression_elimination_impl(
         return {};
     }
     for (auto& expression : expressions) {
+        auto rhs = prune_zero_terms(expression.rhs());
+        if (rhs != expression.rhs()) {
+            expression = Expression(expression.lhs(), std::move(rhs));
+        }
         validate_expression_axes(*expression.lhs(), expression.rhs());
     }
     ParenthesizationCache path_cache;
@@ -791,6 +932,15 @@ std::vector<Expression> common_subexpression_elimination_impl(
     for (;;) {
         std::vector<Expression> all = intermediates;
         all.insert(all.end(), expressions.begin(), expressions.end());
+        auto baseline = all;
+        for (auto& expression : baseline) {
+            auto rhs = parenthesize_products(expression.rhs(), spaces, sizes,
+                                             cost_factors, options,
+                                             trial_path_cache);
+            expression = Expression(expression.lhs(), std::move(rhs));
+        }
+        const double baseline_cost = total_cost(baseline, spaces, sizes,
+                                                cost_factors, options.cost_model);
         const auto graphs = build_graphs(all, spaces, sizes, options, path_cache);
         auto candidates = select_bicliques(graphs, spaces, sizes, cost_factors,
                                            options.cost_model, options.max_bicliques);
@@ -798,7 +948,7 @@ std::vector<Expression> common_subexpression_elimination_impl(
             break;
         }
         bool accepted = false;
-        double best_cost = std::numeric_limits<double>::infinity();
+        double best_cost = baseline_cost;
         std::vector<Expression> best_expressions;
         std::vector<Expression> best_intermediates;
         for (const auto& candidate : candidates) {
@@ -940,7 +1090,10 @@ std::vector<Expression> common_subexpression_elimination_impl(
             }
             const double trial_cost = total_cost(cost_trial, spaces, sizes, cost_factors,
                                                  options.cost_model);
-            if (trial_cost < best_cost) {
+            const double tolerance = 16.0 * std::numeric_limits<double>::epsilon() *
+                std::max({1.0, std::abs(baseline_cost), std::abs(trial_cost)});
+            const bool within_baseline = trial_cost <= baseline_cost + tolerance;
+            if (within_baseline && (!accepted || trial_cost < best_cost)) {
                 best_cost = trial_cost;
                 best_intermediates.clear();
                 best_expressions.clear();
@@ -965,18 +1118,34 @@ std::vector<Expression> common_subexpression_elimination_impl(
         }
     }
 
+    const auto prune_expression_terms = [](std::vector<Expression>& values) {
+        for (auto& expression : values) {
+            auto rhs = prune_zero_terms(expression.rhs());
+            if (rhs != expression.rhs()) {
+                expression = Expression(expression.lhs(), std::move(rhs));
+            }
+        }
+    };
+    prune_expression_terms(intermediates);
+    prune_expression_terms(expressions);
+
     if (parenthesize_result) {
         ParenthesizationCache path_cache;
-        for (auto& expression : intermediates) {
-            auto rhs = parenthesize_products(expression.rhs(), spaces, sizes,
-                                             cost_factors, options, path_cache);
-            expression = Expression(expression.lhs(), std::move(rhs));
-        }
-        for (auto& expression : expressions) {
-            auto rhs = parenthesize_products(expression.rhs(), spaces, sizes,
-                                             cost_factors, options, path_cache);
-            expression = Expression(expression.lhs(), std::move(rhs));
-        }
+        std::vector<Expression> pairwise_intermediates;
+        const auto fragment = [&](std::vector<Expression>& values) {
+            for (auto& expression : values) {
+                auto rhs = parenthesize_products(expression.rhs(), spaces, sizes,
+                                                 cost_factors, options, path_cache);
+                rhs = materialize_pairwise_products(
+                    rhs, true, pairwise_intermediates, reserved_symbols,
+                    options.intermediate_format);
+                expression = Expression(expression.lhs(), std::move(rhs));
+            }
+        };
+        fragment(intermediates);
+        fragment(expressions);
+        intermediates.insert(intermediates.end(), pairwise_intermediates.begin(),
+                             pairwise_intermediates.end());
     }
     cleanup_intermediates(intermediates, expressions, options.intermediate_format);
     std::unordered_set<std::string> intermediate_symbols;

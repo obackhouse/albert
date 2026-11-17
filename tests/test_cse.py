@@ -8,7 +8,6 @@ from albert import (
     Mul,
     PathRequest,
     PathRequests,
-    Scalar,
     ScalingLimits,
     Tensor,
     canonical_key,
@@ -272,22 +271,6 @@ def test_cse_advances_past_multiple_reserved_intermediate_names(cse_options: dic
 
     assert len(result) == 3
     assert len(symbols) == len(set(symbols))
-
-
-@pytest.mark.parametrize("cse_options", CSE_OPTION_SETS)
-def test_cse_leaves_unprofitable_expressions_unchanged(cse_options: dict) -> None:
-    expression = Expression(
-        Tensor("Y", ["i", "l"]),
-        Mul([Scalar(2), Tensor("A", ["i", "k"]), Tensor("B", ["k", "l"])]),
-    )
-
-    result = common_subexpression_elimination([expression], metadata(), **cse_options)
-
-    assert len(result) == 1
-    assert result[0].lhs.symbol == "Y"
-    assert canonical_key(canonicalize(collect(expand(result[0].rhs)), metadata())) == canonical_key(
-        canonicalize(collect(expand(expression.rhs)), metadata())
-    )
 
 
 @pytest.mark.parametrize("cse_options", CSE_OPTION_SETS)

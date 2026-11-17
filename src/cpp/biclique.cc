@@ -402,17 +402,50 @@ std::vector<ConstrictableBiclique> find_constrictable_bicliques(
             continue;
         }
 
+        const auto append_candidate = [&](const std::vector<std::size_t>& candidate_left,
+                                          const std::vector<std::size_t>& candidate_right) {
+            std::size_t candidate_left_tensors = 0;
+            for (const auto vertex : candidate_left) {
+                candidate_left_tensors += graph.left_vertices()[vertex].tensors.size();
+            }
+            std::size_t candidate_right_tensors = 0;
+            for (const auto vertex : candidate_right) {
+                candidate_right_tensors += graph.right_vertices()[vertex].tensors.size();
+            }
+            if (candidate_left_tensors == 1 && candidate_right_tensors == 1) {
+                return;
+            }
+            const auto candidate = decompose_edge_coefficients(
+                graph, candidate_left, candidate_right);
+            if (candidate.coefficient == 0.0) {
+                return;
+            }
+            result.push_back({
+                {candidate_left, candidate.left_coefficients,
+                 sorted_unique(partition.external_left)},
+                {candidate_right, candidate.right_coefficients,
+                 sorted_unique(partition.external_right)},
+                candidate.coefficient,
+                sorted_unique(partition.internal),
+                expression_id,
+            });
+        };
+
         const auto decomposition = decompose_edge_coefficients(graph, left, right);
-        if (decomposition.coefficient == 0.0) {
+        if (decomposition.coefficient != 0.0) {
+            append_candidate(left, right);
             continue;
         }
-        result.push_back({
-            {left, decomposition.left_coefficients, sorted_unique(partition.external_left)},
-            {right, decomposition.right_coefficients, sorted_unique(partition.external_right)},
-            decomposition.coefficient,
-            sorted_unique(partition.internal),
-            expression_id,
-        });
+
+        // A maximal rectangle can have a coefficient matrix with rank greater than one.
+        // Keep its one-row and one-column rectangles: each has a rank-one coefficient
+        // decomposition and can still expose a useful shared contraction.
+        for (const auto vertex : left) {
+            append_candidate({vertex}, right);
+        }
+        for (const auto vertex : right) {
+            append_candidate(left, {vertex});
+        }
     }
     return result;
 }
