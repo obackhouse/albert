@@ -4,7 +4,19 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, overload
 
-from albert._core import CostEstimate, Mul, Node, Tensor, estimate_cost, scaling_exponent, topological_sort
+from albert._core import (
+    Add,
+    CostEstimate,
+    Mul,
+    Scalar,
+    Tensor,
+    estimate_cost,
+    expand,
+    flatten,
+    scaling_exponent,
+    simplify,
+    topological_sort,
+)
 from albert.options import ScalingLimits, ScalingMetric
 
 if TYPE_CHECKING:
@@ -262,6 +274,186 @@ def _validate_external_index_pairs(node: Node, index_pairs: list[tuple[str, str]
                     f"{operation} index {index!r} is not external to the node; "
                     f"external indices are {node.external_indices!r}"
                 )
+
+
+def _space_of_index(index: str, metadata: Metadata) -> str:
+    for space, indices in metadata.indices.items():
+        if index in indices:
+            return space
+    raise ValueError(f"diagonal index {index!r} does not belong to a metadata space")
+
+
+def _fresh_space_index(space: str, metadata: Metadata, used_indices: set[str]) -> str:
+    index = next((candidate for candidate in metadata.indices[space] if candidate not in used_indices), None)
+    if index is None:
+        raise ValueError(f"no unused index is available in space {space!r} for operator diagonal extraction")
+    used_indices.add(index)
+    return index
+
+
+def _operator_diagonal_term(
+    term: Node,
+    output: Tensor,
+    vector_symbols: list[str],
+    output_spaces: tuple[str, ...],
+    *,
+    metadata: Metadata,
+    used_indices: set[str],
+) -> list[Node]:
+    factors = term.children if isinstance(term, Mul) else [term]
+    vectors = [factor for factor in factors if isinstance(factor, Tensor) and factor.symbol in vector_symbols]
+    if not vectors:
+        return []
+    if len(vectors) > 1:
+        raise ValueError("operator diagonal requires an expression linear in its vector symbols")
+    vector = vectors[0]
+    if vector.rank != output.rank:
+        return []
+    external_indices = set(term.external_indices)
+    row_replacements = {
+        index: _fresh_space_index(_space_of_index(index, metadata), metadata, used_indices)
+        for index in output.indices
+        if index in external_indices
+    }
+    if len(row_replacements) != output.rank:
+        raise ValueError("operator diagonal requires every output index to be external to each RHS term")
+    renamed_factors = [
+        factor.map_indices(
+            {index: replacement for index, replacement in row_replacements.items() if index in factor.external_indices}
+        )
+        for factor in factors
+    ]
+    renamed_vector = renamed_factors[factors.index(vector)]
+    if not isinstance(renamed_vector, Tensor):
+        raise TypeError("mapped vector factor must remain a tensor")
+    coefficient_factors = [factor for i, factor in enumerate(renamed_factors) if i != factors.index(vector)]
+    if not coefficient_factors:
+        base_coefficient: Node = Scalar(1.0)
+    elif len(coefficient_factors) == 1:
+        base_coefficient = coefficient_factors[0]
+    else:
+        base_coefficient = Mul(coefficient_factors)
+
+    return _operator_diagonal_variants(
+        renamed_vector,
+        output,
+        tuple(row_replacements[index] for index in output.indices),
+        output_spaces,
+        base_coefficient,
+        metadata=metadata,
+    )
+
+
+def _operator_diagonal_variants(
+    vector: Tensor,
+    output: Tensor,
+    row_indices: tuple[str, ...],
+    output_spaces: tuple[str, ...],
+    base_coefficient: Node,
+    *,
+    metadata: Metadata,
+) -> list[Node]:
+    variants: dict[tuple[str, ...], int] = {tuple(vector.indices): 1}
+    seen_symmetries = {(tuple(range(vector.rank)), 1)}
+    for symmetry in metadata.symmetries.get(vector.symbol, []):
+        if len(symmetry.permutation) != vector.rank:
+            raise ValueError(
+                f"symmetry for vector tensor {vector.symbol!r} has rank {len(symmetry.permutation)}, "
+                f"expected {vector.rank}"
+            )
+        indices = tuple(vector.indices[position] for position in symmetry.permutation)
+        operation = (tuple(symmetry.permutation), int(symmetry.phase.value))
+        if operation not in seen_symmetries:
+            variants[indices] = variants.get(indices, 0) + int(symmetry.phase.value)
+            seen_symmetries.add(operation)
+
+    results: list[Node] = []
+    for vector_indices, phase in variants.items():
+        if phase == 0:
+            continue
+        vector_spaces = tuple(_space_of_index(index, metadata) for index in vector_indices)
+        if vector_spaces != output_spaces:
+            continue
+        results.append(
+            _operator_diagonal_variant(
+                vector_indices,
+                output,
+                row_indices,
+                output_spaces,
+                base_coefficient=base_coefficient,
+                phase=phase,
+            )
+        )
+    return results
+
+
+def _operator_diagonal_variant(
+    vector_indices: tuple[str, ...],
+    output: Tensor,
+    row_indices: tuple[str, ...],
+    output_spaces: tuple[str, ...],
+    *,
+    base_coefficient: Node,
+    phase: int,
+) -> Node:
+    selectors = [
+        Tensor("δ", [output_index, row_index, vector_index])
+        for output_index, row_index, vector_index in zip(output.indices, row_indices, vector_indices, strict=True)
+    ]
+    coefficient = base_coefficient
+    if phase != 1:
+        coefficient = Mul([Scalar(float(phase)), coefficient])
+    return Mul([coefficient, *selectors])
+
+
+def operator_diagonal(expression: Expression, vector_symbols: list[str], *, metadata: Metadata) -> Node:
+    """Extract a linear operator's diagonal by eliminating its trial-vector tensor.
+
+    Each listed vector tensor on the RHS is removed and replaced by equality tensors that tie
+    its input coordinates to the output coordinates. The LHS symbol may name a residual rather
+    than the trial vector. Rank and index spaces select the matching diagonal block. Declared
+    vector symmetries are expanded so every stored tensor entry representing the same
+    independent coordinate contributes with its phase.
+
+    Args:
+        expression: One output equation, such as ``r_i = A_ij r_j``.
+        vector_symbols: Symbols that represent trial-vector blocks in the RHS.
+        metadata: Tensor metadata used to check spaces and allocate fresh dummy indices.
+
+    Returns:
+        A node for the diagonal tensor, with the same external indices as the equation's LHS.
+    """
+    if not vector_symbols or any(not isinstance(symbol, str) or not symbol for symbol in vector_symbols):
+        raise ValueError("vector_symbols must contain non-empty tensor symbols")
+    if len(set(vector_symbols)) != len(vector_symbols):
+        raise ValueError("vector_symbols must not contain duplicates")
+    output = expression.lhs
+
+    output_spaces = tuple(_space_of_index(index, metadata) for index in output.indices)
+    used_indices: set[str] = set()
+    for tensor in expression.rhs.search(lambda child: isinstance(child, Tensor)):
+        if isinstance(tensor, Tensor):
+            used_indices.update(tensor.indices)
+    used_indices.update(output.indices)
+
+    expanded = flatten(expand(expression.rhs))
+    terms = expanded.children if isinstance(expanded, Add) else [expanded]
+    diagonal_terms = []
+    for term in terms:
+        diagonal_terms.extend(
+            _operator_diagonal_term(
+                term,
+                output,
+                vector_symbols,
+                output_spaces,
+                metadata=metadata,
+                used_indices=used_indices.copy(),
+            )
+        )
+
+    if not diagonal_terms:
+        return Scalar(0.0)
+    return simplify(flatten(Add(diagonal_terms)))
 
 
 def diagonal(node: Node, index_pairs: list[tuple[str, str]], *, metadata: Metadata) -> Node:

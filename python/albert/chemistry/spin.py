@@ -34,7 +34,27 @@ def _tensor_with_spins(tensor: Tensor, spins: Sequence[str]) -> Tensor:
     return Tensor(tensor.symbol, indices)
 
 
-def _spin_patterns(
+def _eom_excitation_groups(symbol: str, rank: int) -> tuple[int, int] | None:
+    """Return the hole and particle index counts for a supported EOM vector."""
+    if symbol[:1] not in {"r", "l"}:
+        return None
+    sector = symbol[-2:]
+    order = symbol[1:-2]
+    if sector not in {"ip", "ea", "ee"} or not order.isdigit():
+        return None
+    excitation_order = int(order)
+    if sector == "ip":
+        groups = excitation_order, excitation_order - 1
+    elif sector == "ea":
+        groups = excitation_order - 1, excitation_order
+    else:
+        groups = excitation_order, excitation_order
+    if min(groups) < 0 or sum(groups) != rank:
+        raise ValueError(f"EOM tensor {symbol!r} has an invalid rank {rank}")
+    return groups
+
+
+def _spin_patterns(  # noqa: PLR0912
     tensor: Tensor,
     *,
     target_rhf: bool = False,
@@ -46,6 +66,11 @@ def _spin_patterns(
 
     if rank == 0:
         yield ()
+    elif symbol == "δ":
+        if rank < 2:
+            raise ValueError(f"delta tensor must have at least two indices, got rank {rank}")
+        spins = (OrbitalType.ALPHA.subscript, OrbitalType.BETA.subscript)
+        yield from ((spin,) * rank for spin in spins)
     elif symbol in {"h", "f", "d1"}:
         yield from ((spin, spin) for spin in (OrbitalType.ALPHA.subscript, OrbitalType.BETA.subscript))
     elif symbol == "v" or symbol in {"d2", "d2_a"}:
@@ -67,6 +92,26 @@ def _spin_patterns(
             )
         else:
             yield from (pattern + pattern for pattern in itertools.product(spins, repeat=half_rank))
+    elif (groups := _eom_excitation_groups(symbol, rank)) is not None:
+        holes, particles = groups
+        spins = (OrbitalType.ALPHA.subscript, OrbitalType.BETA.subscript)
+        hole_patterns = tuple(itertools.product(spins, repeat=holes))
+        particle_patterns = tuple(itertools.product(spins, repeat=particles))
+        if holes == particles and not target_rhf:
+            yield from (pattern + pattern for pattern in hole_patterns)
+        else:
+            for hole_pattern in hole_patterns:
+                for particle_pattern in particle_patterns:
+                    hole_counts = (hole_pattern.count(spins[0]), hole_pattern.count(spins[1]))
+                    particle_counts = (particle_pattern.count(spins[0]), particle_pattern.count(spins[1]))
+                    if all(
+                        particle_count <= hole_count
+                        for particle_count, hole_count in zip(particle_counts, hole_counts, strict=True)
+                    ) or all(
+                        hole_count <= particle_count
+                        for particle_count, hole_count in zip(particle_counts, hole_counts, strict=True)
+                    ):
+                        yield hole_pattern + particle_pattern
     else:
         raise NotImplementedError(f"spin integration not implemented for tensor {symbol!r}")
 
@@ -148,7 +193,9 @@ def _ghf_term_to_uhf(
     return terms
 
 
-def _uhf_tensor_to_rhf(node: Node, transform_like: Mapping[str, str] | None = None) -> Node:
+def _uhf_tensor_to_rhf(  # noqa: PLR0911, PLR0912
+    node: Node, transform_like: Mapping[str, str] | None = None
+) -> Node:
     """Convert a UHF tensor to spatial-orbital form."""
     if not isinstance(node, Tensor):
         return node
@@ -166,6 +213,45 @@ def _uhf_tensor_to_rhf(node: Node, transform_like: Mapping[str, str] | None = No
     # opposite-spin blocks contribute one of those orders, with the crossed
     # block carrying the antisymmetry sign.
     symbol = node.symbol if transform_like is None else transform_like.get(node.symbol, node.symbol)
+    if symbol == "δ":
+        if len(set(spins)) != 1:
+            return Scalar(0.0)
+        return Tensor(node.symbol, indices)
+
+    if (groups := _eom_excitation_groups(symbol, node.rank)) is not None:
+        holes, particles = groups
+        alpha = OrbitalType.ALPHA.subscript
+        beta = OrbitalType.BETA.subscript
+        if spins.count(beta) > spins.count(alpha):
+            spins = tuple(beta if spin == alpha else alpha for spin in spins)
+
+        spin_patterns = [spins]
+        if node.rank > 2 and all(spin == alpha for spin in spins):
+            spin_patterns = []
+            hole_pattern = tuple(alpha if position % 2 == 0 else beta for position in range(holes))
+            for selected_hole in range(holes):
+                particle_pattern = tuple(beta if position == selected_hole else alpha for position in range(particles))
+                spin_patterns.append(hole_pattern + particle_pattern)
+
+        terms: list[Node] = []
+        for spin_pattern in spin_patterns:
+            reordered_indices = list(indices)
+            phase = 1
+            for start, stop in ((0, holes), (holes, holes + particles)):
+                positions = list(range(start, stop))
+                permutation = sorted(positions, key=lambda position: spin_pattern[position] == beta)
+                inversions = sum(
+                    permutation[left] > permutation[right]
+                    for left in range(len(permutation))
+                    for right in range(left + 1, len(permutation))
+                )
+                if inversions % 2:
+                    phase = -phase
+                reordered_indices[start:stop] = [indices[position] for position in permutation]
+            tensor = Tensor(node.symbol, reordered_indices)
+            terms.append(tensor if phase > 0 else -tensor)
+        return terms[0] if len(terms) == 1 else Add(terms)
+
     if symbol in {"t2", "l2"} and node.rank == 4:
         alpha = OrbitalType.ALPHA.subscript
         beta = OrbitalType.BETA.subscript
@@ -326,12 +412,18 @@ def _uhf_expression_to_rhf(
     expression: Expression,
     metadata: Metadata | None = None,
     transform_like: Mapping[str, str] | None = None,
+    *,
+    project_lhs: bool = False,
 ) -> list[Expression]:
     """Convert a UHF equation to one spatial-orbital equation."""
     transformed_rhs = _uhf_to_rhf(expression, metadata, transform_like)
     terms = _additive_terms(flatten(expand(transformed_rhs)))
     combined = simplify(flatten(expand(Add(terms))))
-    lhs = Tensor(expression.lhs.symbol, [_strip_spin(index)[0] for index in expression.lhs.indices])
+    if project_lhs:
+        lhs_node = _uhf_tensor_to_rhf(expression.lhs, transform_like)
+        lhs, combined = _normalize_projected_lhs(lhs_node, combined)
+    else:
+        lhs = Tensor(expression.lhs.symbol, [_strip_spin(index)[0] for index in expression.lhs.indices])
     return [Expression(lhs, combined)]
 
 
@@ -339,20 +431,50 @@ def _ghf_expression_to_rhf(
     expression: Expression,
     metadata: Metadata | None = None,
     transform_like: Mapping[str, str] | None = None,
+    *,
+    project_lhs: bool = False,
 ) -> list[Expression]:
     """Convert a GHF equation to one spatial-orbital equation."""
-    terms = [
-        term
-        for uhf_expression in _ghf_expression_to_uhf(expression, target_rhf=True, transform_like=transform_like)
-        for term in _additive_terms(flatten(expand(_uhf_to_rhf(uhf_expression, metadata, transform_like))))
-    ]
+    terms = []
+    projected_lhs = None
+    for uhf_expression in _ghf_expression_to_uhf(expression, target_rhf=True, transform_like=transform_like):
+        rhs = _uhf_to_rhf(uhf_expression, metadata, transform_like)
+        if project_lhs:
+            lhs_node = _uhf_tensor_to_rhf(uhf_expression.lhs, transform_like)
+            lhs, rhs = _normalize_projected_lhs(lhs_node, rhs)
+            if projected_lhs is not None and lhs != projected_lhs:
+                raise ValueError("spin projection produced incompatible spatial LHS tensors")
+            projected_lhs = lhs
+        terms.extend(_additive_terms(flatten(expand(rhs))))
     if not terms:
         return []
     combined = simplify(flatten(expand(Add(terms))))
     if expression.lhs.rank == 0 and metadata is not None:
         combined = _collect_scalar_dummy_permutations(combined, metadata)
-    lhs = Tensor(expression.lhs.symbol, [_strip_spin(index)[0] for index in expression.lhs.indices])
+    lhs = (
+        projected_lhs
+        if projected_lhs is not None
+        else Tensor(expression.lhs.symbol, [_strip_spin(index)[0] for index in expression.lhs.indices])
+    )
     return [Expression(lhs, combined)]
+
+
+def _normalize_projected_lhs(lhs_node: Node, rhs: Node) -> tuple[Tensor, Node]:
+    """Move a projected LHS phase to the RHS and keep its index permutation."""
+    if isinstance(lhs_node, Tensor):
+        return lhs_node, rhs
+
+    factors = lhs_node.children if isinstance(lhs_node, Mul) else [lhs_node]
+    tensors = [factor for factor in factors if isinstance(factor, Tensor)]
+    scalars = [factor for factor in factors if isinstance(factor, Scalar)]
+    if len(tensors) != 1 or len(tensors) + len(scalars) != len(factors):
+        raise NotImplementedError("a projected equation must have a single tensor on its LHS")
+    coefficient = math.prod(scalar.value for scalar in scalars)
+    if coefficient == 0.0:
+        raise ValueError("spin projection produced a zero LHS")
+    if coefficient != 1.0:
+        rhs = simplify(Scalar(1.0 / coefficient) * rhs)
+    return tensors[0], rhs
 
 
 def _validate_transform_like(
@@ -459,7 +581,17 @@ def spin_integrate(  # noqa: PLR0913
     if src is ReferenceType.GHF and dst is ReferenceType.UHF:
         return _ghf_expression_to_uhf(expression, transform_like=transform_like)
     if src is ReferenceType.UHF and dst is ReferenceType.RHF:
-        return _uhf_expression_to_rhf(expression, metadata, transform_like)
+        return _uhf_expression_to_rhf(
+            expression,
+            metadata,
+            transform_like,
+            project_lhs=bool(index_spins),
+        )
     if src is ReferenceType.GHF and dst is ReferenceType.RHF:
-        return _ghf_expression_to_rhf(expression, metadata, transform_like)
+        return _ghf_expression_to_rhf(
+            expression,
+            metadata,
+            transform_like,
+            project_lhs=bool(index_spins),
+        )
     raise ValueError(f"unsupported spin integration from {src.value} to {dst.value}")

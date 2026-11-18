@@ -602,6 +602,51 @@ def test_einsum_encoder_formats_sums_as_assignments() -> None:
     )
 
 
+def test_einsum_encoder_can_lower_three_index_copy_deltas() -> None:
+    metadata = Metadata(indices={"o": ["i", "j", "k"]}, sizes={"o": 3})
+    expression = Expression(
+        Tensor("out", ["i"]),
+        Mul([Tensor("A", ["j", "k"]), Tensor("δ", ["i", "j", "k"])]),
+    )
+
+    assert expression.format(EinsumEncoder(metadata=metadata)) == ('out = np.einsum("jk,ijk->i", A, δ, optimize=True)')
+    assert expression.format(EinsumEncoder(metadata=metadata, lower_copy_deltas=True)) == (
+        'out = np.einsum("ii->i", A, optimize=True)'
+    )
+
+
+def test_einsum_encoder_lowering_preserves_equal_output_axes() -> None:
+    import numpy as np
+
+    metadata = Metadata(indices={"o": ["i", "j", "k"]}, sizes={"o": 3})
+    expression = Expression(
+        Tensor("out", ["i", "j"]),
+        Mul([Tensor("A", ["k"]), Tensor("δ", ["i", "j", "k"])]),
+    )
+    source = EinsumFunctionEncoder(
+        StringIO(),
+        metadata=metadata,
+        einsum_encoder=EinsumEncoder(metadata=metadata, lower_copy_deltas=True),
+    ).format_function([expression])
+
+    assert 'np.einsum("i,ij->ij", A, np.eye(3, dtype=bool)' in source
+    assert "δ" not in source
+    namespace: dict[str, object] = {}
+    exec(source, namespace)
+    array = np.arange(3, dtype=np.float32)
+    result = namespace["evaluate"](A=array)["out"]
+    np.testing.assert_array_equal(result, np.diag(array))
+
+
+def test_einsum_encoder_lowering_uses_a_ones_vector_when_output_axis_would_vanish() -> None:
+    metadata = Metadata(indices={"o": ["i", "j"]}, sizes={"o": 2})
+    expression = Expression(Tensor("out", ["i"]), Tensor("δ", ["i", "j", "j"]))
+
+    assert expression.format(EinsumEncoder(metadata=metadata, lower_copy_deltas=True)) == (
+        "out = np.ones(2, dtype=bool)"
+    )
+
+
 def test_einsum_encoder_can_use_matmul_for_rank_two_contractions() -> None:
     a, b = Tensor("a", ["i", "k"]), Tensor("b", ["k", "j"])
     expression = Expression(Tensor("out", ["i", "j"]), Mul([a, b]))

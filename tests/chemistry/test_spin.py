@@ -2,12 +2,12 @@ from itertools import product
 
 import pytest
 
-from albert._core import Add, Expression, Mul, Node, Tensor, simplify
+from albert._core import Add, Expression, Mul, Node, Scalar, Tensor, simplify
 from albert.chemistry import expand_antisymmetrized_eris, spin_integrate
 from albert.chemistry.factory import TensorFactory
 from albert.chemistry.metadata import Metadata
 from albert.chemistry.options import OrbitalType, ReferenceType
-from albert.chemistry.spin import _collect_scalar_dummy_permutations
+from albert.chemistry.spin import _collect_scalar_dummy_permutations, _uhf_tensor_to_rhf
 
 
 @pytest.fixture
@@ -49,6 +49,55 @@ def test_ghf_to_uhf_maps_one_body_tensor_into_spin_blocks(spin_metadata: Metadat
         [beta_i, beta_j],
     ]
     assert all(equation.rhs == equation.lhs for equation in result)
+
+
+@pytest.mark.parametrize("rank", [2, 3])
+def test_ghf_to_uhf_delta_requires_all_indices_to_have_the_same_spin(spin_metadata: Metadata, rank: int) -> None:
+    indices = spin_metadata.indices["o_γ"][:rank]
+    delta = Tensor("δ", indices)
+
+    result = spin_integrate(Expression(delta, delta), ReferenceType.GHF, ReferenceType.UHF)
+
+    assert [equation.lhs.indices for equation in result] == [
+        [index.replace("_γ", "_α") for index in indices],
+        [index.replace("_γ", "_β") for index in indices],
+    ]
+    assert all(equation.rhs == equation.lhs for equation in result)
+
+
+def test_uhf_to_rhf_maps_same_spin_copy_delta_and_drops_mixed_spin_block(spin_metadata: Metadata) -> None:
+    alpha = [spin_metadata.indices["o_α"][index] for index in range(3)]
+    beta = [spin_metadata.indices["o_β"][index] for index in range(3)]
+    spatial = spin_metadata.indices["o"][:3]
+
+    alpha_delta = Tensor("δ", alpha)
+    beta_delta = Tensor("δ", beta)
+    alpha_result = spin_integrate(Expression(alpha_delta, alpha_delta), ReferenceType.UHF, ReferenceType.RHF)
+    beta_result = spin_integrate(Expression(beta_delta, beta_delta), ReferenceType.UHF, ReferenceType.RHF)
+
+    assert alpha_result[0].rhs == Tensor("δ", spatial)
+    assert beta_result[0].rhs == Tensor("δ", spatial)
+    assert _uhf_tensor_to_rhf(Tensor("δ", [alpha[0], beta[1], alpha[2]])) == Scalar(0.0)
+
+
+def test_ghf_to_rhf_projects_copy_delta_with_its_spin_indices(spin_metadata: Metadata) -> None:
+    i, j, k = spin_metadata.indices["o_γ"][:3]
+    expression = Expression(
+        Tensor("r1ip", [i]),
+        Mul([Tensor("h", [j, k]), Tensor("δ", [i, j, k])]),
+    )
+
+    result = spin_integrate(
+        expression,
+        ReferenceType.GHF,
+        ReferenceType.RHF,
+        index_spins={"i": "a"},
+    )
+
+    spatial_i, spatial_j, spatial_k = spin_metadata.indices["o"][:3]
+    expected = Mul([Tensor("h", [spatial_j, spatial_k]), Tensor("δ", [spatial_i, spatial_j, spatial_k])])
+    assert len(result) == 1
+    assert _terms(result[0].rhs) == _terms(expected)
 
 
 def test_ghf_to_uhf_prunes_inconsistent_repeated_indices(spin_metadata: Metadata) -> None:
@@ -185,6 +234,72 @@ def test_ghf_to_uhf_projects_ccsd_t2_onto_alpha_beta_alpha_beta(spin_metadata: M
     assert len(result) == 1
     assert result[0].lhs.indices == expected
     assert result[0].rhs.indices == expected
+
+
+@pytest.mark.parametrize(
+    ("symbol", "expected_patterns"),
+    [
+        ("r2ip", {"aaa", "aba", "abb", "baa", "bab", "bbb"}),
+        ("l2ip", {"aaa", "aba", "abb", "baa", "bab", "bbb"}),
+        ("r2ea", {"aaa", "aab", "aba", "bab", "bba", "bbb"}),
+        ("r2ee", {"aaaa", "abab", "baba", "bbbb"}),
+    ],
+)
+def test_ghf_to_uhf_supports_eom_vector_spin_blocks(
+    spin_metadata: Metadata, symbol: str, expected_patterns: set[str]
+) -> None:
+    indices = [*spin_metadata.indices["o_γ"][:2], *spin_metadata.indices["v_γ"][:2]]
+    rank = TensorFactory(symbol).rank
+    indices = indices[:rank]
+    vector = TensorFactory(symbol)[tuple(indices)]
+
+    result = spin_integrate(Expression(vector, vector), ReferenceType.GHF, ReferenceType.UHF)
+
+    patterns = {"".join("a" if index.endswith("_α") else "b" for index in equation.lhs.indices) for equation in result}
+    assert patterns == expected_patterns
+    assert all(equation.lhs.indices == equation.rhs.external_indices for equation in result)
+
+
+def test_uhf_to_rhf_spin_adapts_eom_ip_and_ee_vectors(spin_metadata: Metadata) -> None:
+    i, j = spin_metadata.indices["o_α"][:2]
+    a, b = spin_metadata.indices["v_α"][:2]
+    ip = TensorFactory("r2ip")[i, j, a]
+    ee = TensorFactory("r2ee")[i, j, a, b]
+
+    ip_result = spin_integrate(Expression(ip, ip), ReferenceType.UHF, ReferenceType.RHF)
+    ee_result = spin_integrate(Expression(ee, ee), ReferenceType.UHF, ReferenceType.RHF)
+
+    spatial_i, spatial_j = spin_metadata.indices["o"][:2]
+    spatial_a, spatial_b = spin_metadata.indices["v"][:2]
+    assert ip_result[0].rhs == 2 * TensorFactory("r2ip")[spatial_i, spatial_j, spatial_a]
+    expected_ee = (
+        TensorFactory("r2ee")[spatial_i, spatial_j, spatial_a, spatial_b]
+        - TensorFactory("r2ee")[spatial_i, spatial_j, spatial_b, spatial_a]
+    )
+    assert _terms(ee_result[0].rhs) == _terms(expected_ee)
+
+
+def test_projected_eom_lhs_uses_the_same_spin_adaptation_as_rhs(spin_metadata: Metadata) -> None:
+    i = spin_metadata.indices["o_γ"][0]
+    j = spin_metadata.indices["o_γ"][1]
+    a = spin_metadata.indices["v_γ"][0]
+    vector = Tensor("r2", [i, j, a])
+
+    result = spin_integrate(
+        Expression(vector, vector),
+        ReferenceType.GHF,
+        ReferenceType.RHF,
+        transform_like={"r2": "r2ip"},
+        index_spins={"i": "a", "j": "b", "a": "b"},
+    )
+
+    spatial_i = spin_metadata.indices["o"][0]
+    spatial_j = spin_metadata.indices["o"][1]
+    spatial_a = spin_metadata.indices["v"][0]
+    expected = Tensor("r2", [spatial_j, spatial_i, spatial_a])
+    assert len(result) == 1
+    assert result[0].lhs == expected
+    assert result[0].rhs == expected
 
 
 def test_spin_integrate_uses_transform_like_for_rhs_tensors(spin_metadata: Metadata) -> None:

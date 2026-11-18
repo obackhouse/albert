@@ -75,6 +75,29 @@ def test_l_tokens_can_decode_as_eom_left_amplitudes() -> None:
     )
 
 
+def test_removes_disconnected_reference_energy_terms_from_eom_vectors() -> None:
+    decoder = PdaggerqDecoder()
+    encoded = (
+        '[ ["+1.0", "f(i,i)", "r1(a)"], '
+        '["-0.5", "<i,j||i,j>", "r1(a)"], '
+        '["+1.0", "f(i,a)", "t1(a,i)", "r1(j)"], '
+        '["+1.0", "<i,a||j,b>", "t2(a,b,i,j)", "r1(k)"], '
+        '["+1.0", "<i,a||j,b>", "t1(a,i)", "t1(b,j)", "r1(k)"], '
+        '["-1.0", "f(i,j)", "r1(j)"] ]'
+    )
+
+    decoded = decoder.decode_node(encoded)
+
+    assert decoded == Mul([Scalar(-1.0), Tensor("f", ["i", "j"]), Tensor("r1ip", ["j"])])
+
+
+def test_reference_energy_filter_treats_left_vectors_as_eom_only_when_requested() -> None:
+    lambda_term = '[ ["+1.0", "f(j,j)", "l1(a,i)"] ]'
+
+    assert PdaggerqDecoder().decode_node(lambda_term) == Mul([Tensor("f", ["j", "j"]), Tensor("l1", ["i", "a"])])
+    assert PdaggerqDecoder(l_is_lambda=False).decode_node(lambda_term) == Scalar(0.0)
+
+
 @pytest.mark.parametrize(
     ("encoded", "message"),
     [

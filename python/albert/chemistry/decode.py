@@ -52,6 +52,66 @@ def _indices(value: str, *, expected: int | None = None) -> tuple[str, ...]:
     return indices
 
 
+def _pdaggerq_indices(token: str) -> tuple[str, ...]:
+    """Return the indices carried by an ordinary pdaggerq tensor token."""
+    if token.startswith("<") and token.endswith(">"):
+        body = token[1:-1].replace("||", ",").replace("|", ",")
+        return _indices(body)
+    match = _FUNCTION_TOKEN.fullmatch(token)
+    return () if match is None or match.group(1) == "P" else _indices(match.group(2))
+
+
+def _is_eom_vector_token(token: str, *, include_left: bool) -> bool:
+    match = _FUNCTION_TOKEN.fullmatch(token)
+    if match is None:
+        return False
+    symbol = match.group(1)
+    return (symbol.startswith("r") or (include_left and symbol.startswith("l"))) and symbol[-1:] in {"1", "2", "3"}
+
+
+def _is_reference_energy_term(term: list[str], *, include_left: bool) -> bool:
+    """Whether one pdaggerq EOM term is a disconnected reference-energy term."""
+    body = term[1:] if term and _is_number_token(term[0]) else term
+    vectors = [token for token in body if _is_eom_vector_token(token, include_left=include_left)]
+    if len(vectors) != 1:
+        return False
+    other_tensors = [token for token in body if token != vectors[0] and not token.startswith("P(")]
+    if set(_pdaggerq_indices(vectors[0])) & {index for token in other_tensors for index in _pdaggerq_indices(token)}:
+        return False
+
+    if len(body) == 2 and len(other_tensors) == 1:
+        token = other_tensors[0]
+        match = _FUNCTION_TOKEN.fullmatch(token)
+        fock_energy = (
+            match is not None
+            and match.group(1) == "f"
+            and (indices := _indices(match.group(2), expected=2))[0] == indices[1]
+        )
+        eri_indices = _pdaggerq_indices(token) if token.startswith("<") and token.endswith(">") else ()
+        eri_energy = len(eri_indices) == 4 and eri_indices[0] == eri_indices[2] and eri_indices[1] == eri_indices[3]
+        return fock_energy or eri_energy
+
+    tensors = sorted(other_tensors)
+    fock_amplitude = len(tensors) >= 2 and tensors[0].startswith("f") and tensors[1].startswith("t")
+    eri_amplitudes = (
+        len(tensors) >= 2 and tensors[0].startswith("<") and all(token.startswith("t") for token in tensors[1:])
+    )
+    return fock_amplitude or eri_amplitudes
+
+
+def _is_number_token(token: str) -> bool:
+    try:
+        float(token)
+    except ValueError:
+        return False
+    return True
+
+
+def _remove_reference_energy_eom(terms: list[list[str]], *, include_left: bool) -> list[list[str]]:
+    """Drop disconnected E0 contributions from pdaggerq EOM vector terms."""
+    return [term for term in terms if not _is_reference_energy_term(term, include_left=include_left)]
+
+
 def _occupied(index: str) -> bool:
     """Guess whether a conventional pdaggerq index is occupied."""
     return index.lower() in set("ijklmnost")
@@ -81,19 +141,23 @@ def _parse_open_shell_eom(symbol: str, indices: tuple[str, ...]) -> Tensor:
     """Map ionization/attachment EOM tokens to the corresponding chemistry tensor."""
     prefix = symbol[0]
     rank = int(symbol[1:])
-    occupied = all(_occupied(index) for index in indices[:rank])
-    virtual = all(_virtual(index) for index in indices[:rank])
-    mapped: tuple[str, ...] = indices
-    if occupied:
+    if len(indices) % 2 == 0:
+        kind = "ee"
+    elif _occupied(indices[rank - 1]):
         kind = "ip"
+    elif _virtual(indices[rank - 1]):
+        kind = "ea"
+    mapped: tuple[str, ...] = indices
+    if kind == "ee":
+        mapped = (*indices[rank:], *indices[:rank])
+    elif kind == "ip":
         if prefix == "r" and rank == 2:
             mapped = (indices[1], indices[2], indices[0])
         elif prefix == "r" and rank == 3:
             mapped = (*indices[2:], *indices[:2])
         else:
             mapped = indices
-    elif virtual:
-        kind = "ea"
+    elif kind == "ea":
         mapped = indices
     else:
         raise ValueError(f"cannot classify pdaggerq tensor indices in {symbol}({','.join(indices)})")
@@ -143,7 +207,8 @@ class PdaggerqDecoder(Decoder):
     ``decode_expression`` accepts a serialized mapping with an LHS tensor token
     and a pdaggerq term list, such as
     ``{"lhs": "t1(a,i)", "terms": [["+1.0", "f(i,a)"]]}``.
-    Index spaces and tensor metadata are intentionally left to the caller.
+    Index spaces and tensor metadata are intentionally left to the caller. Disconnected
+    reference-energy terms are removed automatically when the term list contains EOM vectors.
     """
 
     l_is_lambda: bool = True
@@ -212,8 +277,13 @@ class PdaggerqDecoder(Decoder):
         if not isinstance(terms, (list, tuple)) or any(not isinstance(term, (list, tuple)) for term in terms):
             raise ValueError("pdaggerq terms must be a list of token lists")
 
+        term_lists = [list(term) for term in terms]
+        include_left = not self.l_is_lambda
+        if any(_is_eom_vector_token(token, include_left=include_left) for term in term_lists for token in term):
+            term_lists = _remove_reference_energy_eom(term_lists, include_left=include_left)
+
         decoded_terms = []
-        for term in terms:
+        for term in term_lists:
             if any(not isinstance(token, str) for token in term):
                 raise ValueError("pdaggerq term tokens must be strings")
             factors: list[Node] = []

@@ -1,7 +1,7 @@
 import pytest
 
-from albert import Add, Expression, Metadata, Mul, Tensor
-from albert.tools import diagonal, get_intermediate_output_keys, split_by_dependencies, trace
+from albert import Add, Expression, Metadata, Mul, Permutation, PhaseFactor, Scalar, Tensor
+from albert.tools import diagonal, get_intermediate_output_keys, operator_diagonal, split_by_dependencies, trace
 
 
 def _symbols(expressions: list[Expression]) -> list[str]:
@@ -117,6 +117,83 @@ def test_diagonal_requires_disjoint_index_pairs() -> None:
 
     with pytest.raises(ValueError, match="index pairs must be disjoint"):
         diagonal(node, [("i", "j"), ("i", "k")], metadata=metadata)
+
+
+def test_operator_diagonal_eliminates_the_trial_vector() -> None:
+    metadata = Metadata(indices={"o": ["i", "j", "k", "l"]}, sizes={"o": 4})
+    expression = Expression(
+        Tensor("R", ["i"]),
+        Mul([Tensor("A", ["i", "j"]), Tensor("r", ["j"])]),
+    )
+
+    result = operator_diagonal(expression, ["r"], metadata=metadata)
+
+    assert result == Mul([Tensor("A", ["k", "j"]), Tensor("δ", ["i", "k", "j"])])
+    assert result.external_indices == ["i"]
+
+
+def test_operator_diagonal_of_identity_is_a_ones_tensor() -> None:
+    metadata = Metadata(indices={"o": ["i", "j", "k"]}, sizes={"o": 3})
+    vector = Tensor("r", ["i"])
+
+    result = operator_diagonal(Expression(vector, vector), ["r"], metadata=metadata)
+
+    assert result == Tensor("δ", ["i", "j", "j"])
+    assert result.external_indices == ["i"]
+
+
+def test_operator_diagonal_preserves_external_indices_shared_with_vector() -> None:
+    metadata = Metadata(indices={"o": ["i", "j", "k", "l", "m", "n"]}, sizes={"o": 6})
+    expression = Expression(
+        Tensor("R", ["i", "j"]),
+        Mul([Tensor("A", ["i", "k"]), Tensor("r", ["j", "k"])]),
+    )
+
+    result = operator_diagonal(expression, ["r"], metadata=metadata)
+
+    assert result.external_indices == ["i", "j"]
+
+
+def test_operator_diagonal_accounts_for_vector_antisymmetry() -> None:
+    metadata = Metadata(
+        indices={"o": ["i", "j", "k", "l", "m", "n", "p", "q"]},
+        sizes={"o": 6},
+        symmetries={"r": [Permutation([1, 0], PhaseFactor.NEGATIVE)]},
+    )
+    expression = Expression(
+        Tensor("r", ["i", "j"]),
+        Mul([Tensor("A", ["i", "j", "k", "l"]), Tensor("r", ["k", "l"])]),
+    )
+
+    result = operator_diagonal(expression, ["r"], metadata=metadata)
+
+    assert isinstance(result, Add)
+    assert len(result.children) == 2
+    assert result.external_indices == ["i", "j"]
+    assert any(
+        child == Scalar(-1.0)
+        for term in result.children
+        for child in term.search(lambda node: isinstance(node, Scalar))
+    )
+
+
+def test_operator_diagonal_ignores_other_vector_blocks_and_rejects_nonlinear_terms() -> None:
+    metadata = Metadata(
+        indices={"o": ["i", "j", "k"], "v": ["a", "b"]},
+        sizes={"o": 3, "v": 2},
+    )
+    off_diagonal = Expression(
+        Tensor("r1", ["i"]),
+        Mul([Tensor("r2", ["i", "a"]), Tensor("t", ["a"])]),
+    )
+    assert operator_diagonal(off_diagonal, ["r1", "r2"], metadata=metadata) == Scalar(0.0)
+
+    nonlinear = Expression(
+        Tensor("r1", ["i"]),
+        Mul([Tensor("A", ["i", "j", "k"]), Tensor("r1", ["j"]), Tensor("r2", ["k"])]),
+    )
+    with pytest.raises(ValueError, match="linear in its vector symbols"):
+        operator_diagonal(nonlinear, ["r1", "r2"], metadata=metadata)
 
 
 def test_trace_replaces_each_second_index_with_its_first() -> None:

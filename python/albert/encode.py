@@ -14,6 +14,9 @@ from typing import TYPE_CHECKING
 
 from albert._core import Add, Expression, Mul, Scalar, Tensor, topological_sort
 
+_ONES_SYMBOL = "__albert_ones__"
+_EYE_SYMBOL = "__albert_eye__"
+
 if TYPE_CHECKING:
     from collections.abc import Callable
     from typing import Any, TextIO
@@ -400,6 +403,15 @@ class EinsumEncoder(Encoder):
     use_matmul: bool = False
     """Use ``@`` for eligible rank-two matrix contractions."""
 
+    lower_copy_deltas: bool = False
+    """Lower three-index equality tensors to einsum index identifications."""
+
+    ones_function: str = "np.ones"
+    """Function used to create ones vectors when lowering copy deltas."""
+
+    eye_function: str = "np.eye"
+    """Function used to create pairwise equality matrices when lowering copy deltas."""
+
     def format_tensor(self, symbol: str, spaces: tuple[str, ...]) -> str:
         """Return the Python expression used to access one tensor array."""
         return self.tensor_formatter(symbol, spaces)
@@ -414,7 +426,75 @@ class EinsumEncoder(Encoder):
             raise ValueError(f"index {error.args[0]!r} does not belong to a metadata space") from error
 
     def _tensor_expression(self, tensor: Tensor) -> str:
+        if tensor.symbol == _ONES_SYMBOL:
+            spaces = self._tensor_spaces(tensor)
+            if self.metadata is None or len(spaces) != 1:
+                raise ValueError("metadata is required to construct a ones vector for a copy delta")
+            return f"{self.ones_function}({self.metadata.sizes[spaces[0]]}, dtype=bool)"
+        if tensor.symbol == _EYE_SYMBOL:
+            spaces = self._tensor_spaces(tensor)
+            if self.metadata is None or len(spaces) != 2 or spaces[0] != spaces[1]:
+                raise ValueError("copy-delta output indices must belong to the same metadata space")
+            return f"{self.eye_function}({self.metadata.sizes[spaces[0]]}, dtype=bool)"
         return self.format_tensor(tensor.symbol, self._tensor_spaces(tensor))
+
+    @staticmethod
+    def _lower_deltas(factors: list[Node], output_indices: tuple[str, ...]) -> list[Node]:
+        """Remove rank-three copy deltas by identifying their index labels."""
+        deltas = [
+            factor for factor in factors if isinstance(factor, Tensor) and factor.symbol == "δ" and factor.rank == 3
+        ]
+        if not deltas:
+            return factors
+
+        parents: dict[str, str] = {}
+
+        def find(index: str) -> str:
+            parent = parents.setdefault(index, index)
+            if parent != index:
+                parents[index] = find(parent)
+            return parents[index]
+
+        def union(left: str, right: str) -> None:
+            left_root, right_root = find(left), find(right)
+            if left_root != right_root:
+                parents[right_root] = left_root
+
+        for delta in deltas:
+            union(delta.indices[0], delta.indices[1])
+            union(delta.indices[0], delta.indices[2])
+
+        classes: dict[str, list[str]] = {}
+        for index in parents:
+            classes.setdefault(find(index), []).append(index)
+
+        replacements: dict[str, str] = {}
+        output_equalities: list[Tensor] = []
+        output_set = set(output_indices)
+        for indices in classes.values():
+            output_class = [index for index in output_indices if index in indices]
+            if len(output_class) <= 1:
+                representative = output_class[0] if output_class else indices[0]
+                replacements.update({index: representative for index in indices if index != representative})
+            else:
+                representative = output_class[0]
+                replacements.update({index: representative for index in indices if index not in output_set})
+                output_equalities.extend(Tensor(_EYE_SYMBOL, [representative, index]) for index in output_class[1:])
+
+        lowered: list[Node] = []
+        for factor in factors:
+            if factor in deltas:
+                continue
+            lowered_factor = factor
+            if isinstance(factor, Tensor):
+                factor_replacements = {index: replacements[index] for index in factor.indices if index in replacements}
+                lowered_factor = factor.map_indices(factor_replacements)
+            lowered.append(lowered_factor)
+        lowered.extend(output_equalities)
+
+        present_indices = {index for factor in lowered if isinstance(factor, Tensor) for index in factor.indices}
+        lowered.extend(Tensor(_ONES_SYMBOL, [index]) for index in output_indices if index not in present_indices)
+        return lowered
 
     def _terms(self, node: Node) -> list[list[Node]]:
         """Expand a node into additive terms of multiplicative factors."""
@@ -462,6 +542,8 @@ class EinsumEncoder(Encoder):
         is_assignment: bool,
     ) -> str:
         """Render one product term as an einsum call and scalar coefficient."""
+        if self.lower_copy_deltas:
+            factors = self._lower_deltas(factors, output_indices)
         coefficient = 1.0
         tensors: list[Tensor] = []
         for factor in factors:
@@ -814,6 +896,8 @@ class EinsumFunctionEncoder:
         result: list[TensorArrayKey] = []
         for expression in ordered:
             for tensor in self._tensors(expression.rhs):
+                if self.einsum_encoder.lower_copy_deltas and tensor.symbol == "δ" and tensor.rank == 3:
+                    continue
                 key = self._tensor_key(tensor, index_spaces)
                 if key not in definitions and key not in result:
                     result.append(key)
@@ -875,6 +959,8 @@ class EinsumFunctionEncoder:
         callable_paths = [self.einsum_encoder.einsum_function, self.einsum_encoder.copy_function]
         if self.einsum_encoder.transpose_function is not None:
             callable_paths.append(self.einsum_encoder.transpose_function)
+        if self.einsum_encoder.lower_copy_deltas:
+            callable_paths.extend((self.einsum_encoder.ones_function, self.einsum_encoder.eye_function))
         for callable_path in callable_paths:
             try:
                 function_node = ast.parse(callable_path, mode="eval").body
@@ -955,6 +1041,9 @@ class EinsumFunctionEncoder:
                 copy_function=self.einsum_encoder.copy_function,
                 transpose_function=self.einsum_encoder.transpose_function,
                 use_matmul=self.einsum_encoder.use_matmul,
+                lower_copy_deltas=self.einsum_encoder.lower_copy_deltas,
+                ones_function=self.einsum_encoder.ones_function,
+                eye_function=self.einsum_encoder.eye_function,
                 metadata=self.metadata,
                 delegate=self.einsum_encoder,
                 local_names=local_map,
